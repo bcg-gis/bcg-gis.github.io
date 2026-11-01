@@ -281,15 +281,15 @@ textarea.input { height: auto; padding: 8px 10px; resize: vertical; }
 .sticky:hover button, .map-text:hover button { display: grid; }
 
 /* Alət paneli */
-.tool-area { position: absolute; z-index: 505; top: 12px; right: 100px; max-width: calc(100% - 124px); display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+.tool-area { position: absolute; z-index: 505; top: 12px; right: 56px; max-width: calc(100% - 80px); display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
 .tool-dock, .tool-hint, .draw-panel, .save-menu { display: flex; align-items: center; background: var(--panel); border-radius: var(--radius); box-shadow: var(--shadow); max-width: 100%; }
-.tool-dock { position: absolute; top: 0; right: -44px; flex-direction: column; gap: 2px; padding: 3px; overflow-y: auto; max-height: calc(100dvh - var(--appbar-h) - 76px); }
-.dock-btn { flex: none; width: 28px; height: 30px; display: grid; place-items: center; border-radius: 5px; color: var(--ink-2); font-size: 14px; }
+.tool-dock { flex: none; flex-direction: column; background: none; box-shadow: none; }
+.dock-btn { flex: none; width: 34px; height: 30px; display: grid; place-items: center; color: var(--ink-2); font-size: 14px; }
 .dock-btn:hover:not(:disabled) { background: var(--hover); color: var(--ink); }
 .dock-btn.on { background: var(--brand); color: var(--brand-ink); }
 .dock-btn:disabled { opacity: .35; cursor: default; }
 .dock-sep { flex: none; width: 1px; height: 20px; margin: 0 4px; background: var(--line); }
-.tool-dock .dock-sep { width: 20px; height: 1px; margin: 3px auto; }
+.tool-dock .dock-sep { width: 100%; height: 1px; margin: 0; }
 .tool-hint { gap: 8px; padding: 4px 4px 4px 12px; font-size: 12px; color: var(--ink-2); }
 .tool-hint .btn { height: 28px; padding: 0 10px; }
 .save-menu { gap: 4px; padding: 4px; }
@@ -309,15 +309,15 @@ textarea.input { height: auto; padding: 8px 10px; resize: vertical; }
 .panel-name { width: 140px; height: 28px; margin-left: 4px; padding: 0 8px; border: 1px solid var(--line-strong); border-radius: 5px; background: var(--panel); color: var(--ink); font-size: 12px; outline: none; }
 .panel-name:focus { border-color: var(--brand); }
 
-.toolbar { position: absolute; z-index: 500; top: 12px; right: 12px; display: flex; flex-direction: column; gap: 8px; }
-.tool-group { display: flex; flex-direction: column; overflow: hidden; background: var(--panel); border-radius: var(--radius); box-shadow: var(--shadow); }
-.tool { width: 34px; height: 34px; display: grid; place-items: center; color: var(--ink-2); font-size: 13px; }
-.tool + .tool { border-top: 1px solid var(--line); }
+.toolbar { position: absolute; z-index: 500; top: 12px; right: 12px; display: flex; flex-direction: column; max-height: calc(100% - 24px); overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; background: var(--panel); border-radius: var(--radius); box-shadow: var(--shadow); }
+.toolbar-main { display: contents; }
+.tool-group { flex: none; display: flex; flex-direction: column; border-bottom: 1px solid var(--line); }
+.tool { width: 34px; height: 30px; display: grid; place-items: center; color: var(--ink-2); font-size: 13px; }
 .tool:hover { background: var(--hover); color: var(--ink); }
 .tool.active { background: var(--brand); color: var(--brand-ink); }
 #northIcon { transform: rotate(-45deg); color: var(--red); }
 
-.popover { position: absolute; z-index: 510; top: 12px; right: 100px; width: 256px; padding: 12px; display: flex; flex-direction: column; gap: 10px; background: var(--panel); border-radius: var(--radius); box-shadow: var(--shadow); }
+.popover { position: absolute; z-index: 510; top: 12px; right: 56px; width: 256px; padding: 12px; display: flex; flex-direction: column; gap: 10px; background: var(--panel); border-radius: var(--radius); box-shadow: var(--shadow); }
 .popover h3 { font-size: 13px; }
 .popover label { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--ink-2); }
 .field { display: flex; gap: 4px; }
@@ -415,11 +415,12 @@ body.shared .user, body.shared #logoutBtn, body.shared .bar-sep, body.shared .ta
     .sidebar { position: absolute; z-index: 700; top: 0; bottom: 0; left: 0; width: var(--sidebar-w); box-shadow: var(--shadow); }
     .workspace.sidebar-closed .sidebar { display: none; }
     .legend, .cursor-coords, .maplibregl-ctrl-scale { display: none; }
-    .tool-area { top: auto; left: 8px; right: 8px; bottom: 30px; max-width: none; align-items: center; }
-    .tool-dock { position: static; flex-direction: row; max-height: none; overflow-x: auto; }
+    .toolbar { position: static; display: block; overflow: visible; background: none; box-shadow: none; max-height: none; }
+    .toolbar-main { display: block; position: absolute; z-index: 500; top: 12px; right: 12px; overflow: hidden; background: var(--panel); border-radius: var(--radius); box-shadow: var(--shadow); }
+    .tool-dock { position: absolute; z-index: 505; left: 8px; right: 8px; bottom: 30px; flex-direction: row; justify-content: center; overflow-x: auto; background: var(--panel); box-shadow: var(--shadow); }
     .tool-dock .dock-sep { width: 1px; height: 20px; margin: 0 4px; }
-    .dock-btn { width: 34px; height: 34px; }
-    .popover { right: 56px; }
+    .dock-btn { height: 34px; }
+    .tool-area { top: auto; left: 8px; right: 8px; bottom: 76px; max-width: none; align-items: center; }
     .dock.open { height: 46dvh; }
     .dock-summary { display: none; }
     .tabs { flex: 1; }
