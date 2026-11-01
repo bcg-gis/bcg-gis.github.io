@@ -34,7 +34,7 @@ const state = {
 };
 
 let map, routePopup, currentBase, goToMarker;
-let namesOn = true;
+let namesOn = false;
 
 const $ = id => document.getElementById(id);
 const t = key => I18N[state.lang][key] || key;
