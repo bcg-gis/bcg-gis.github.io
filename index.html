@@ -137,6 +137,7 @@
                 <main id="map" aria-label="Xəritə"></main>
 
                 <nav class="toolbar" aria-label="Xəritə alətləri">
+                    <div class="toolbar-main">
                     <div class="tool-group">
                         <button class="tool" id="zoomInBtn" data-i18n-title="zoomIn"><i class="fa-solid fa-plus"></i></button>
                         <button class="tool" id="zoomOutBtn" data-i18n-title="zoomOut"><i class="fa-solid fa-minus"></i></button>
@@ -148,9 +149,11 @@
                     </div>
                     <div class="tool-group">
                         <button class="tool" id="layersBtn" data-i18n-title="layers"><i class="fa-solid fa-layer-group"></i></button>
-                        <button class="tool active" id="namesBtn" data-i18n-title="names"><i class="fa-solid fa-tag"></i></button>
+                        <button class="tool" id="namesBtn" data-i18n-title="names"><i class="fa-solid fa-tag"></i></button>
                         <button class="tool" id="coordBtn" data-i18n-title="coords"><i class="fa-solid fa-magnifying-glass-location"></i></button>
                     </div>
+                    </div>
+                    <div class="tool-dock" id="toolDock"></div>
                 </nav>
 
                 <div class="popover" id="layersPopover" hidden>
@@ -189,7 +192,6 @@
                         <button class="btn btn-outline" id="savePdf"><i class="fa-regular fa-file-pdf"></i> PDF</button>
                         <button class="btn btn-outline" id="saveKmz"><i class="fa-solid fa-earth-europe"></i> KMZ</button>
                     </div>
-                    <div class="tool-dock" id="toolDock"></div>
                 </div>
                 <section class="legend" id="legend" aria-label="Şərti işarələr"></section>
                 <div class="cursor-coords mono" id="cursorCoords">40.14300, 47.57700</div>
