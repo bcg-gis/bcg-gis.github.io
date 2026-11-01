@@ -8,6 +8,15 @@ const STATUSES = Object.keys(STATUS_COLORS);
 
 const STORAGE = { lang: "bcg.lang", theme: "bcg.theme" };
 
+/* Rənglər: üst panel, səth, əsas rəng */
+const THEMES = {
+    light: ["#0e1a2b", "#ffffff", "#0b63ce"],
+    dark: ["#0e1a2b", "#141e2b", "#4c9bf5"],
+    ocean: ["#0b3a53", "#f2f8fb", "#0e7fa8"],
+    forest: ["#12372a", "#f4f8f5", "#1f8a5b"],
+    graphite: ["#18191b", "#232427", "#e0a030"]
+};
+
 const state = {
     lang: "az",
     user: null,
@@ -105,6 +114,7 @@ function applyLanguage(lang) {
     renderRole();
     if (currentBase) renderLayerOptions();
     tools.refresh();
+    renderThemeMenu();
     renderLegend();
     renderNotes();
     renderMaterials();
@@ -112,8 +122,24 @@ function applyLanguage(lang) {
 }
 
 function applyTheme(theme) {
-    document.documentElement.dataset.theme = theme;
-    $("themeBtn").querySelector("i").className = `fa-solid ${theme === "light" ? "fa-moon" : "fa-sun"}`;
+    document.documentElement.dataset.theme = THEMES[theme] ? theme : "light";
+    renderThemeMenu();
+}
+
+function renderThemeMenu() {
+    const current = document.documentElement.dataset.theme;
+    $("themeMenu").innerHTML = Object.entries(THEMES).map(([id, colors]) => `
+        <button class="theme-opt ${id === current ? "on" : ""}" data-theme-id="${id}">
+            <span class="theme-swatch">${colors.map(c => `<span style="background:${c}"></span>`).join("")}</span>
+            <span>${t(`theme_${id}`)}</span>
+            ${id === current ? '<i class="fa-solid fa-check"></i>' : ""}
+        </button>
+    `).join("");
+}
+
+function setThemeMenu(open) {
+    $("themeMenu").hidden = !open;
+    $("themeBtn").setAttribute("aria-expanded", open);
 }
 
 /* GİRİŞ */
@@ -847,10 +873,19 @@ function bindEvents() {
         $("loginLang").value = e.target.value;
         applyLanguage(e.target.value);
     });
-    $("themeBtn").addEventListener("click", () => {
-        const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
-        writeStore(STORAGE.theme, next);
-        applyTheme(next);
+    $("themeBtn").addEventListener("click", e => {
+        e.stopPropagation();
+        setThemeMenu($("themeMenu").hidden);
+    });
+    $("themeMenu").addEventListener("click", e => {
+        const option = e.target.closest("[data-theme-id]");
+        if (!option) return;
+        writeStore(STORAGE.theme, option.dataset.themeId);
+        applyTheme(option.dataset.themeId);
+        setThemeMenu(false);
+    });
+    document.addEventListener("click", e => {
+        if (!e.target.closest("#themeMenu")) setThemeMenu(false);
     });
     $("menuBtn").addEventListener("click", () => {
         const open = $("topActions").classList.toggle("open");
