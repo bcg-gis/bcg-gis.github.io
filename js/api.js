@@ -75,6 +75,27 @@ const api = (() => {
 
         async deleteProject(id) {
             unwrap(await client.from("projects").delete().eq("id", id));
+        },
+
+        async loadShared(token) {
+            return unwrap(await client.rpc("get_shared_view", { link: token })).map(toProject);
+        },
+
+        async listShares() {
+            return unwrap(await client.from("share_links").select("*").order("created_at", { ascending: false }));
+        },
+
+        async loadSharedExtras(token) {
+            return unwrap(await client.rpc("get_shared_extras", { link: token }));
+        },
+
+        async createShare(projectIds, days, drawings, view) {
+            const expires = days ? new Date(Date.now() + days * 86400000).toISOString() : null;
+            return unwrap(await client.from("share_links").insert({ project_ids: projectIds, expires_at: expires, drawings, view }).select().single());
+        },
+
+        async revokeShare(token) {
+            unwrap(await client.from("share_links").delete().eq("token", token));
         }
     };
 })();

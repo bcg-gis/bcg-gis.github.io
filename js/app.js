@@ -5,7 +5,6 @@ const AZERBAIJAN_BOUNDS = [[38.39, 44.77], [41.91, 50.63]];
 const STATUS_COLORS = { bitmis: "#22C55E", icrada: "#F59E0B", tehvil: "#3B82F6", layihe: "#EF4444" };
 const ENDPOINT_MIN_ZOOM = 9;
 const STATUSES = Object.keys(STATUS_COLORS);
-const MEASURE_COLOR = "#FF7A00";
 
 const STORAGE = { lang: "bcg.lang", theme: "bcg.theme" };
 
@@ -25,10 +24,8 @@ const state = {
     notes: []
 };
 
-let map, routesLayer, measureLayer, currentBase, goToMarker;
-let baseLayers = {};
-
-const measure = { active: false, points: [], segments: [], tempLine: null };
+let map, routePopup, currentBase, goToMarker;
+let namesOn = true;
 
 const $ = id => document.getElementById(id);
 const t = key => I18N[state.lang][key] || key;
@@ -106,7 +103,8 @@ function applyLanguage(lang) {
         el.setAttribute("aria-label", el.title);
     });
     renderRole();
-    renderLayerOptions();
+    if (currentBase) renderLayerOptions();
+    tools.refresh();
     renderLegend();
     renderNotes();
     renderMaterials();
@@ -127,6 +125,7 @@ function renderRole() {
     $("userEmail").textContent = email;
     $("userAvatar").textContent = email.charAt(0);
     $("importBtn").hidden = !isAdmin();
+    tools.refresh();
 }
 
 async function handleLogin(event) {
@@ -180,152 +179,246 @@ async function enterApp(user) {
     renderAll();
 }
 
+/* LİNKLƏ PAYLAŞMA */
+const shareUrl = token => `${location.origin}${location.pathname}?share=${token}`;
+
+async function enterSharedView(token) {
+    document.body.classList.add("shared");
+    let projects = [];
+    try {
+        projects = await api.loadShared(token);
+    } catch { /* Xarab token etibarsız link kimi göstərilir */ }
+    if (projects.length === 0) {
+        $("linkError").hidden = false;
+        return;
+    }
+    state.projects = projects;
+    projects.forEach(p => state.visibleIds.add(p.id));
+    renderAll();
+    const extras = await api.loadSharedExtras(token).catch(() => null);
+    if (extras?.drawings) tools.loadShared(extras.drawings);
+    if (extras?.view) map.jumpTo(extras.view);
+}
+
+async function renderShares() {
+    $("shareHint").textContent = `${t("shareHint")} (${state.visibleIds.size})`;
+    const links = await api.listShares();
+    $("shareList").innerHTML = links.map(l => `
+        <div class="note">
+            <p><a class="link share-url" href="${shareUrl(l.token)}" target="_blank" rel="noopener">${shareUrl(l.token)}</a>
+                <small>${l.project_ids.length} ${t("projectsUnit")} · ${l.expires_at ? new Date(l.expires_at).toLocaleDateString(state.lang) : t("daysNever")}</small></p>
+            <button class="icon-btn" data-copy="${l.token}" title="${t("copy")}"><i class="fa-regular fa-copy"></i></button>
+            <button class="icon-btn" data-revoke="${l.token}" title="${t("shareRevoke")}"><i class="fa-regular fa-trash-can"></i></button>
+        </div>
+    `).join("");
+}
+
+async function copyShare(token) {
+    await navigator.clipboard.writeText(shareUrl(token));
+    toast(t("shareCopied"));
+}
+
+async function createShare(event) {
+    event.preventDefault();
+    if (state.visibleIds.size === 0) {
+        toast(t("shareNothing"), true);
+        return;
+    }
+    try {
+        const view = { center: map.getCenter().toArray(), zoom: map.getZoom(), bearing: map.getBearing(), pitch: map.getPitch() };
+        const link = await api.createShare([...state.visibleIds], Number($("shareDays").value), tools.shapes(), view);
+        await renderShares();
+        await copyShare(link.token);
+    } catch {
+        toast(t("saveError"), true);
+    }
+}
+
 /* XƏRİTƏ */
-function initMap() {
-    map = L.map("map", {
-        minZoom: 5,
-        maxZoom: 21,
-        zoomSnap: 0.25,
-        zoomDelta: 1,
-        wheelPxPerZoomLevel: 90,
-        zoomControl: false,
-        attributionControl: true,
-        rotate: true,
-        rotateControl: false,
-        touchRotate: true,
-        shiftKeyRotate: true
-    });
-    map.attributionControl.setPrefix(false);
-    L.control.scale({ position: "bottomright", imperial: false }).addTo(map);
+const esriTiles = path => [`https://server.arcgisonline.com/ArcGIS/rest/services/${path}/MapServer/tile/{z}/{y}/{x}`];
 
-    const esriAttribution = "Imagery &copy; Esri, Maxar, Earthstar Geographics";
-    baseLayers = {
-        satellite: {
-            icon: "fa-satellite", label: "layerSatellite",
-            layer: L.layerGroup([
-                L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", { maxNativeZoom: 19, maxZoom: 21, attribution: esriAttribution }),
-                L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}", { maxNativeZoom: 19, maxZoom: 21 })
-            ])
+const BASE_MAPS = {
+    satellite: { icon: "fa-satellite", label: "layerSatellite", raster: "esri", bg: "#1c2a30", names: true },
+    street: { icon: "fa-road", label: "layerStreet", raster: "osm", bg: "#dfe6ea" },
+    dark: { icon: "fa-moon", label: "layerDark", raster: "carto", bg: "#0e1a2b" },
+    blank: { icon: "fa-square", label: "layerBlank", bg: "#ffffff" }
+};
+const NAME_LAYERS = ["esri-transport", "esri-places"];
+
+function mapStyle() {
+    const raster = (tiles, tileSize, maxzoom, attribution = "") => ({ type: "raster", tiles, tileSize, maxzoom, attribution });
+    const empty = { type: "geojson", data: { type: "FeatureCollection", features: [] } };
+    const rasterLayer = id => ({ id, type: "raster", source: id, layout: { visibility: "none" } });
+    return {
+        version: 8,
+        sources: {
+            esri: raster(esriTiles("World_Imagery"), 256, 19, "Imagery &copy; Esri, Maxar, Earthstar Geographics"),
+            "esri-transport": raster(esriTiles("Reference/World_Transportation"), 256, 19),
+            "esri-places": raster(esriTiles("Reference/World_Boundaries_and_Places"), 256, 19),
+            osm: raster(["https://tile.openstreetmap.org/{z}/{x}/{y}.png"], 256, 19, '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'),
+            carto: raster(["a", "b", "c", "d"].map(s => `https://${s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png`), 256, 20, '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'),
+            routes: empty,
+            draw: empty
         },
-        street: {
-            icon: "fa-road", label: "layerStreet",
-            layer: L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxNativeZoom: 19, maxZoom: 21, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' })
-        },
-        dark: {
-            icon: "fa-moon", label: "layerDark",
-            layer: L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", { subdomains: "abcd", maxNativeZoom: 20, maxZoom: 21, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>' })
-        },
-        blank: { icon: "fa-square", label: "layerBlank", layer: L.layerGroup() }
+        layers: [
+            { id: "bg", type: "background", paint: { "background-color": "#1c2a30" } },
+            rasterLayer("esri"), rasterLayer("esri-transport"), rasterLayer("esri-places"), rasterLayer("osm"), rasterLayer("carto"),
+            { id: "routes-casing", type: "line", source: "routes", filter: ["==", ["geometry-type"], "LineString"], layout: { "line-cap": "round", "line-join": "round" },
+                paint: { "line-color": ["case", ["get", "sel"], "#ffffff", "#04101c"], "line-width": ["case", ["get", "sel"], 10, 7], "line-opacity": ["case", ["get", "sel"], 1, .5] } },
+            { id: "routes-line", type: "line", source: "routes", filter: ["==", ["geometry-type"], "LineString"], layout: { "line-cap": "round", "line-join": "round" },
+                paint: { "line-color": ["get", "color"], "line-width": ["case", ["get", "sel"], 6, 4] } },
+            { id: "routes-hit", type: "line", source: "routes", filter: ["==", ["geometry-type"], "LineString"], paint: { "line-color": "#000", "line-width": 16, "line-opacity": 0 } },
+            { id: "routes-ends", type: "circle", source: "routes", minzoom: ENDPOINT_MIN_ZOOM, filter: ["==", ["geometry-type"], "Point"],
+                paint: { "circle-radius": 5, "circle-color": ["get", "color"], "circle-stroke-color": "#ffffff", "circle-stroke-width": 2 } },
+            ...tools.layers()
+        ]
     };
+}
 
-    routesLayer = L.layerGroup().addTo(map);
-    measureLayer = L.layerGroup().addTo(map);
+function initMap() {
+    map = new maplibregl.Map({
+        container: "map",
+        style: mapStyle(),
+        bounds: toLngLatBounds(AZERBAIJAN_BOUNDS),
+        fitBoundsOptions: { padding: MAP_PADDING },
+        minZoom: 3,
+        maxZoom: 23,
+        maxPitch: 80,
+        // Sağ düymə yalnız yaxınlaşdırır, orta düymə fırladır və əyir
+        dragRotate: false,
+        attributionControl: { compact: true },
+        preserveDrawingBuffer: true
+    });
+    map.addControl(new maplibregl.ScaleControl({ maxWidth: 110 }), "bottom-right");
+    routePopup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, className: "map-tip", offset: 12, maxWidth: "280px" });
 
-    switchBaseLayer("satellite");
-    fitHome(false);
-
+    map.on("load", () => {
+        switchBaseLayer("satellite");
+        tools.init();
+        drawRoutes();
+    });
     map.on("click", onMapClick);
     map.on("mousemove", e => {
-        $("cursorCoords").textContent = `${e.latlng.lat.toFixed(5)}, ${e.latlng.lng.toFixed(5)}`;
-        updateMeasurePreview(e);
+        $("cursorCoords").textContent = `${e.lngLat.lat.toFixed(5)}, ${e.lngLat.lng.toFixed(5)}`;
     });
     map.on("rotate", () => {
         $("northIcon").style.transform = `rotate(${-45 - map.getBearing()}deg)`;
     });
-
-    map.on("zoomend", updateEndpointVisibility);
-    updateEndpointVisibility();
+    ["routes-hit", "routes-ends"].forEach(layer => {
+        map.on("mousemove", layer, e => {
+            if (tools.isActive()) return;
+            window.routeHover = true;
+            map.getCanvas().style.cursor = "pointer";
+            routePopup.setLngLat(e.lngLat).setHTML(e.features[0].properties.tip).addTo(map);
+        });
+        map.on("mouseleave", layer, () => {
+            window.routeHover = false;
+            map.getCanvas().style.cursor = tools.isActive() ? "crosshair" : "";
+            routePopup.remove();
+        });
+    });
 
     initMouseGestures();
-    window.addEventListener("resize", () => map.invalidateSize());
 }
 
-function mapPadding() {
-    return { paddingTopLeft: [24, 24], paddingBottomRight: [60, 24] };
-}
+const MAP_PADDING = { top: 24, left: 24, right: 60, bottom: 24 };
 
-function updateEndpointVisibility() {
-    $("map").classList.toggle("far", map.getZoom() < ENDPOINT_MIN_ZOOM);
+function toLngLatBounds(latLngPairs) {
+    return latLngPairs.reduce((b, [lat, lng]) => b.extend([lng, lat]), new maplibregl.LngLatBounds());
 }
 
 function fitHome(animate = true) {
-    map.fitBounds(AZERBAIJAN_BOUNDS, { ...mapPadding(), animate });
+    map.fitBounds(toLngLatBounds(AZERBAIJAN_BOUNDS), { padding: MAP_PADDING, animate, bearing: 0, pitch: 0 });
 }
 
 function flyToCoords(coords) {
-    map.fitBounds(L.latLngBounds(coords), { ...mapPadding(), maxZoom: 13 });
+    map.fitBounds(toLngLatBounds(coords), { padding: MAP_PADDING, maxZoom: 13 });
 }
 
 function switchBaseLayer(name) {
-    if (currentBase) map.removeLayer(baseLayers[currentBase].layer);
+    const base = BASE_MAPS[name];
     currentBase = name;
-    baseLayers[name].layer.addTo(map);
-    $("map").classList.toggle("blank-base", name === "blank");
+    ["esri", "osm", "carto"].forEach(id => map.setLayoutProperty(id, "visibility", id === base.raster ? "visible" : "none"));
+    map.setPaintProperty("bg", "background-color", base.bg);
+    applyNames();
     renderLayerOptions();
 }
 
-/* Google Earth tərzi: orta düymə ilə fırlatma, sağ düymə ilə yaxınlaşdırma */
+function applyNames() {
+    const visible = namesOn && BASE_MAPS[currentBase].names;
+    NAME_LAYERS.forEach(id => map.setLayoutProperty(id, "visibility", visible ? "visible" : "none"));
+    $("namesBtn").classList.toggle("active", namesOn);
+}
+
+/* Google Earth tərzi: sağ düymə yuxarı-aşağı yaxınlaşdırır, orta düymə fırladır və əyir */
 function initMouseGestures() {
-    const container = map.getContainer();
-    let rotating = false, lastX = 0;
-    let zooming = false, lastY = 0, rightMoved = false;
+    const box = map.getCanvasContainer();
+    let rightMoved = false;
 
-    container.addEventListener("mousedown", e => {
-        if (e.button === 1) {
-            rotating = true;
-            lastX = e.clientX;
-            e.preventDefault();
-        } else if (e.button === 2) {
-            zooming = true;
-            rightMoved = false;
-            lastY = e.clientY;
-        }
-    });
-
-    window.addEventListener("mousemove", e => {
-        if (rotating) {
-            map.setBearing(map.getBearing() + (e.clientX - lastX) * 0.5);
-            lastX = e.clientX;
-        }
-        if (zooming && Math.abs(lastY - e.clientY) >= 12) {
-            rightMoved = true;
-            map.setZoom(map.getZoom() + (lastY > e.clientY ? 0.25 : -0.25), { animate: false });
-            lastY = e.clientY;
-        }
-    });
-
-    window.addEventListener("mouseup", e => {
-        if (e.button === 1) rotating = false;
-        if (e.button === 2) zooming = false;
-    });
-
-    container.addEventListener("contextmenu", e => {
+    box.addEventListener("mousedown", e => {
+        if (e.button !== 1 && e.button !== 2) return;
         e.preventDefault();
-        if (measure.active && !rightMoved) undoMeasurePoint();
+        map.stop();
+        const x0 = e.clientX, y0 = e.clientY;
+        let move;
+
+        if (e.button === 2) {
+            const rect = box.getBoundingClientRect();
+            const around = map.unproject([x0 - rect.left, y0 - rect.top]);
+            const zoom0 = map.getZoom();
+            rightMoved = false;
+            // Siçanın 150 px hərəkəti bir zoom səviyyəsidir, basılan nöqtə ətrafında; aşağı yaxınlaşdırır
+            move = ev => {
+                if (Math.abs(ev.clientY - y0) > 3) rightMoved = true;
+                map.zoomTo(zoom0 + (ev.clientY - y0) / 150, { around, duration: 0 });
+            };
+        } else {
+            const bearing0 = map.getBearing(), pitch0 = map.getPitch();
+            box.style.cursor = "move";
+            // Yana 0.4° fırlanma, yuxarı 0.3° əymə (hər piksel üçün)
+            move = ev => map.jumpTo({
+                bearing: bearing0 + (ev.clientX - x0) * .4,
+                pitch: Math.max(0, Math.min(map.getMaxPitch(), pitch0 - (ev.clientY - y0) * .3))
+            });
+        }
+        const up = () => {
+            box.style.cursor = "";
+            window.removeEventListener("mousemove", move);
+            window.removeEventListener("mouseup", up);
+        };
+        window.addEventListener("mousemove", move);
+        window.addEventListener("mouseup", up);
     });
+
+    box.addEventListener("contextmenu", e => {
+        e.preventDefault();
+        if (!rightMoved) tools.rightClick();
+    });
+    box.addEventListener("auxclick", e => { if (e.button === 1) e.preventDefault(); });
 }
 
 function drawRoutes() {
-    routesLayer.clearLayers();
+    const source = map.getSource("routes");
+    if (!source) return;
     const selected = selectedEntry();
+    const features = [];
     visibleEntries().forEach(({ project, item: r }) => {
         if (!r.coords || r.coords.length < 2) return;
-        const color = STATUS_COLORS[r.status] || STATUS_COLORS.layihe;
-        const isSelected = selected && selected.item === r;
-
-        // Peyk görüntüsü üzərində oxunması üçün altda kontur
-        L.polyline(r.coords, { color: isSelected ? "#FFFFFF" : "#04101c", weight: isSelected ? 10 : 7, opacity: isSelected ? 1 : .5, interactive: false }).addTo(routesLayer);
-        const line = L.polyline(r.coords, { color, weight: isSelected ? 6 : 4, opacity: 1 }).addTo(routesLayer);
-
-        line.bindTooltip(`<b>${esc(r.name)}</b><small>${esc(r.id)} · ${percent(r.doneKm, r.totalKm)}%</small>`, { sticky: true, className: "map-tip" });
-        line.on("click", () => { if (!measure.active) selectSegment(project, r); });
-
-        const endpoint = (latlng, label) => L.circleMarker(latlng, { radius: 5, color: "#FFFFFF", fillColor: color, fillOpacity: 1, weight: 2, className: "route-end" })
-            .addTo(routesLayer)
-            .bindTooltip(esc(label), { className: "map-tip" });
-        endpoint(r.coords[0], `A: ${r.pointA}`);
-        endpoint(r.coords[r.coords.length - 1], `B: ${r.pointB}`);
+        const color = statusTone(r.status);
+        const line = r.coords.map(([lat, lng]) => [lng, lat]);
+        features.push({
+            type: "Feature", geometry: { type: "LineString", coordinates: line },
+            properties: { color, sel: selected?.item === r, projectId: project.id, itemId: r.id, tip: `<b>${esc(r.name)}</b><small>${esc(r.id)} · ${percent(r.doneKm, r.totalKm)}%</small>` }
+        });
+        [[line[0], `A: ${r.pointA}`], [line[line.length - 1], `B: ${r.pointB}`]].forEach(([coordinates, label]) => features.push({
+            type: "Feature", geometry: { type: "Point", coordinates }, properties: { color, tip: esc(label) }
+        }));
     });
+    source.setData({ type: "FeatureCollection", features });
+}
+
+function routePaths() {
+    return visibleEntries().map(({ item }) => item.coords.map(([lat, lng]) => [lng, lat]));
 }
 
 function selectedEntry() {
@@ -349,89 +442,13 @@ function clearSelection() {
 }
 
 function onMapClick(e) {
-    $("coordClicked").value = `${e.latlng.lat.toFixed(6)}, ${e.latlng.lng.toFixed(6)}`;
-    if (measure.active) addMeasurePoint(e.latlng);
-}
-
-/* XƏTKEŞ */
-function setMeasuring(active) {
-    measure.active = active;
-    $("rulerBtn").classList.toggle("active", active);
-    $("map").classList.toggle("measuring", active);
-    $("measureHint").hidden = !active;
-    if (active) {
-        closePopovers();
-        map.doubleClickZoom.disable();
-    } else {
-        map.doubleClickZoom.enable();
-        $("measureTip").hidden = true;
-        removeTempLine();
-    }
-}
-
-function removeTempLine() {
-    if (measure.tempLine) {
-        measureLayer.removeLayer(measure.tempLine);
-        measure.tempLine = null;
-    }
-}
-
-function pathLength(points) {
-    return points.reduce((sum, p, i) => i ? sum + points[i - 1].distanceTo(p) : 0, 0);
-}
-
-function updateMeasurePreview(e) {
-    if (!measure.active || measure.points.length === 0) return;
-    const last = measure.points[measure.points.length - 1];
-
-    const tip = $("measureTip");
-    tip.hidden = false;
-    tip.style.left = `${e.originalEvent.clientX}px`;
-    tip.style.top = `${e.originalEvent.clientY}px`;
-    tip.textContent = `${t("measureTotal")}: ${formatDistance(pathLength(measure.points) + last.distanceTo(e.latlng))}`;
-
-    removeTempLine();
-    measure.tempLine = L.polyline([last, e.latlng], { color: MEASURE_COLOR, weight: 3, dashArray: "4 4", opacity: .75, interactive: false }).addTo(measureLayer);
-}
-
-function addMeasurePoint(latlng) {
-    const previous = measure.points[measure.points.length - 1];
-    const marker = L.circleMarker(latlng, { radius: 5, color: "#fff", weight: 2, fillColor: MEASURE_COLOR, fillOpacity: 1, interactive: false }).addTo(measureLayer);
-    const segment = { marker };
-
-    if (previous) {
-        segment.line = L.polyline([previous, latlng], { color: MEASURE_COLOR, weight: 4, opacity: .95, interactive: false }).addTo(measureLayer);
-        const middle = L.latLng((previous.lat + latlng.lat) / 2, (previous.lng + latlng.lng) / 2);
-        segment.label = L.marker(middle, {
-            interactive: false,
-            icon: L.divIcon({ className: "", iconSize: [0, 0], html: `<span class="measure-label">${formatDistance(previous.distanceTo(latlng))}</span>` })
-        }).addTo(measureLayer);
-    }
-
-    measure.points.push(latlng);
-    measure.segments.push(segment);
-    $("clearRulerBtn").hidden = false;
-}
-
-function undoMeasurePoint() {
-    const segment = measure.segments.pop();
-    if (!segment) return;
-    measure.points.pop();
-    Object.values(segment).forEach(layer => measureLayer.removeLayer(layer));
-    removeTempLine();
-    if (measure.points.length === 0) {
-        $("measureTip").hidden = true;
-        $("clearRulerBtn").hidden = true;
-    }
-}
-
-function clearMeasurements() {
-    measureLayer.clearLayers();
-    measure.points = [];
-    measure.segments = [];
-    measure.tempLine = null;
-    $("measureTip").hidden = true;
-    $("clearRulerBtn").hidden = true;
+    $("coordClicked").value = `${e.lngLat.lat.toFixed(6)}, ${e.lngLat.lng.toFixed(6)}`;
+    if (tools.handleClick(e)) return;
+    const box = [[e.point.x - 3, e.point.y - 3], [e.point.x + 3, e.point.y + 3]];
+    const hit = map.queryRenderedFeatures(box, { layers: ["routes-hit"] })[0];
+    if (!hit) return;
+    const project = state.projects.find(p => p.id === hit.properties.projectId);
+    selectSegment(project, project.items.find(r => r.id === hit.properties.itemId));
 }
 
 /* KOORDİNAT */
@@ -443,12 +460,15 @@ function goToCoords(event) {
         toast(t("coordInvalid"), true);
         return;
     }
-    if (goToMarker) map.removeLayer(goToMarker);
-    goToMarker = L.marker([lat, lng], { icon: L.divIcon({ className: "", html: '<div class="pin"></div>', iconSize: [16, 16], iconAnchor: [8, 8] }) })
-        .addTo(map)
-        .bindPopup(`${t("coordSearched")}: ${lat}, ${lng}`);
-    map.setView([lat, lng], 17);
-    goToMarker.openPopup();
+    goToMarker?.remove();
+    const pin = document.createElement("div");
+    pin.className = "pin";
+    goToMarker = new maplibregl.Marker({ element: pin })
+        .setLngLat([lng, lat])
+        .setPopup(new maplibregl.Popup({ offset: 12 }).setText(`${t("coordSearched")}: ${lat}, ${lng}`))
+        .addTo(map);
+    map.flyTo({ center: [lng, lat], zoom: 17 });
+    goToMarker.togglePopup();
 }
 
 async function copyCoord() {
@@ -481,7 +501,7 @@ function togglePopover(popover, button) {
 
 function setSidebar(open) {
     $("workspace").classList.toggle("sidebar-closed", !open);
-    map?.invalidateSize();
+    map?.resize();
 }
 
 function setDrawer(open) {
@@ -489,7 +509,7 @@ function setDrawer(open) {
     $("drawerBody").hidden = !open;
     $("drawerToggle").setAttribute("aria-expanded", open);
     $("drawerArrow").className = `fa-solid ${open ? "fa-chevron-down" : "fa-chevron-up"}`;
-    map.invalidateSize();
+    map.resize();
 }
 
 function setDockTab(tab) {
@@ -506,8 +526,7 @@ function toggleFullscreen() {
 }
 
 function renderLayerOptions() {
-    if (!map) return;
-    $("layerOptions").innerHTML = Object.entries(baseLayers).map(([name, base]) => `
+    $("layerOptions").innerHTML = Object.entries(BASE_MAPS).map(([name, base]) => `
         <button class="layer-opt ${name === currentBase ? "active" : ""}" data-layer="${name}">
             <i class="fa-solid ${base.icon}"></i> ${t(base.label)}
         </button>
@@ -680,7 +699,6 @@ function renderMaterials() {
 }
 
 function renderAll() {
-    if (!map) return;
     renderKpis();
     renderChips();
     renderProjects();
@@ -782,7 +800,7 @@ function projectFromFile(fileName, lines) {
         id, imported: true, status: "layihe", startDate: "", endDate: "",
         name: fileName.replace(/\.[^/.]+$/, ""),
         items: lines.map((line, index) => {
-            const km = pathLength(line.coords.map(c => L.latLng(c))) / 1000;
+            const km = tools.length(line.coords) / 1000;
             return {
                 id: `IMP-${String(index + 1).padStart(2, "0")}`,
                 name: line.name || `${t("importedLine")} ${index + 1}`,
@@ -842,6 +860,25 @@ function bindEvents() {
     $("notesBtn").addEventListener("click", () => $("notesModal").showModal());
     $("materialsBtn").addEventListener("click", () => $("materialsModal").showModal());
     $("printBtn").addEventListener("click", () => window.print());
+    $("toolDock").addEventListener("click", async e => {
+        if (!e.target.closest("#shareBtn")) return;
+        $("shareModal").showModal();
+        try {
+            await renderShares();
+        } catch {
+            toast(t("loadError"), true);
+        }
+    });
+    $("shareForm").addEventListener("submit", createShare);
+    $("shareList").addEventListener("click", async e => {
+        const copy = e.target.closest("[data-copy]");
+        const revoke = e.target.closest("[data-revoke]");
+        if (copy) await copyShare(copy.dataset.copy);
+        if (revoke) {
+            await api.revokeShare(revoke.dataset.revoke);
+            await renderShares();
+        }
+    });
     $("importBtn").addEventListener("click", () => $("importFile").click());
     $("importFile").addEventListener("change", handleImport);
     $("noteForm").addEventListener("submit", addNote);
@@ -926,16 +963,15 @@ function bindEvents() {
 
     $("zoomInBtn").addEventListener("click", () => map.zoomIn());
     $("zoomOutBtn").addEventListener("click", () => map.zoomOut());
-    $("homeBtn").addEventListener("click", () => {
-        map.setBearing(0);
-        fitHome();
+    $("homeBtn").addEventListener("click", () => fitHome());
+    $("northBtn").addEventListener("click", () => map.easeTo({ bearing: 0, pitch: 0 }));
+    $("namesBtn").addEventListener("click", () => {
+        namesOn = !namesOn;
+        applyNames();
     });
-    $("northBtn").addEventListener("click", () => map.setBearing(0));
     $("fullscreenBtn").addEventListener("click", toggleFullscreen);
     $("layersBtn").addEventListener("click", () => togglePopover("layersPopover", "layersBtn"));
     $("coordBtn").addEventListener("click", () => togglePopover("coordPopover", "coordBtn"));
-    $("rulerBtn").addEventListener("click", () => setMeasuring(!measure.active));
-    $("clearRulerBtn").addEventListener("click", clearMeasurements);
     $("coordCopy").addEventListener("click", copyCoord);
     $("coordForm").addEventListener("submit", goToCoords);
 
@@ -944,10 +980,6 @@ function bindEvents() {
         if (!option) return;
         switchBaseLayer(option.dataset.layer);
         closePopovers();
-    });
-
-    document.addEventListener("keydown", e => {
-        if (e.key === "Escape" && measure.active) setMeasuring(false);
     });
 }
 
@@ -964,6 +996,12 @@ async function init() {
     bindEvents();
     initMap();
     applyLanguage(language);
+
+    const shareToken = new URLSearchParams(location.search).get("share");
+    if (shareToken) {
+        await enterSharedView(shareToken);
+        return;
+    }
 
     const user = api.configured ? await api.getUser() : null;
     if (user) await enterApp(user);
