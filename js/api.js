@@ -77,6 +77,44 @@ const api = (() => {
             unwrap(await client.from("projects").delete().eq("id", id));
         },
 
+        async saveProjectRow(id, row) {
+            const query = id ? client.from("projects").update(row).eq("id", id) : client.from("projects").insert({ ...row, id: `proj_${Date.now()}` });
+            unwrap(await query);
+        },
+
+        async saveSegment(projectId, code, row) {
+            const query = code
+                ? client.from("segments").update(row).eq("project_id", projectId).eq("code", code)
+                : client.from("segments").insert({ ...row, project_id: projectId });
+            unwrap(await query);
+        },
+
+        async deleteSegment(projectId, code) {
+            unwrap(await client.from("segments").delete().eq("project_id", projectId).eq("code", code));
+        },
+
+        async saveContractor(name, row) {
+            if (!name) {
+                unwrap(await client.from("contractors").insert(row));
+                return;
+            }
+            unwrap(await client.from("contractors").update(row).eq("name", name));
+            if (row.name !== name) unwrap(await client.from("segments").update({ contractor: row.name }).eq("contractor", name));
+        },
+
+        async deleteContractor(name) {
+            unwrap(await client.from("contractors").delete().eq("name", name));
+        },
+
+        async saveMaterial(id, row) {
+            const query = id ? client.from("materials").update(row).eq("id", id) : client.from("materials").insert(row);
+            unwrap(await query);
+        },
+
+        async deleteMaterial(id) {
+            unwrap(await client.from("materials").delete().eq("id", id));
+        },
+
         async loadShared(token) {
             return unwrap(await client.rpc("get_shared_view", { link: token })).map(toProject);
         },

@@ -151,6 +151,7 @@ function renderRole() {
     $("userEmail").textContent = email;
     $("userAvatar").textContent = email.charAt(0);
     $("importBtn").hidden = !isAdmin();
+    $("addProjectBtn").hidden = !isAdmin();
     tools.refresh();
 }
 
@@ -203,6 +204,185 @@ async function enterApp(user) {
     renderNotes();
     renderMaterials();
     renderAll();
+}
+
+/* REDAKTƏ (admin) */
+const statusOptions = () => STATUSES.map(id => [id, t(`status${id}`)]);
+
+async function reloadData() {
+    const known = new Set(state.projects.map(p => p.id));
+    Object.assign(state, await api.loadAll(state.user.id));
+    state.projects.forEach(p => { if (!known.has(p.id)) state.visibleIds.add(p.id); });
+    renderMaterials();
+    renderAll();
+}
+
+let editor = null;
+
+function fieldHtml(field, value) {
+    const attrs = `name="${field.key}" class="input"`;
+    let control;
+    if (field.type === "select") {
+        const options = field.options.map(([id, label]) => `<option value="${esc(id)}" ${String(value) === id ? "selected" : ""}>${esc(label)}</option>`).join("");
+        control = `<select ${attrs}>${options}</select>`;
+    } else if (field.type === "textarea") {
+        control = `<textarea ${attrs} rows="5" placeholder="${field.placeholder || ""}">${esc(value)}</textarea>`;
+    } else {
+        const step = field.type === "number" ? 'step="any" min="0"' : "";
+        control = `<input ${attrs} type="${field.type || "text"}" ${step} value="${esc(value)}">`;
+    }
+    const after = field.action ? `<button class="link" type="button" data-field-action="${field.key}">${field.action.label}</button>` : "";
+    return `<label class="${field.wide ? "wide" : ""}"><span>${field.label}${field.required ? " *" : ""}</span>${control}${after}</label>`;
+}
+
+function openEditor(config) {
+    editor = config;
+    $("editTitle").textContent = config.title;
+    $("editError").textContent = "";
+    $("editFields").innerHTML = config.fields.map(f => fieldHtml(f, config.values[f.key] ?? "")).join("");
+    $("editDelete").hidden = !config.onDelete;
+    $("editModal").showModal();
+}
+
+async function submitEditor(event) {
+    event.preventDefault();
+    const data = new FormData($("editForm"));
+    const values = {};
+    for (const field of editor.fields) {
+        const raw = String(data.get(field.key) ?? "").trim();
+        if (field.required && !raw) {
+            $("editError").textContent = `${field.label}: ${t("required")}`;
+            return;
+        }
+        if (field.type === "number") values[field.key] = Number(raw) || 0;
+        else if (field.type === "date") values[field.key] = raw || null;
+        else values[field.key] = raw;
+    }
+    try {
+        await editor.onSave(values);
+        await reloadData();
+    } catch (error) {
+        $("editError").textContent = error.message === "coords" ? t("coordsInvalid") : t("saveError");
+        return;
+    }
+    $("editModal").close();
+    toast(t("saved"));
+}
+
+async function deleteFromEditor() {
+    if (!confirm(t("confirmRemove"))) return;
+    try {
+        await editor.onDelete();
+        await reloadData();
+    } catch {
+        $("editError").textContent = t("saveError");
+        return;
+    }
+    $("editModal").close();
+    toast(t("removed"));
+}
+
+function editProject(project) {
+    openEditor({
+        title: t(project ? "editProject" : "addProject"),
+        values: project ? { name: project.name, status: project.status, start_date: project.startDate, end_date: project.endDate } : { status: "layihe" },
+        fields: [
+            { key: "name", label: t("fieldName"), required: true, wide: true },
+            { key: "status", label: t("thStatus"), type: "select", options: statusOptions(), wide: true },
+            { key: "start_date", label: t("fieldStart"), type: "date" },
+            { key: "end_date", label: t("fieldEnd"), type: "date" }
+        ],
+        onSave: row => api.saveProjectRow(project?.id, row),
+        onDelete: project && (async () => {
+            await api.deleteProject(project.id);
+            state.visibleIds.delete(project.id);
+            if (state.selected?.projectId === project.id) state.selected = null;
+        })
+    });
+}
+
+const coordsToText = coords => (coords || []).map(c => c.join(", ")).join("\n");
+
+function textToCoords(text) {
+    const coords = text.split(/\n+/).map(line => line.split(",").map(Number));
+    const valid = coords.length >= 2 && coords.every(c => c.length === 2 && Math.abs(c[0]) <= 90 && Math.abs(c[1]) <= 180 && !c.some(isNaN));
+    if (!valid) throw new Error("coords");
+    return coords;
+}
+
+function useLastDrawing() {
+    const shape = [...tools.shapes()].reverse().find(s => s.coords.length > 1);
+    if (!shape) {
+        $("editError").textContent = t("noDrawing");
+        return;
+    }
+    $("editForm").elements.coords.value = shape.coords.map(([lng, lat]) => `${lat}, ${lng}`).join("\n");
+}
+
+function editSegment(project, item) {
+    const contractorNames = Object.keys(state.contractors);
+    openEditor({
+        title: t(item ? "editSegment" : "addSegment"),
+        values: item ? {
+            code: item.id, name: item.name, point_a: item.pointA, point_b: item.pointB, start_date: item.startDate, end_date: item.endDate,
+            contractor: item.contractor, total_km: item.totalKm, done_km: item.doneKm, status: item.status,
+            closures: item.closures, manholes: item.manholes, coords: coordsToText(item.coords)
+        } : { status: "layihe", total_km: 0, done_km: 0, closures: 0, manholes: 0 },
+        fields: [
+            { key: "code", label: t("fieldCode"), required: true },
+            { key: "status", label: t("thStatus"), type: "select", options: statusOptions() },
+            { key: "name", label: t("fieldName"), required: true, wide: true },
+            { key: "point_a", label: t("pointA"), required: true },
+            { key: "point_b", label: t("pointB"), required: true },
+            { key: "start_date", label: t("fieldStart"), type: "date" },
+            { key: "end_date", label: t("fieldEnd"), type: "date" },
+            { key: "total_km", label: `${t("thTotal")} (km)`, type: "number" },
+            { key: "done_km", label: `${t("thDone")} (km)`, type: "number" },
+            { key: "closures", label: t("closures"), type: "number" },
+            { key: "manholes", label: t("manholes"), type: "number" },
+            { key: "contractor", label: t("thContractor"), type: "select", wide: true, options: [["", t("notAssigned")], ...contractorNames.map(n => [n, n])] },
+            { key: "coords", label: t("coordsField"), type: "textarea", wide: true, required: true, placeholder: "40.4093, 49.8671", action: { label: t("useLastDrawing"), run: useLastDrawing } }
+        ],
+        onSave: async row => {
+            await api.saveSegment(project.id, item?.id, { ...row, contractor: row.contractor || null, coords: textToCoords(row.coords) });
+            if (item) state.selected = { projectId: project.id, itemId: row.code };
+        },
+        onDelete: item && (async () => {
+            await api.deleteSegment(project.id, item.id);
+            state.selected = null;
+        })
+    });
+}
+
+function editContractor(name) {
+    const info = name ? state.contractors[name] : { workers: 0, machinery: 0 };
+    openEditor({
+        title: t(name ? "editContractor" : "addContractor"),
+        values: { ...info, name: name || "" },
+        fields: [
+            { key: "name", label: t("fieldName"), required: true, wide: true },
+            { key: "workers", label: t("workers"), type: "number" },
+            { key: "machinery", label: t("machinery"), type: "number" },
+            { key: "engineer", label: t("engineer"), wide: true }
+        ],
+        onSave: row => api.saveContractor(name, row),
+        onDelete: name && (() => api.deleteContractor(name))
+    });
+}
+
+function editMaterial(material) {
+    openEditor({
+        title: t(material ? "editMaterial" : "addMaterial"),
+        values: material || { state: "issued" },
+        fields: [
+            { key: "project", label: t("thProject"), required: true, wide: true },
+            { key: "material", label: t("thMaterial"), required: true, wide: true },
+            { key: "quantity", label: t("thQuantity"), required: true },
+            { key: "state", label: t("thState"), required: true }
+        ],
+        onSave: row => api.saveMaterial(material?.id, row),
+        onDelete: material && (() => api.deleteMaterial(material.id))
+    });
 }
 
 /* LİNKLƏ PAYLAŞMA */
@@ -631,7 +811,7 @@ function renderProjects() {
                         <small>${formatKm(sum.done)} / ${formatKm(sum.plan)} km · ${p.items.length} ${t("segmentsUnit")}</small>
                     </button>
                     <span class="project-pct">${pct}%</span>
-                    ${p.imported && isAdmin() ? `<button class="icon-btn" data-action="delete" title="${t("delete")}"><i class="fa-regular fa-trash-can"></i></button>` : ""}
+                    ${isAdmin() ? `<button class="icon-btn" data-action="edit" title="${t("editProject")}"><i class="fa-solid fa-pen"></i></button>` : ""}
                     <button class="icon-btn" data-action="expand" aria-label="${esc(p.name)}"><i class="fa-solid fa-chevron-right chevron ${expanded ? "open" : ""}"></i></button>
                 </div>
                 ${expanded ? `<div class="segments">${filteredItems(p).map(r => `
@@ -639,7 +819,7 @@ function renderProjects() {
                         <span class="dot" style="background:${statusTone(r.status)}"></span>
                         <span class="segment-name" title="${esc(r.name)}">${esc(r.name)}</span>
                         <span>${percent(r.doneKm, r.totalKm)}%</span>
-                    </button>`).join("")}</div>` : ""}
+                    </button>`).join("")}${isAdmin() ? `<button class="link add-seg" data-action="addSegment">+ ${t("addSegment")}</button>` : ""}</div>` : ""}
             </div>`;
     }).join("");
 }
@@ -687,6 +867,7 @@ function renderDetail() {
                 ${info ? row(t("workers"), info.workers) + row(t("machinery"), info.machinery) + row(t("engineer"), esc(info.engineer)) : ""}
             </dl>
             <button class="btn btn-outline" data-action="zoom"><i class="fa-solid fa-crosshairs"></i> ${t("zoomTo")}</button>
+            ${isAdmin() ? `<button class="btn btn-primary" data-action="edit"><i class="fa-solid fa-pen"></i> ${t("editSegment")}</button>` : ""}
         </div>
     `;
 }
@@ -727,7 +908,8 @@ function renderTable() {
 function renderContractors() {
     const names = [...new Set(visibleEntries().map(e => e.item.contractor).filter(Boolean))];
     $("contractorCount").textContent = names.length;
-    $("contractorHead").innerHTML = `<tr><th>${t("thContractor")}</th><th class="num">${t("workers")}</th><th class="num">${t("machinery")}</th><th>${t("engineer")}</th></tr>`;
+    $("contractorHead").innerHTML = `<tr><th>${t("thContractor")}</th><th class="num">${t("workers")}</th><th class="num">${t("machinery")}</th><th>${t("engineer")}</th>${isAdmin() ? "<th></th>" : ""}</tr>`;
+    if (isAdmin()) names.push(...Object.keys(state.contractors).filter(n => !names.includes(n)));
     $("contractorList").innerHTML = names.map(name => {
         const info = state.contractors[name];
         return `<tr>
@@ -735,15 +917,17 @@ function renderContractors() {
             <td class="num">${info ? info.workers : "—"}</td>
             <td class="num">${info ? info.machinery : "—"}</td>
             <td>${info ? esc(info.engineer) : t("notAssigned")}</td>
+            ${isAdmin() ? `<td class="num"><button class="icon-btn" data-edit-contractor="${esc(name)}" title="${t("editContractor")}"><i class="fa-solid fa-pen"></i></button></td>` : ""}
         </tr>`;
-    }).join("");
+    }).join("") + (isAdmin() ? `<tr class="row-add"><td colspan="5"><button class="link" data-edit-contractor="">+ ${t("addContractor")}</button></td></tr>` : "");
 }
 
 function renderMaterials() {
-    $("materialsHead").innerHTML = `<tr><th>${t("thProject")}</th><th>${t("thMaterial")}</th><th>${t("thQuantity")}</th><th>${t("thState")}</th></tr>`;
+    $("materialsHead").innerHTML = `<tr><th>${t("thProject")}</th><th>${t("thMaterial")}</th><th>${t("thQuantity")}</th><th>${t("thState")}</th>${isAdmin() ? "<th></th>" : ""}</tr>`;
     $("materialsBody").innerHTML = state.materials.map(m => `
-        <tr><td>${esc(m.project)}</td><td>${esc(m.material)}</td><td>${esc(m.quantity)}</td><td class="c-done">${t(`state${m.state}`)}</td></tr>
-    `).join("");
+        <tr><td>${esc(m.project)}</td><td>${esc(m.material)}</td><td>${esc(m.quantity)}</td><td>${esc(I18N[state.lang][`state${m.state}`] || m.state)}</td>
+            ${isAdmin() ? `<td class="num"><button class="icon-btn" data-edit-material="${m.id}" title="${t("editMaterial")}"><i class="fa-solid fa-pen"></i></button></td>` : ""}</tr>
+    `).join("") + (isAdmin() ? `<tr class="row-add"><td colspan="5"><button class="link" data-edit-material="">+ ${t("addMaterial")}</button></td></tr>` : "");
 }
 
 function renderAll() {
@@ -927,6 +1111,23 @@ function bindEvents() {
         }
     });
     $("shareForm").addEventListener("submit", createShare);
+    $("addProjectBtn").addEventListener("click", () => editProject(null));
+    $("editForm").addEventListener("submit", submitEditor);
+    $("editDelete").addEventListener("click", deleteFromEditor);
+    $("editFields").addEventListener("click", e => {
+        const key = e.target.closest("[data-field-action]")?.dataset.fieldAction;
+        if (key) editor.fields.find(f => f.key === key).action.run();
+    });
+    $("contractorList").addEventListener("click", e => {
+        const button = e.target.closest("[data-edit-contractor]");
+        if (button) editContractor(button.dataset.editContractor);
+    });
+    $("materialsBody").addEventListener("click", e => {
+        const button = e.target.closest("[data-edit-material]");
+        if (!button) return;
+        const id = Number(button.dataset.editMaterial);
+        editMaterial(state.materials.find(m => m.id === id));
+    });
     $("shareList").addEventListener("click", async e => {
         const copy = e.target.closest("[data-copy]");
         const revoke = e.target.closest("[data-revoke]");
@@ -960,6 +1161,7 @@ function bindEvents() {
         const action = e.target.closest("[data-action]")?.dataset.action;
         if (action === "back") clearSelection();
         if (action === "zoom") flyToCoords(selectedEntry().item.coords);
+        if (action === "edit") editSegment(selectedEntry().project, selectedEntry().item);
     });
     $("loginLang").addEventListener("change", e => {
         $("langSelect").value = e.target.value;
@@ -1000,16 +1202,12 @@ function bindEvents() {
         } else if (action === "focus") {
             selectSegment(project, project.items.find(r => r.id === button.dataset.item));
             return;
-        } else if (action === "delete") {
-            if (!confirm(t("confirmDelete"))) return;
-            try {
-                await api.deleteProject(project.id);
-            } catch {
-                toast(t("saveError"), true);
-                return;
-            }
-            state.projects = state.projects.filter(p => p !== project);
-            state.visibleIds.delete(project.id);
+        } else if (action === "edit") {
+            editProject(project);
+            return;
+        } else if (action === "addSegment") {
+            editSegment(project, null);
+            return;
         }
         renderAll();
     });
