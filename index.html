@@ -14,7 +14,7 @@
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap">
     <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="css/styles.css?v=20261101h">
+    <link rel="stylesheet" href="css/styles.css?v=20261101i">
 </head>
 <body>
 
@@ -123,6 +123,7 @@
                 <div class="list-head">
                     <h2><span data-i18n="projects"></span> <span class="muted" id="projectCount"></span></h2>
                     <span>
+                        <button class="link" id="addProjectBtn" data-i18n="addProject" hidden></button>
                         <button class="link" id="showAllBtn" data-i18n="showAll"></button>
                         <button class="link" id="hideAllBtn" data-i18n="hideAll"></button>
                     </span>
@@ -259,6 +260,24 @@
         <div class="notes" id="notesList"></div>
     </dialog>
 
+    <!-- REDAKTƏ -->
+    <dialog class="modal modal-sm" id="editModal">
+        <div class="modal-head">
+            <h2 id="editTitle"></h2>
+            <button class="icon-btn" data-close data-i18n-title="close"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        <form class="edit-form" id="editForm" novalidate>
+            <div class="edit-fields" id="editFields"></div>
+            <p class="login-error" id="editError" role="alert"></p>
+            <div class="edit-actions">
+                <button class="btn btn-danger" type="button" id="editDelete" data-i18n="delete"></button>
+                <span></span>
+                <button class="btn btn-outline" type="button" data-close data-i18n="cancel"></button>
+                <button class="btn btn-primary" type="submit" data-i18n="save"></button>
+            </div>
+        </form>
+    </dialog>
+
     <!-- PAYLAŞMA -->
     <dialog class="modal modal-sm" id="shareModal">
         <div class="modal-head">
@@ -293,10 +312,10 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-    <script src="js/config.js?v=20261101h"></script>
-    <script src="js/api.js?v=20261101h"></script>
-    <script src="js/i18n.js?v=20261101h"></script>
-    <script src="js/app.js?v=20261101h"></script>
-    <script src="js/tools.js?v=20261101h"></script>
+    <script src="js/config.js?v=20261101i"></script>
+    <script src="js/api.js?v=20261101i"></script>
+    <script src="js/i18n.js?v=20261101i"></script>
+    <script src="js/app.js?v=20261101i"></script>
+    <script src="js/tools.js?v=20261101i"></script>
 </body>
 </html>
