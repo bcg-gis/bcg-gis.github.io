@@ -122,7 +122,7 @@ function applyLanguage(lang) {
 }
 
 function applyTheme(theme) {
-    document.documentElement.dataset.theme = THEMES[theme] ? theme : "light";
+    document.documentElement.dataset.theme = THEMES[theme] ? theme : "dark";
     renderThemeMenu();
 }
 
@@ -1024,7 +1024,7 @@ async function init() {
     $("langSelect").value = language;
     $("loginLang").value = language;
     state.lang = language;
-    applyTheme(readStore(STORAGE.theme, "light"));
+    applyTheme(readStore(STORAGE.theme, "dark"));
 
     if (window.innerWidth <= 860) setSidebar(false);
 
