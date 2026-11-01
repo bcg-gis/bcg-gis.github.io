@@ -470,7 +470,10 @@ function clearSelection() {
 function onMapClick(e) {
     $("coordClicked").value = `${e.lngLat.lat.toFixed(6)}, ${e.lngLat.lng.toFixed(6)}`;
     if (tools.handleClick(e)) return;
-    if (window.innerWidth <= 860) setSidebar(false);
+    if (isPhone()) {
+        setSidebar(false);
+        setDrawer(false);
+    }
     const box = [[e.point.x - 3, e.point.y - 3], [e.point.x + 3, e.point.y + 3]];
     const hit = map.queryRenderedFeatures(box, { layers: ["routes-hit"] })[0];
     if (!hit) return;
@@ -526,20 +529,38 @@ function togglePopover(popover, button) {
     $(button).classList.toggle("active", opening);
 }
 
+const isPhone = () => window.innerWidth <= 860;
+
+/* Telefonda sol panel və cədvəl aşağıda eyni yeri tutur: eyni anda biri açıqdır */
 function setSidebar(open) {
     $("workspace").classList.toggle("sidebar-closed", !open);
+    if (isPhone()) {
+        $("drawer").classList.toggle("sheet", open);
+        if (open && $("drawer").classList.contains("open")) setDrawer(false);
+        updateDockArrow();
+    }
     map?.resize();
+}
+
+function updateDockArrow() {
+    const open = $("drawer").classList.contains("open") || $("drawer").classList.contains("sheet");
+    $("drawerArrow").className = `fa-solid ${open ? "fa-chevron-down" : "fa-chevron-up"}`;
 }
 
 function setDrawer(open) {
     $("drawer").classList.toggle("open", open);
     $("drawerBody").hidden = !open;
     $("drawerToggle").setAttribute("aria-expanded", open);
-    $("drawerArrow").className = `fa-solid ${open ? "fa-chevron-down" : "fa-chevron-up"}`;
+    if (open && isPhone()) setSidebar(false);
+    updateDockArrow();
     map.resize();
 }
 
 function setDockTab(tab) {
+    if (tab === "projects") {
+        setSidebar(true);
+        return;
+    }
     state.dockTab = tab;
     document.querySelectorAll(".tab").forEach(el => el.classList.toggle("active", el.dataset.tab === tab));
     $("segmentsPane").hidden = tab !== "segments";
@@ -930,7 +951,10 @@ function bindEvents() {
     });
 
     $("sidebarToggle").addEventListener("click", () => setSidebar($("workspace").classList.contains("sidebar-closed")));
-    $("drawerToggle").addEventListener("click", () => setDrawer(!$("drawer").classList.contains("open")));
+    $("drawerToggle").addEventListener("click", () => {
+        if ($("drawer").classList.contains("sheet")) setSidebar(false);
+        else setDrawer(!$("drawer").classList.contains("open"));
+    });
     document.querySelectorAll(".tab").forEach(tab => tab.addEventListener("click", () => setDockTab(tab.dataset.tab)));
     $("detailView").addEventListener("click", e => {
         const action = e.target.closest("[data-action]")?.dataset.action;
@@ -1027,7 +1051,7 @@ async function init() {
     state.lang = language;
     applyTheme(readStore(STORAGE.theme, "dark"));
 
-    if (window.innerWidth <= 860) setSidebar(false);
+    if (isPhone()) setSidebar(false);
 
     bindEvents();
     initMap();
