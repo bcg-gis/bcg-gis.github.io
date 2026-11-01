@@ -224,25 +224,57 @@ textarea.input { height: auto; padding: 8px 10px; resize: vertical; }
 .map-column { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .map-stage { position: relative; flex: 1; min-height: 0; }
 #map { position: absolute; inset: 0; background: #0a1220; }
-#map.blank-base { background: #fff; }
-.leaflet-container { font: inherit; }
-.leaflet-control-attribution { background: rgba(255, 255, 255, .8) !important; color: #334155 !important; font-size: 10px; padding: 0 6px !important; }
-.leaflet-control-attribution a { color: #0f172a !important; }
-.leaflet-control-scale { margin: 0 8px 26px 0 !important; }
-.leaflet-control-scale-line { background: rgba(255, 255, 255, .85); border-color: #334155; color: #17212f; font-size: 10px; }
-.leaflet-grab { cursor: grab; }
-.leaflet-dragging .leaflet-grab { cursor: grabbing; }
-#map.measuring, #map.measuring .leaflet-grab, #map.measuring .leaflet-interactive { cursor: crosshair; }
-#map.far .route-end { display: none; }
-
-.map-tip.leaflet-tooltip { background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 6px 9px; font-size: 12px; }
-.map-tip.leaflet-tooltip::before { display: none; }
-.map-tip b { font-weight: 600; }
+.maplibregl-map { font: inherit; }
+.maplibregl-ctrl-attrib { font-size: 10px; }
+.maplibregl-ctrl-scale { margin: 0 8px 26px 0 !important; background: rgba(255, 255, 255, .85); border-color: #334155; color: #17212f; font-size: 10px; }
+.map-tip .maplibregl-popup-content { padding: 6px 9px; background: var(--panel); color: var(--ink); border-radius: var(--radius); box-shadow: var(--shadow); font-size: 12px; pointer-events: none; }
+.map-tip .maplibregl-popup-tip { display: none; }
+.map-tip b { display: block; font-weight: 600; }
 .map-tip small { display: block; color: var(--ink-3); font-size: 11px; }
-.leaflet-popup-content-wrapper, .leaflet-popup-tip { background: var(--panel); color: var(--ink); border-radius: var(--radius); }
-.leaflet-popup-content { font-size: 12px; margin: 10px 14px; }
+.maplibregl-popup-content { background: var(--panel); color: var(--ink); border-radius: var(--radius); font-size: 12px; }
 .pin { width: 16px; height: 16px; border-radius: 50%; background: var(--orange); border: 3px solid #fff; box-shadow: 0 2px 8px rgba(0, 0, 0, .55); }
-.measure-label { display: inline-block; transform: translate(-50%, -50%); padding: 1px 7px; border-radius: 4px; background: var(--orange); color: #fff; font-size: 11px; font-weight: 600; white-space: nowrap; }
+
+/* Çizgi yazıları */
+.measure-label { padding: 1px 7px; border-radius: 4px; background: rgba(14, 26, 43, .86); color: #fff; font-size: 11px; font-weight: 600; white-space: nowrap; pointer-events: none; }
+.measure-label.side { background: rgba(255, 255, 255, .9); color: #17212f; font-weight: 500; }
+.pin-label { transform: translateY(-20px); padding: 1px 7px; border-radius: 4px; background: #fff; color: #17212f; font-size: 11px; font-weight: 500; white-space: nowrap; box-shadow: 0 1px 4px rgba(0, 0, 0, .35); pointer-events: none; }
+.sticky, .map-text { position: relative; cursor: move; }
+.sticky { width: 170px; padding: 8px; background: #ffe680; border-radius: 3px; box-shadow: 0 3px 10px rgba(0, 0, 0, .4); }
+.sticky textarea, .map-text textarea { display: block; width: 100%; border: 0; outline: none; resize: none; background: none; font: inherit; }
+.sticky textarea { color: #3a3000; font-size: 12px; }
+.map-text { width: 200px; }
+.map-text textarea { color: #fff; font-size: 15px; font-weight: 600; text-shadow: 0 0 3px #000, 0 1px 4px #000; }
+.map-text textarea::placeholder { color: rgba(255, 255, 255, .8); }
+.sticky button, .map-text button { position: absolute; top: -8px; right: -8px; width: 20px; height: 20px; display: none; place-items: center; border-radius: 50%; background: var(--bar); color: #fff; font-size: 10px; }
+.sticky:hover button, .map-text:hover button { display: grid; }
+
+/* Alət paneli */
+.tool-area { position: absolute; z-index: 505; left: 50%; bottom: 30px; transform: translateX(-50%); max-width: calc(100% - 24px); display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.tool-dock, .tool-hint, .draw-panel, .save-menu { display: flex; align-items: center; background: var(--panel); border-radius: var(--radius); box-shadow: var(--shadow); max-width: 100%; }
+.tool-dock { gap: 2px; padding: 4px; overflow-x: auto; }
+.dock-btn { flex: none; width: 34px; height: 34px; display: grid; place-items: center; border-radius: 5px; color: var(--ink-2); font-size: 14px; }
+.dock-btn:hover:not(:disabled) { background: var(--hover); color: var(--ink); }
+.dock-btn.on { background: var(--brand); color: var(--brand-ink); }
+.dock-btn:disabled { opacity: .35; cursor: default; }
+.dock-sep { flex: none; width: 1px; height: 20px; margin: 0 4px; background: var(--line); }
+.tool-hint { gap: 8px; padding: 4px 4px 4px 12px; font-size: 12px; color: var(--ink-2); }
+.tool-hint .btn { height: 28px; padding: 0 10px; }
+.save-menu { gap: 4px; padding: 4px; }
+.save-menu .btn { height: 30px; }
+.draw-panel { gap: 3px; padding: 4px 6px; flex-wrap: wrap; justify-content: center; }
+.swatch { width: 20px; height: 20px; border-radius: 50%; border: 2px solid var(--panel); box-shadow: 0 0 0 1px var(--line-strong); }
+.swatch.on { box-shadow: 0 0 0 2px var(--brand); }
+.panel-btn { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 5px; color: var(--ink-2); font-size: 12px; }
+.panel-btn:hover { background: var(--hover); }
+.panel-btn.on { background: var(--brand-soft); color: var(--brand); }
+.panel-btn.ortho { font-size: 10px; font-weight: 600; }
+.panel-btn .empty { opacity: .25; }
+.line-sample { display: block; width: 16px; border-radius: 2px; background: currentColor; }
+.dash-sample { display: block; width: 18px; border-top: 2px solid currentColor; }
+.dash-sample.dash { border-top-style: dashed; }
+.dash-sample.dot { border-top-style: dotted; }
+.panel-name { width: 140px; height: 28px; margin-left: 4px; padding: 0 8px; border: 1px solid var(--line-strong); border-radius: 5px; background: var(--panel); color: var(--ink); font-size: 12px; outline: none; }
+.panel-name:focus { border-color: var(--brand); }
 
 .toolbar { position: absolute; z-index: 500; top: 12px; right: 12px; display: flex; flex-direction: column; gap: 8px; }
 .tool-group { display: flex; flex-direction: column; overflow: hidden; background: var(--panel); border-radius: var(--radius); box-shadow: var(--shadow); }
@@ -268,7 +300,6 @@ textarea.input { height: auto; padding: 8px 10px; resize: vertical; }
 .legend-line { width: 16px; height: 3px; border-radius: 2px; }
 
 .cursor-coords { position: absolute; z-index: 500; right: 8px; bottom: 58px; padding: 2px 7px; border-radius: 4px; background: rgba(14, 26, 43, .75); color: #e6ecf4; }
-.measure-hint { position: absolute; z-index: 500; top: 12px; left: 50%; transform: translateX(-50%); padding: 7px 12px; background: var(--bar); color: var(--bar-ink); border-radius: var(--radius); box-shadow: var(--shadow); font-size: 12px; white-space: nowrap; }
 .measure-tip { position: fixed; z-index: 1200; pointer-events: none; transform: translate(14px, 14px); padding: 2px 8px; border-radius: 4px; background: var(--orange); color: #fff; font-size: 11px; font-weight: 600; white-space: nowrap; }
 
 /* Aşağı panel */
@@ -309,6 +340,20 @@ tfoot td { position: sticky; bottom: 0; background: var(--canvas); font-weight: 
 .note p { flex: 1; min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .note small { display: block; margin-top: 2px; color: var(--ink-3); font-size: 11px; }
 
+.share-form { display: flex; align-items: flex-end; gap: 8px; }
+.share-form label { flex: 1; display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--ink-2); }
+.share-form .input { color: var(--ink); }
+.share-url { display: block; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Linklə baxış: yalnız oxumaq */
+body.shared #notesBtn, body.shared #materialsBtn, body.shared #importBtn, body.shared #shareBtn,
+body.shared .user, body.shared #logoutBtn, body.shared .bar-sep, body.shared .tab[data-tab="contractors"] { display: none; }
+
+.link-error { position: fixed; inset: 0; z-index: 3100; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 24px; background: var(--panel); text-align: center; }
+.link-error img { width: 40px; height: 40px; margin-bottom: 8px; }
+.link-error h1 { font-size: 20px; }
+.link-error p { color: var(--ink-2); }
+
 .toasts { position: fixed; z-index: 3500; left: 50%; bottom: 24px; transform: translateX(-50%); display: flex; flex-direction: column; gap: 6px; align-items: center; pointer-events: none; }
 .toast { padding: 9px 14px; border-radius: var(--radius); background: var(--bar); color: var(--bar-ink); box-shadow: var(--shadow); font-weight: 500; }
 .toast.error { background: #b42318; color: #fff; }
@@ -336,18 +381,17 @@ tfoot td { position: sticky; bottom: 0; background: var(--canvas); font-weight: 
     .workspace, .workspace.sidebar-closed { grid-template-columns: minmax(0, 1fr); position: relative; }
     .sidebar { position: absolute; z-index: 700; top: 0; bottom: 0; left: 0; width: var(--sidebar-w); box-shadow: var(--shadow); }
     .workspace.sidebar-closed .sidebar { display: none; }
-    .legend, .cursor-coords, .leaflet-control-scale { display: none; }
+    .legend, .cursor-coords, .maplibregl-ctrl-scale { display: none; }
+    .tool-area { left: 8px; right: 8px; transform: none; max-width: none; }
     .dock.open { height: 46dvh; }
     .dock-summary { display: none; }
     .tabs { flex: 1; }
-    .measure-hint { width: calc(100% - 80px); left: 12px; transform: none; white-space: normal; }
-    .leaflet-control-attribution { max-width: 70vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 }
 
 /* Çap */
 @media print {
     html, body { display: block; height: auto; overflow: visible; background: #fff; color: #000; }
-    .appbar, .sidebar, .toolbar, .popover, .legend, .cursor-coords, .measure-hint, .measure-tip, .toasts, .login, .dock-head, #contractorsPane { display: none !important; }
+    .appbar, .sidebar, .toolbar, .popover, .legend, .cursor-coords, .tool-area, .measure-tip, .toasts, .login, .dock-head, #contractorsPane { display: none !important; }
     .workspace, .map-column { display: block; }
     .map-stage { height: 55vh; }
     .dock, .dock.open { height: auto; border: 0; }
