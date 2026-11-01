@@ -12,7 +12,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap">
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+    <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="css/styles.css">
 </head>
@@ -147,9 +147,8 @@
                     </div>
                     <div class="tool-group">
                         <button class="tool" id="layersBtn" data-i18n-title="layers"><i class="fa-solid fa-layer-group"></i></button>
-                        <button class="tool" id="rulerBtn" data-i18n-title="ruler"><i class="fa-solid fa-ruler"></i></button>
-                        <button class="tool" id="clearRulerBtn" data-i18n-title="clearRuler" hidden><i class="fa-solid fa-eraser"></i></button>
-                        <button class="tool" id="coordBtn" data-i18n-title="coords"><i class="fa-solid fa-location-crosshairs"></i></button>
+                        <button class="tool active" id="namesBtn" data-i18n-title="names"><i class="fa-solid fa-tag"></i></button>
+                        <button class="tool" id="coordBtn" data-i18n-title="coords"><i class="fa-solid fa-magnifying-glass-location"></i></button>
                     </div>
                 </nav>
 
@@ -178,7 +177,19 @@
                     </form>
                 </div>
 
-                <div class="measure-hint" id="measureHint" data-i18n="measureHint" hidden></div>
+                <div class="tool-area">
+                    <div class="draw-panel" id="drawPanel" hidden></div>
+                    <div class="tool-hint" id="toolHint" hidden>
+                        <span id="toolHintText"></span>
+                        <button class="btn btn-primary" id="toolFinish" data-i18n="finish" hidden></button>
+                        <button class="icon-btn" id="toolClose" data-i18n-title="close"><i class="fa-solid fa-xmark"></i></button>
+                    </div>
+                    <div class="save-menu" id="saveMenu" hidden>
+                        <button class="btn btn-outline" id="savePdf"><i class="fa-regular fa-file-pdf"></i> PDF</button>
+                        <button class="btn btn-outline" id="saveKmz"><i class="fa-solid fa-earth-europe"></i> KMZ</button>
+                    </div>
+                    <div class="tool-dock" id="toolDock"></div>
+                </div>
                 <section class="legend" id="legend" aria-label="Şərti işarələr"></section>
                 <div class="cursor-coords mono" id="cursorCoords">40.14300, 47.57700</div>
             </div>
@@ -244,15 +255,44 @@
         <div class="notes" id="notesList"></div>
     </dialog>
 
+    <!-- PAYLAŞMA -->
+    <dialog class="modal modal-sm" id="shareModal">
+        <div class="modal-head">
+            <div>
+                <h2 data-i18n="shareTitle"></h2>
+                <p class="muted" id="shareHint"></p>
+            </div>
+            <button class="icon-btn" data-close data-i18n-title="close"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        <form class="share-form" id="shareForm">
+            <label>
+                <span data-i18n="shareExpiry"></span>
+                <select class="input" id="shareDays">
+                    <option value="7" data-i18n="days7"></option>
+                    <option value="30" selected data-i18n="days30"></option>
+                    <option value="0" data-i18n="daysNever"></option>
+                </select>
+            </label>
+            <button class="btn btn-primary" type="submit" data-i18n="shareCreate"></button>
+        </form>
+        <div class="notes" id="shareList"></div>
+    </dialog>
+
+    <div class="link-error" id="linkError" hidden>
+        <img src="favicon.svg" alt="">
+        <h1 data-i18n="linkInvalid"></h1>
+        <p data-i18n="linkInvalidHint"></p>
+    </div>
+
     <div class="toasts" id="toasts" role="status" aria-live="polite"></div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/leaflet-rotate@0.2.8/dist/leaflet-rotate.js"></script>
+    <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
     <script src="js/config.js"></script>
     <script src="js/api.js"></script>
     <script src="js/i18n.js"></script>
     <script src="js/app.js"></script>
+    <script src="js/tools.js"></script>
 </body>
 </html>
