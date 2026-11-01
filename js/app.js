@@ -312,7 +312,7 @@ function initMap() {
         maxPitch: 80,
         // Sağ düymə yalnız yaxınlaşdırır, orta düymə fırladır və əyir
         dragRotate: false,
-        attributionControl: { compact: true },
+        attributionControl: false,
         preserveDrawingBuffer: true
     });
     map.addControl(new maplibregl.ScaleControl({ maxWidth: 110 }), "bottom-right");
