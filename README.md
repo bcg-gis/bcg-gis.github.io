@@ -85,4 +85,4 @@ Saytda bütün yollar nisbidir, ona görə kodda heç nə dəyişmək lazım dey
 
 ## Xəritə mənbələri
 
-Peyk görüntüsü və adlar Esri World Imagery, küçə xəritəsi OpenStreetMap, tünd xəritə CARTO xidmətlərindəndir. API açarı tələb olunmur. Mənbə qeydlərini (attribution) silməyin. Kommersiya və ya yüksək trafikli istifadədən əvvəl həmin xidmətlərin şərtlərini yoxlayın.
+Peyk görüntüsü və adlar Esri World Imagery, küçə xəritəsi OpenStreetMap, tünd xəritə CARTO xidmətlərindəndir. API açarı tələb olunmur. Mənbə qeydi xəritədən sahibin istəyi ilə götürülüb; bu xidmətlərin şərtləri isə onu tələb edir. Kommersiya və ya yüksək trafikli istifadədən əvvəl həmin xidmətlərin şərtlərini yoxlayın.
