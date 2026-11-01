@@ -90,7 +90,7 @@
                 <option value="en">EN</option>
                 <option value="ru">RU</option>
             </select>
-            <button class="bar-btn" id="themeBtn" data-i18n-title="theme"><i class="fa-solid fa-moon"></i></button>
+            <button class="bar-btn" id="themeBtn" data-i18n-title="theme" aria-haspopup="true" aria-expanded="false"><i class="fa-solid fa-palette"></i></button>
             <span class="bar-sep"></span>
             <div class="user">
                 <span class="avatar" id="userAvatar"></span>
@@ -101,6 +101,7 @@
             </div>
             <button class="bar-btn" id="logoutBtn" data-i18n-title="logout"><i class="fa-solid fa-arrow-right-from-bracket"></i></button>
         </div>
+        <div class="theme-menu" id="themeMenu" hidden></div>
     </header>
 
     <div class="workspace" id="workspace">
