@@ -415,12 +415,15 @@ body.shared .user, body.shared #logoutBtn, body.shared .bar-sep, body.shared .ta
     .sidebar { position: absolute; z-index: 700; top: 0; bottom: 0; left: 0; width: var(--sidebar-w); box-shadow: var(--shadow); }
     .workspace.sidebar-closed .sidebar { display: none; }
     .legend, .cursor-coords, .maplibregl-ctrl-scale { display: none; }
-    .toolbar { position: static; display: block; overflow: visible; background: none; box-shadow: none; max-height: none; }
-    .toolbar-main { display: block; position: absolute; z-index: 500; top: 12px; right: 12px; overflow: hidden; background: var(--panel); border-radius: var(--radius); box-shadow: var(--shadow); }
-    .tool-dock { position: absolute; z-index: 505; left: 8px; right: 8px; bottom: 30px; flex-direction: row; justify-content: center; overflow-x: auto; background: var(--panel); box-shadow: var(--shadow); }
-    .tool-dock .dock-sep { width: 1px; height: 20px; margin: 0 4px; }
-    .dock-btn { height: 34px; }
-    .tool-area { top: auto; left: 8px; right: 8px; bottom: 76px; max-width: none; align-items: center; }
+    .toolbar { top: 8px; right: 8px; max-height: calc(100% - 44px); scrollbar-width: none; }
+    .toolbar::-webkit-scrollbar { display: none; }
+    .tool, .dock-btn { width: 38px; height: 32px; font-size: 14px; }
+    .tool-area { top: 8px; left: 8px; right: 54px; max-width: none; align-items: stretch; }
+    .tool-hint { justify-content: space-between; }
+    .draw-panel { justify-content: flex-start; }
+    .save-menu { align-self: flex-end; }
+    .popover { top: 8px; right: 54px; width: auto; left: 8px; }
+    .maplibregl-ctrl-attrib { max-width: 60vw; }
     .dock.open { height: 46dvh; }
     .dock-summary { display: none; }
     .tabs { flex: 1; }
