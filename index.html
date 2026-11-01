@@ -6,12 +6,12 @@
     <title>BCG – Fiber Optik GIS Paneli</title>
     <meta name="description" content="Baku Communications Group fiber optik şəbəkəsinin GIS idarəetmə paneli.">
     <meta name="robots" content="noindex, nofollow">
-    <meta name="theme-color" content="#0a1220">
+    <meta name="theme-color" content="#0e1a2b">
     <link rel="icon" href="favicon.svg" type="image/svg+xml">
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="css/styles.css">
@@ -20,172 +20,209 @@
 
     <!-- GİRİŞ -->
     <div class="login" id="login" hidden>
-        <form class="login-card" id="loginForm" novalidate>
-            <div class="login-brand">
-                <span class="logo">BCG</span>
-                <div>
-                    <strong>Baku Communications Group</strong>
-                    <small data-i18n="brandSubtitle"></small>
-                </div>
+        <section class="login-aside">
+            <div class="login-mark"><img src="favicon.svg" alt=""> <span>Baku Communications Group</span></div>
+            <svg class="login-net" viewBox="0 0 600 420" aria-hidden="true">
+                <g fill="none" stroke="currentColor" stroke-width="1.5">
+                    <path d="M30 360 L150 280 L260 300 L360 190 L470 170 L570 60"/>
+                    <path d="M150 280 L120 150 L240 90 L360 190"/>
+                    <path d="M260 300 L340 380 L500 330 L470 170"/>
+                    <path d="M240 90 L420 40 L470 170"/>
+                </g>
+                <g fill="currentColor">
+                    <circle cx="30" cy="360" r="4"/><circle cx="150" cy="280" r="6"/><circle cx="260" cy="300" r="4"/>
+                    <circle cx="360" cy="190" r="7"/><circle cx="470" cy="170" r="5"/><circle cx="570" cy="60" r="4"/>
+                    <circle cx="120" cy="150" r="4"/><circle cx="240" cy="90" r="5"/><circle cx="340" cy="380" r="4"/>
+                    <circle cx="500" cy="330" r="4"/><circle cx="420" cy="40" r="4"/>
+                </g>
+            </svg>
+            <div class="login-copy">
+                <h1 data-i18n="loginHeadline"></h1>
+                <p data-i18n="loginLead"></p>
             </div>
-            <h1 data-i18n="loginTitle"></h1>
-            <p data-i18n="loginHint"></p>
-            <label>
-                <span data-i18n="loginUser"></span>
-                <input class="input" id="loginUser" type="email" autocomplete="username" autofocus>
-            </label>
-            <label>
-                <span data-i18n="loginPass"></span>
-                <input class="input" id="loginPass" type="password" autocomplete="current-password">
-            </label>
-            <p class="login-error" id="loginError" role="alert"></p>
-            <button class="btn btn-primary btn-block" type="submit">
-                <i class="fa-solid fa-right-to-bracket"></i> <span data-i18n="loginBtn"></span>
-            </button>
-        </form>
-    </div>
-
-    <!-- XƏRİTƏ: bütün ekranı tutur, qalan hər şey onun üzərində üzür -->
-    <main id="map" aria-label="Xəritə"></main>
-
-    <!-- ÜST PANEL -->
-    <header class="topbar glass">
-        <div class="brand">
-            <span class="logo">BCG</span>
-            <div class="brand-text">
-                <strong>Baku Communications Group</strong>
-                <small data-i18n="brandSubtitle"></small>
-            </div>
-        </div>
-
-        <button class="icon-btn menu-btn" id="menuBtn" data-i18n-title="menu" aria-expanded="false"><i class="fa-solid fa-bars"></i></button>
-
-        <div class="top-actions" id="topActions">
-            <button class="btn" id="notesBtn">
-                <i class="fa-solid fa-note-sticky"></i> <span data-i18n="notes"></span>
-                <span class="count" id="notesCount" hidden></span>
-            </button>
-            <button class="btn" id="materialsBtn"><i class="fa-solid fa-boxes-stacked"></i> <span data-i18n="materials"></span></button>
-            <button class="btn" id="importBtn"><i class="fa-solid fa-file-import"></i> <span data-i18n="import"></span></button>
-            <input type="file" id="importFile" accept=".kmz,.kml,.geojson,.json" multiple hidden>
-            <button class="btn" id="printBtn"><i class="fa-solid fa-print"></i> <span data-i18n="print"></span></button>
-            <span class="divider"></span>
-            <button class="icon-btn" id="themeBtn" data-i18n-title="theme"><i class="fa-solid fa-moon"></i></button>
-            <select class="input lang" id="langSelect" aria-label="Dil">
+        </section>
+        <section class="login-main">
+            <select class="input login-lang" id="loginLang" aria-label="Dil">
                 <option value="az">AZ</option>
                 <option value="en">EN</option>
                 <option value="ru">RU</option>
             </select>
-            <span class="divider"></span>
-            <span class="role" id="roleBadge"></span>
-            <button class="icon-btn" id="logoutBtn" data-i18n-title="logout"><i class="fa-solid fa-arrow-right-from-bracket"></i></button>
+            <form class="login-form" id="loginForm" novalidate>
+                <h2 data-i18n="loginTitle"></h2>
+                <p data-i18n="loginHint"></p>
+                <label>
+                    <span data-i18n="loginUser"></span>
+                    <input class="input" id="loginUser" type="email" autocomplete="username" autofocus>
+                </label>
+                <label>
+                    <span data-i18n="loginPass"></span>
+                    <input class="input" id="loginPass" type="password" autocomplete="current-password">
+                </label>
+                <p class="login-error" id="loginError" role="alert"></p>
+                <button class="btn btn-primary btn-block" type="submit" data-i18n="loginBtn"></button>
+            </form>
+        </section>
+    </div>
+
+    <!-- ÜST PANEL -->
+    <header class="appbar">
+        <button class="bar-btn" id="sidebarToggle" data-i18n-title="togglePanel"><i class="fa-solid fa-bars-staggered"></i></button>
+        <div class="brand">
+            <img src="favicon.svg" alt="">
+            <strong>BCG</strong>
+            <span class="brand-sub" data-i18n="brandSubtitle"></span>
+        </div>
+
+        <button class="bar-btn menu-btn" id="menuBtn" data-i18n-title="menu" aria-expanded="false"><i class="fa-solid fa-ellipsis-vertical"></i></button>
+
+        <div class="top-actions" id="topActions">
+            <button class="bar-item" id="notesBtn">
+                <i class="fa-regular fa-note-sticky"></i> <span data-i18n="notes"></span>
+                <span class="count" id="notesCount" hidden></span>
+            </button>
+            <button class="bar-item" id="materialsBtn"><i class="fa-solid fa-boxes-stacked"></i> <span data-i18n="materials"></span></button>
+            <button class="bar-item" id="importBtn"><i class="fa-solid fa-arrow-up-from-bracket"></i> <span data-i18n="import"></span></button>
+            <input type="file" id="importFile" accept=".kmz,.kml,.geojson,.json" multiple hidden>
+            <button class="bar-item" id="printBtn"><i class="fa-solid fa-print"></i> <span data-i18n="print"></span></button>
+            <span class="bar-sep"></span>
+            <select class="bar-select" id="langSelect" aria-label="Dil">
+                <option value="az">AZ</option>
+                <option value="en">EN</option>
+                <option value="ru">RU</option>
+            </select>
+            <button class="bar-btn" id="themeBtn" data-i18n-title="theme"><i class="fa-solid fa-moon"></i></button>
+            <span class="bar-sep"></span>
+            <div class="user">
+                <span class="avatar" id="userAvatar"></span>
+                <span class="user-text">
+                    <strong id="userEmail"></strong>
+                    <small id="roleBadge"></small>
+                </span>
+            </div>
+            <button class="bar-btn" id="logoutBtn" data-i18n-title="logout"><i class="fa-solid fa-arrow-right-from-bracket"></i></button>
         </div>
     </header>
 
-    <!-- LAYİHƏLƏR PANELİ -->
-    <aside class="sidebar glass" id="sidebar">
-        <div class="side-head">
-            <h2><i class="fa-solid fa-diagram-project"></i> <span data-i18n="projects"></span> <span class="muted" id="projectCount"></span></h2>
-            <button class="icon-btn small" id="sidebarToggle" data-i18n-title="togglePanel"><i class="fa-solid fa-chevron-left"></i></button>
-        </div>
-        <div class="side-body">
-            <div class="kpis" id="kpis"></div>
-            <div class="progress" aria-hidden="true"><span id="totalProgress"></span></div>
-            <div class="search">
-                <i class="fa-solid fa-magnifying-glass"></i>
-                <input class="input" id="searchInput" type="search" data-i18n-placeholder="search">
-            </div>
-            <div class="chips" id="statusChips"></div>
-            <div class="list-actions">
-                <button class="link" id="showAllBtn" data-i18n="showAll"></button>
-                <button class="link" id="hideAllBtn" data-i18n="hideAll"></button>
-            </div>
-            <div class="project-list" id="projectList"></div>
-        </div>
-    </aside>
-    <button class="sidebar-open glass" id="sidebarOpen" data-i18n-title="togglePanel" hidden><i class="fa-solid fa-diagram-project"></i></button>
+    <div class="workspace" id="workspace">
 
-    <!-- XƏRİTƏ ALƏTLƏRİ -->
-    <nav class="rail" aria-label="Xəritə alətləri">
-        <div class="rail-group glass">
-            <button class="rail-btn" id="zoomInBtn" data-i18n-title="zoomIn"><i class="fa-solid fa-plus"></i></button>
-            <button class="rail-btn" id="zoomOutBtn" data-i18n-title="zoomOut"><i class="fa-solid fa-minus"></i></button>
-        </div>
-        <div class="rail-group glass">
-            <button class="rail-btn" id="homeBtn" data-i18n-title="home"><i class="fa-solid fa-house"></i></button>
-            <button class="rail-btn" id="northBtn" data-i18n-title="north"><i class="fa-solid fa-location-arrow" id="northIcon"></i></button>
-            <button class="rail-btn" id="fullscreenBtn" data-i18n-title="fullscreen"><i class="fa-solid fa-expand"></i></button>
-        </div>
-        <div class="rail-group glass">
-            <button class="rail-btn" id="layersBtn" data-i18n-title="layers"><i class="fa-solid fa-layer-group"></i></button>
-            <button class="rail-btn" id="rulerBtn" data-i18n-title="ruler"><i class="fa-solid fa-ruler-combined"></i></button>
-            <button class="rail-btn" id="clearRulerBtn" data-i18n-title="clearRuler" hidden><i class="fa-solid fa-eraser"></i></button>
-            <button class="rail-btn" id="coordBtn" data-i18n-title="coords"><i class="fa-solid fa-location-crosshairs"></i></button>
-        </div>
-    </nav>
+        <!-- SOL PANEL -->
+        <aside class="sidebar" id="sidebar">
+            <div class="side-view" id="listView">
+                <div class="summary">
+                    <div class="kpis" id="kpis"></div>
+                    <div class="progress" aria-hidden="true"><span id="totalProgress"></span></div>
+                </div>
+                <div class="filters">
+                    <div class="search">
+                        <i class="fa-solid fa-magnifying-glass"></i>
+                        <input class="input" id="searchInput" type="search" data-i18n-placeholder="search">
+                    </div>
+                    <div class="chips" id="statusChips"></div>
+                </div>
+                <div class="list-head">
+                    <h2><span data-i18n="projects"></span> <span class="muted" id="projectCount"></span></h2>
+                    <span>
+                        <button class="link" id="showAllBtn" data-i18n="showAll"></button>
+                        <button class="link" id="hideAllBtn" data-i18n="hideAll"></button>
+                    </span>
+                </div>
+                <div class="project-list" id="projectList"></div>
+            </div>
+            <div class="side-view" id="detailView" hidden></div>
+        </aside>
 
-    <div class="popover glass" id="layersPopover" hidden>
-        <h3 data-i18n="layers"></h3>
-        <div id="layerOptions"></div>
+        <div class="map-column">
+            <div class="map-stage">
+                <main id="map" aria-label="Xəritə"></main>
+
+                <nav class="toolbar" aria-label="Xəritə alətləri">
+                    <div class="tool-group">
+                        <button class="tool" id="zoomInBtn" data-i18n-title="zoomIn"><i class="fa-solid fa-plus"></i></button>
+                        <button class="tool" id="zoomOutBtn" data-i18n-title="zoomOut"><i class="fa-solid fa-minus"></i></button>
+                    </div>
+                    <div class="tool-group">
+                        <button class="tool" id="homeBtn" data-i18n-title="home"><i class="fa-solid fa-expand"></i></button>
+                        <button class="tool" id="northBtn" data-i18n-title="north"><i class="fa-solid fa-location-arrow" id="northIcon"></i></button>
+                        <button class="tool" id="fullscreenBtn" data-i18n-title="fullscreen"><i class="fa-solid fa-up-right-and-down-left-from-center"></i></button>
+                    </div>
+                    <div class="tool-group">
+                        <button class="tool" id="layersBtn" data-i18n-title="layers"><i class="fa-solid fa-layer-group"></i></button>
+                        <button class="tool" id="rulerBtn" data-i18n-title="ruler"><i class="fa-solid fa-ruler"></i></button>
+                        <button class="tool" id="clearRulerBtn" data-i18n-title="clearRuler" hidden><i class="fa-solid fa-eraser"></i></button>
+                        <button class="tool" id="coordBtn" data-i18n-title="coords"><i class="fa-solid fa-location-crosshairs"></i></button>
+                    </div>
+                </nav>
+
+                <div class="popover" id="layersPopover" hidden>
+                    <h3 data-i18n="layers"></h3>
+                    <div id="layerOptions"></div>
+                </div>
+
+                <div class="popover" id="coordPopover" hidden>
+                    <h3 data-i18n="coordTitle"></h3>
+                    <label>
+                        <span data-i18n="coordClicked"></span>
+                        <span class="field">
+                            <input class="input mono" id="coordClicked" readonly data-i18n-placeholder="coordPlaceholder">
+                            <button class="icon-btn" id="coordCopy" data-i18n-title="copy"><i class="fa-regular fa-copy"></i></button>
+                        </span>
+                    </label>
+                    <form id="coordForm">
+                        <label>
+                            <span data-i18n="coordGoTo"></span>
+                            <span class="field">
+                                <input class="input mono" id="coordGoTo" placeholder="40.4093, 49.8671" inputmode="decimal">
+                                <button class="icon-btn" type="submit" data-i18n-title="go"><i class="fa-solid fa-arrow-right"></i></button>
+                            </span>
+                        </label>
+                    </form>
+                </div>
+
+                <div class="measure-hint" id="measureHint" data-i18n="measureHint" hidden></div>
+                <section class="legend" id="legend" aria-label="Şərti işarələr"></section>
+                <div class="cursor-coords mono" id="cursorCoords">40.14300, 47.57700</div>
+            </div>
+
+            <!-- CƏDVƏL -->
+            <section class="dock" id="drawer">
+                <div class="dock-head">
+                    <div class="tabs" role="tablist">
+                        <button class="tab active" role="tab" data-tab="segments"><span data-i18n="segments"></span> <span class="muted" id="drawerCount"></span></button>
+                        <button class="tab" role="tab" data-tab="contractors"><span data-i18n="contractors"></span> <span class="muted" id="contractorCount"></span></button>
+                    </div>
+                    <span class="dock-summary mono" id="drawerSummary"></span>
+                    <button class="icon-btn" id="drawerToggle" data-i18n-title="togglePanel" aria-expanded="false"><i class="fa-solid fa-chevron-up" id="drawerArrow"></i></button>
+                </div>
+                <div class="dock-body" id="drawerBody" hidden>
+                    <div class="table-wrap" id="segmentsPane">
+                        <table>
+                            <thead id="tableHead"></thead>
+                            <tbody id="tableBody"></tbody>
+                            <tfoot id="tableFoot"></tfoot>
+                        </table>
+                    </div>
+                    <div class="table-wrap" id="contractorsPane" hidden>
+                        <table>
+                            <thead id="contractorHead"></thead>
+                            <tbody id="contractorList"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+        </div>
     </div>
 
-    <div class="popover glass" id="coordPopover" hidden>
-        <h3 data-i18n="coordTitle"></h3>
-        <label>
-            <span data-i18n="coordClicked"></span>
-            <span class="field">
-                <input class="input mono" id="coordClicked" readonly data-i18n-placeholder="coordPlaceholder">
-                <button class="icon-btn" id="coordCopy" data-i18n-title="copy"><i class="fa-solid fa-copy"></i></button>
-            </span>
-        </label>
-        <form id="coordForm">
-            <label>
-                <span data-i18n="coordGoTo"></span>
-                <span class="field">
-                    <input class="input mono" id="coordGoTo" placeholder="40.4093, 49.8671" inputmode="decimal">
-                    <button class="icon-btn" type="submit" data-i18n-title="go"><i class="fa-solid fa-arrow-right"></i></button>
-                </span>
-            </label>
-        </form>
-    </div>
-
-    <div class="measure-hint glass" id="measureHint" data-i18n="measureHint" hidden></div>
     <div class="measure-tip" id="measureTip" hidden></div>
-
-    <!-- ŞƏRTİ İŞARƏLƏR -->
-    <section class="legend glass" id="legend" aria-label="Şərti işarələr"></section>
-
-    <div class="cursor-coords mono glass" id="cursorCoords">40.14300, 47.57700</div>
-
-    <!-- CƏDVƏL -->
-    <section class="drawer glass" id="drawer">
-        <button class="drawer-head" id="drawerToggle" aria-expanded="false">
-            <span><i class="fa-solid fa-table-list"></i> <span data-i18n="tableTitle"></span> <span class="muted" id="drawerCount"></span></span>
-            <span class="drawer-summary mono" id="drawerSummary"></span>
-            <i class="fa-solid fa-chevron-up" id="drawerArrow"></i>
-        </button>
-        <div class="drawer-body" id="drawerBody" hidden>
-            <div class="table-wrap">
-                <table>
-                    <thead id="tableHead"></thead>
-                    <tbody id="tableBody"></tbody>
-                    <tfoot id="tableFoot"></tfoot>
-                </table>
-            </div>
-            <div class="contractors">
-                <h3><i class="fa-solid fa-helmet-safety"></i> <span data-i18n="contractors"></span></h3>
-                <div id="contractorList"></div>
-            </div>
-        </div>
-    </section>
 
     <!-- MATERİAL REYESTRİ -->
     <dialog class="modal" id="materialsModal">
         <div class="modal-head">
-            <h2><i class="fa-solid fa-boxes-stacked"></i> <span data-i18n="materials"></span></h2>
+            <div>
+                <h2 data-i18n="materials"></h2>
+                <p class="muted" data-i18n="materialsHint"></p>
+            </div>
             <button class="icon-btn" data-close data-i18n-title="close"><i class="fa-solid fa-xmark"></i></button>
         </div>
-        <p class="muted" data-i18n="materialsHint"></p>
         <div class="table-wrap">
             <table>
                 <thead id="materialsHead"></thead>
@@ -197,12 +234,12 @@
     <!-- QEYDLƏR -->
     <dialog class="modal modal-sm" id="notesModal">
         <div class="modal-head">
-            <h2><i class="fa-solid fa-note-sticky"></i> <span data-i18n="notesTitle"></span></h2>
+            <h2 data-i18n="notesTitle"></h2>
             <button class="icon-btn" data-close data-i18n-title="close"><i class="fa-solid fa-xmark"></i></button>
         </div>
         <form id="noteForm">
             <textarea class="input" id="noteInput" rows="3" data-i18n-placeholder="notePlaceholder"></textarea>
-            <button class="btn btn-primary btn-block" type="submit" data-i18n="noteAdd"></button>
+            <button class="btn btn-primary" type="submit" data-i18n="noteAdd"></button>
         </form>
         <div class="notes" id="notesList"></div>
     </dialog>
