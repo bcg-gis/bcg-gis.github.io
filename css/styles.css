@@ -412,8 +412,7 @@ body.shared .user, body.shared #logoutBtn, body.shared .bar-sep, body.shared .ta
 
     :root { --sidebar-w: min(270px, 74vw); }
     .workspace, .workspace.sidebar-closed { grid-template-columns: minmax(0, 1fr); position: relative; }
-    .sidebar { position: absolute; z-index: 700; top: 0; left: 0; display: flex; flex-direction: column; width: var(--sidebar-w); max-height: 100%; box-shadow: var(--shadow); border-radius: 0 0 var(--radius) 0; }
-    .side-view { height: auto; min-height: 0; }
+    .sidebar { position: absolute; z-index: 700; top: 0; bottom: 0; left: 0; width: var(--sidebar-w); box-shadow: var(--shadow); }
     .summary { padding: 10px 12px; }
     .filters { padding: 8px 12px; gap: 8px; }
     .list-head { padding: 8px 12px 4px; gap: 6px; }
