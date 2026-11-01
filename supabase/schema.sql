@@ -142,3 +142,7 @@ language sql stable security definer set search_path = public as $$
 $$;
 
 grant execute on function get_shared_extras(uuid) to anon, authenticated;
+
+-- Saytdan redaktə: podratçı və materialları admin dəyişir
+create policy "admin writes contractors" on contractors for all to authenticated using (is_admin()) with check (is_admin());
+create policy "admin writes materials" on materials for all to authenticated using (is_admin()) with check (is_admin());
