@@ -258,7 +258,7 @@ textarea.input { height: auto; padding: 8px 10px; resize: vertical; }
 #map { position: absolute; inset: 0; background: #0a1220; }
 .maplibregl-map { font: inherit; }
 .maplibregl-ctrl-attrib { font-size: 10px; }
-.maplibregl-ctrl-scale { margin: 0 58px 32px 0 !important; padding: 0 0 1px; background: none; border: 2px solid #fff; border-top: 0; color: #fff; font-size: 11px; font-weight: 500; line-height: 1.3; text-align: center; text-shadow: 0 1px 3px rgba(0, 0, 0, .9); box-shadow: 0 1px 2px rgba(0, 0, 0, .5); }
+.maplibregl-ctrl-scale { margin: 0 58px 12px 0 !important; padding: 0 0 1px; background: none; border: 2px solid #fff; border-top: 0; color: #fff; font-size: 11px; font-weight: 500; line-height: 1.3; text-align: center; text-shadow: 0 1px 3px rgba(0, 0, 0, .9); box-shadow: 0 1px 2px rgba(0, 0, 0, .5); }
 .map-tip .maplibregl-popup-content { padding: 6px 9px; background: var(--panel); color: var(--ink); border-radius: var(--radius); box-shadow: var(--shadow); font-size: 12px; pointer-events: none; }
 .map-tip .maplibregl-popup-tip { display: none; }
 .map-tip b { display: block; font-weight: 600; }
