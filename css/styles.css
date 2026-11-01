@@ -342,6 +342,7 @@ textarea.input { height: auto; padding: 8px 10px; resize: vertical; }
 .tabs { display: flex; height: 100%; }
 .tab { position: relative; padding: 0 12px; font-weight: 500; color: var(--ink-2); white-space: nowrap; }
 .tab:hover { color: var(--ink); }
+.tab[data-tab="projects"] { display: none; }
 .dock.open .tab.active { color: var(--brand); }
 .dock.open .tab.active::after { content: ""; position: absolute; left: 12px; right: 12px; bottom: 0; height: 2px; background: var(--brand); }
 .dock-summary { flex: 1; text-align: right; color: var(--ink-2); }
@@ -410,9 +411,15 @@ body.shared .user, body.shared #logoutBtn, body.shared .bar-sep, body.shared .ta
     }
     .top-actions.open { display: flex; }
 
-    :root { --sidebar-w: min(270px, 74vw); }
-    .workspace, .workspace.sidebar-closed { grid-template-columns: minmax(0, 1fr); position: relative; }
-    .sidebar { position: absolute; z-index: 700; top: 0; bottom: 0; left: 0; width: var(--sidebar-w); box-shadow: var(--shadow); }
+    #sidebarToggle { display: none; }
+    .workspace, .workspace.sidebar-closed { display: flex; flex-direction: column; }
+    .map-column { flex: 1; }
+    .sidebar { order: 2; flex: none; height: 50dvh; border-right: 0; }
+    .side-view { width: 100%; }
+    .tab[data-tab="projects"] { display: block; }
+    .dock.sheet .tab[data-tab="projects"] { color: var(--brand); }
+    .dock.sheet .tab[data-tab="projects"]::after { content: ""; position: absolute; left: 12px; right: 12px; bottom: 0; height: 2px; background: var(--brand); }
+    .tab { padding: 0 10px; font-size: 13px; }
     .summary { padding: 10px 12px; }
     .filters { padding: 8px 12px; gap: 8px; }
     .list-head { padding: 8px 12px 4px; gap: 6px; }
@@ -426,7 +433,7 @@ body.shared .user, body.shared #logoutBtn, body.shared .bar-sep, body.shared .ta
     .chip { height: 24px; padding: 0 6px; font-size: 11px; }
     .workspace.sidebar-closed .sidebar { display: none; }
     .legend, .cursor-coords, .maplibregl-ctrl-scale { display: none; }
-    .toolbar { top: 8px; right: 8px; max-height: calc(100% - 44px); scrollbar-width: none; }
+    .toolbar { top: 8px; right: 8px; max-height: calc(100% - 16px); scrollbar-width: none; }
     .toolbar::-webkit-scrollbar { display: none; }
     .tool, .dock-btn { width: 38px; height: 32px; font-size: 14px; }
     .tool-area { top: 8px; left: 8px; right: 54px; max-width: none; align-items: stretch; }
@@ -435,7 +442,7 @@ body.shared .user, body.shared #logoutBtn, body.shared .bar-sep, body.shared .ta
     .save-menu { align-self: flex-end; }
     .popover { top: 8px; right: 54px; width: auto; left: 8px; }
     .maplibregl-ctrl-attrib { max-width: 60vw; }
-    .dock.open { height: 46dvh; }
+    .dock.open { height: calc(50dvh + 40px); }
     .dock-summary { display: none; }
     .tabs { flex: 1; }
 }
