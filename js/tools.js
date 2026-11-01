@@ -9,11 +9,10 @@ const tools = (() => {
     const DEFAULT_STYLE = { color: COLORS[0], width: 2, dash: "solid", fill: 1, labels: true };
     const SNAP_PX = 10, SNAP_LINE_PX = 7, SIDE_MIN_PX = 56, HISTORY_MAX = 50;
     const KEYS = { shapes: "bcg.drawings", style: "bcg.drawstyle", snap: "bcg.snap", ortho: "bcg.ortho" };
-    const TOOLS = [
-        ["distance", "fa-solid fa-ruler"], ["area", "fa-solid fa-draw-polygon"], ["circle", "fa-regular fa-circle"],
-        ["coord", "fa-solid fa-crosshairs"], ["pin", "fa-solid fa-location-dot"], ["draw", "fa-solid fa-pen"]
+    const GROUPS = [
+        { id: "measure", icon: "fa-solid fa-ruler-combined", tools: [["distance", "fa-solid fa-ruler"], ["area", "fa-solid fa-draw-polygon"], ["circle", "fa-regular fa-circle"], ["coord", "fa-solid fa-crosshairs"]] },
+        { id: "draw", icon: "fa-solid fa-pen", tools: [["pin", "fa-solid fa-location-dot"], ["draw", "fa-solid fa-pen"], ["note", "fa-regular fa-note-sticky"], ["text", "fa-solid fa-font"]] }
     ];
-    const NOTE_TOOLS = [["note", "fa-regular fa-note-sticky"], ["text", "fa-solid fa-font"]];
     const STYLED = ["distance", "area", "circle", "pin", "draw"];
     const LINE_LAYERS = ["draw-solid", "draw-dash", "draw-dot"];
 
@@ -21,7 +20,7 @@ const tools = (() => {
         tool: null, shapes: [], hidden: false, draft: [], hover: null, picked: null,
         style: { ...DEFAULT_STYLE, ...readStore(KEYS.style, {}) },
         snap: readStore(KEYS.snap, true), ortho: readStore(KEYS.ortho, false),
-        history: [], nextId: 1, sessionOnly: false, saving: false
+        history: [], nextId: 1, sessionOnly: false, saving: false, fly: null
     };
     let labelMarkers = [], noteMarkers = [], freehand = false, moving = null, ready = false;
 
@@ -214,19 +213,37 @@ const tools = (() => {
         $("toolFinish").hidden = !(st.tool === "distance" && st.draft.length > 1 || st.tool === "area" && st.draft.length > 2);
     }
 
+    function setFly(id) {
+        st.fly = id;
+        document.querySelectorAll(".fly-group").forEach(group => group.classList.toggle("open", group.dataset.fly === id));
+    }
+
     function renderDock() {
-        const button = ([id, icon]) => `<button class="dock-btn ${st.tool === id ? "on" : ""}" data-tool="${id}" title="${t(`tool_${id}`)}"><i class="${icon}"></i></button>`;
         const count = st.shapes.length;
+        const toolGroup = group => {
+            const current = group.tools.find(([id]) => id === st.tool);
+            const buttons = group.tools.map(([id, icon]) => `<button class="dock-btn ${st.tool === id ? "on" : ""}" data-tool="${id}" title="${t(`tool_${id}`)}"><i class="${icon}"></i></button>`).join("");
+            return `<div class="fly-group" data-fly="${group.id}">
+                <button class="dock-btn ${current ? "on" : ""}" data-group="${group.id}" title="${t(`group_${group.id}`)}"><i class="${current ? current[1] : group.icon}"></i></button>
+                <div class="fly">${buttons}</div>
+            </div>`;
+        };
         $("toolDock").innerHTML = `
-            ${TOOLS.map(button).join("")}<span class="dock-sep"></span>${NOTE_TOOLS.map(button).join("")}<span class="dock-sep"></span>
-            <button class="dock-btn" data-act="undo" title="${t("undo")}" ${st.history.length || st.draft.length ? "" : "disabled"}><i class="fa-solid fa-rotate-left"></i></button>
-            <button class="dock-btn" data-act="hide" title="${t(st.hidden ? "shapesShow" : "shapesHide")}" ${count ? "" : "disabled"}><i class="fa-solid ${st.hidden ? "fa-eye-slash" : "fa-eye"}"></i></button>
-            <button class="dock-btn ${st.saving ? "on" : ""}" data-act="save" title="${t("saveAs")}"><i class="fa-solid fa-download"></i></button>
-            <button class="dock-btn" id="shareBtn" title="${t("share")}"><i class="fa-solid fa-share-nodes"></i></button>
-            ${count ? `<button class="dock-btn" data-act="clear" title="${t("shapesDelete")}"><i class="fa-regular fa-trash-can"></i></button>` : ""}
+            ${GROUPS.map(toolGroup).join("")}
+            <div class="fly-group" data-fly="actions">
+                <button class="dock-btn ${st.saving ? "on" : ""}" data-group="actions" title="${t("group_actions")}"><i class="fa-solid fa-ellipsis"></i></button>
+                <div class="fly">
+                    <button class="dock-btn" data-act="undo" title="${t("undo")}" ${st.history.length || st.draft.length ? "" : "disabled"}><i class="fa-solid fa-rotate-left"></i></button>
+                    <button class="dock-btn" data-act="hide" title="${t(st.hidden ? "shapesShow" : "shapesHide")}" ${count ? "" : "disabled"}><i class="fa-solid ${st.hidden ? "fa-eye-slash" : "fa-eye"}"></i></button>
+                    <button class="dock-btn ${st.saving ? "on" : ""}" data-act="save" title="${t("saveAs")}"><i class="fa-solid fa-download"></i></button>
+                    <button class="dock-btn" id="shareBtn" title="${t("share")}"><i class="fa-solid fa-share-nodes"></i></button>
+                    ${count ? `<button class="dock-btn" data-act="clear" title="${t("shapesDelete")}"><i class="fa-regular fa-trash-can"></i></button>` : ""}
+                </div>
+            </div>
         `;
         $("shareBtn").hidden = !isAdmin();
         $("saveMenu").hidden = !st.saving;
+        setFly(st.fly);
     }
 
     function pickedShape() {
@@ -428,6 +445,15 @@ const tools = (() => {
     }
 
     function bindUi() {
+        document.querySelector(".toolbar").addEventListener("click", e => {
+            const button = e.target.closest("button");
+            if (!button) return;
+            if (button.dataset.group) setFly(st.fly === button.dataset.group ? null : button.dataset.group);
+            else if (button.dataset.act !== "undo" && button.dataset.act !== "hide" && !button.closest("#zoomInBtn, #zoomOutBtn")) setFly(null);
+        });
+        document.addEventListener("click", e => {
+            if (!e.target.closest?.(".toolbar")) setFly(null);
+        });
         $("toolDock").addEventListener("click", e => {
             const button = e.target.closest("button");
             if (!button || button.id === "shareBtn") return;
