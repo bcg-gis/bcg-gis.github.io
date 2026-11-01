@@ -470,6 +470,7 @@ function clearSelection() {
 function onMapClick(e) {
     $("coordClicked").value = `${e.lngLat.lat.toFixed(6)}, ${e.lngLat.lng.toFixed(6)}`;
     if (tools.handleClick(e)) return;
+    if (window.innerWidth <= 860) setSidebar(false);
     const box = [[e.point.x - 3, e.point.y - 3], [e.point.x + 3, e.point.y + 3]];
     const hit = map.queryRenderedFeatures(box, { layers: ["routes-hit"] })[0];
     if (!hit) return;
