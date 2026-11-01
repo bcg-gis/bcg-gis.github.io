@@ -2,7 +2,8 @@
 
 const AZERBAIJAN_BOUNDS = [[38.39, 44.77], [41.91, 50.63]];
 
-const STATUS_COLORS = { bitmis: "#10B981", icrada: "#F59E0B", tehvil: "#3B82F6", layihe: "#EF4444" };
+const STATUS_COLORS = { bitmis: "#22C55E", icrada: "#F59E0B", tehvil: "#3B82F6", layihe: "#EF4444" };
+const ENDPOINT_MIN_ZOOM = 9;
 const STATUSES = Object.keys(STATUS_COLORS);
 const MEASURE_COLOR = "#FF7A00";
 
@@ -19,6 +20,8 @@ const state = {
     statusFilter: "all",
     query: "",
     expandedIds: new Set(),
+    selected: null,
+    dockTab: "segments",
     notes: []
 };
 
@@ -105,7 +108,6 @@ function applyLanguage(lang) {
     renderRole();
     renderLayerOptions();
     renderLegend();
-    renderChips();
     renderNotes();
     renderMaterials();
     renderAll();
@@ -113,14 +115,17 @@ function applyLanguage(lang) {
 
 function applyTheme(theme) {
     document.documentElement.dataset.theme = theme;
-    $("themeBtn").querySelector("i").className = `fa-solid ${theme === "light" ? "fa-sun" : "fa-moon"}`;
+    $("themeBtn").querySelector("i").className = `fa-solid ${theme === "light" ? "fa-moon" : "fa-sun"}`;
 }
 
 /* GİRİŞ */
 const isAdmin = () => state.role === "admin";
 
 function renderRole() {
+    const email = state.user?.email || "";
     $("roleBadge").textContent = isAdmin() ? t("roleAdmin") : t("roleManager");
+    $("userEmail").textContent = email;
+    $("userAvatar").textContent = email.charAt(0);
     $("importBtn").hidden = !isAdmin();
 }
 
@@ -148,7 +153,7 @@ async function handleLogin(event) {
 
 async function handleLogout() {
     await api.signOut();
-    Object.assign(state, { user: null, role: "manager", projects: [], contractors: {}, materials: [], notes: [] });
+    Object.assign(state, { user: null, role: "manager", projects: [], contractors: {}, materials: [], notes: [], selected: null });
     state.visibleIds.clear();
     renderRole();
     renderNotes();
@@ -228,15 +233,19 @@ function initMap() {
         $("northIcon").style.transform = `rotate(${-45 - map.getBearing()}deg)`;
     });
 
+    map.on("zoomend", updateEndpointVisibility);
+    updateEndpointVisibility();
+
     initMouseGestures();
     window.addEventListener("resize", () => map.invalidateSize());
 }
 
-/* Görünən sahə üst panelin, sol panelin və alət rayının altında qalmasın */
 function mapPadding() {
-    if (window.innerWidth <= 760) return { paddingTopLeft: [10, 70], paddingBottomRight: [50, 60] };
-    const sidebarOpen = !$("sidebar").hidden;
-    return { paddingTopLeft: [sidebarOpen ? 345 : 60, 80], paddingBottomRight: [60, 20] };
+    return { paddingTopLeft: [24, 24], paddingBottomRight: [60, 24] };
+}
+
+function updateEndpointVisibility() {
+    $("map").classList.toggle("far", map.getZoom() < ENDPOINT_MIN_ZOOM);
 }
 
 function fitHome(animate = true) {
@@ -298,28 +307,45 @@ function initMouseGestures() {
 
 function drawRoutes() {
     routesLayer.clearLayers();
-    visibleEntries().forEach(({ item: r }) => {
+    const selected = selectedEntry();
+    visibleEntries().forEach(({ project, item: r }) => {
         if (!r.coords || r.coords.length < 2) return;
         const color = STATUS_COLORS[r.status] || STATUS_COLORS.layihe;
+        const isSelected = selected && selected.item === r;
 
-        // Peyk görüntüsü üzərində oxunması üçün altda tünd kontur
-        L.polyline(r.coords, { color: "#04101c", weight: 8, opacity: .55, interactive: false }).addTo(routesLayer);
-        const line = L.polyline(r.coords, { color, weight: 4.5, opacity: 1 }).addTo(routesLayer);
+        // Peyk görüntüsü üzərində oxunması üçün altda kontur
+        L.polyline(r.coords, { color: isSelected ? "#FFFFFF" : "#04101c", weight: isSelected ? 10 : 7, opacity: isSelected ? 1 : .5, interactive: false }).addTo(routesLayer);
+        const line = L.polyline(r.coords, { color, weight: isSelected ? 6 : 4, opacity: 1 }).addTo(routesLayer);
 
-        line.bindTooltip(`
-            <div class="tip-title" style="color:${color}">${esc(r.id)}: ${esc(r.name)}</div>
-            <div><b>A ➔ B:</b> ${esc(r.pointA)} ➔ ${esc(r.pointB)}</div>
-            <div><b>${t("thContractor")}:</b> ${esc(r.contractor || t("notAssigned"))}</div>
-            <div><b>${t("thDone")}:</b> ${formatKm(r.doneKm)} / ${formatKm(r.totalKm)} km</div>
-        `, { sticky: true, className: "map-tip" });
-        line.on("click", () => { if (!measure.active) flyToCoords(r.coords); });
+        line.bindTooltip(`<b>${esc(r.name)}</b><small>${esc(r.id)} · ${percent(r.doneKm, r.totalKm)}%</small>`, { sticky: true, className: "map-tip" });
+        line.on("click", () => { if (!measure.active) selectSegment(project, r); });
 
-        const endpoint = (latlng, label) => L.circleMarker(latlng, { radius: 5, color: "#FFFFFF", fillColor: color, fillOpacity: 1, weight: 2 })
+        const endpoint = (latlng, label) => L.circleMarker(latlng, { radius: 5, color: "#FFFFFF", fillColor: color, fillOpacity: 1, weight: 2, className: "route-end" })
             .addTo(routesLayer)
             .bindTooltip(esc(label), { className: "map-tip" });
         endpoint(r.coords[0], `A: ${r.pointA}`);
         endpoint(r.coords[r.coords.length - 1], `B: ${r.pointB}`);
     });
+}
+
+function selectedEntry() {
+    if (!state.selected) return null;
+    const project = state.projects.find(p => p.id === state.selected.projectId);
+    const item = project?.items.find(r => r.id === state.selected.itemId);
+    return item ? { project, item } : null;
+}
+
+function selectSegment(project, item) {
+    state.selected = { projectId: project.id, itemId: item.id };
+    state.expandedIds.add(project.id);
+    setSidebar(true);
+    renderAll();
+    flyToCoords(item.coords);
+}
+
+function clearSelection() {
+    state.selected = null;
+    renderAll();
 }
 
 function onMapClick(e) {
@@ -454,8 +480,8 @@ function togglePopover(popover, button) {
 }
 
 function setSidebar(open) {
-    $("sidebar").hidden = !open;
-    $("sidebarOpen").hidden = open;
+    $("workspace").classList.toggle("sidebar-closed", !open);
+    map?.invalidateSize();
 }
 
 function setDrawer(open) {
@@ -463,7 +489,15 @@ function setDrawer(open) {
     $("drawerBody").hidden = !open;
     $("drawerToggle").setAttribute("aria-expanded", open);
     $("drawerArrow").className = `fa-solid ${open ? "fa-chevron-down" : "fa-chevron-up"}`;
-    if (open && window.innerWidth <= 760) setSidebar(false);
+    map.invalidateSize();
+}
+
+function setDockTab(tab) {
+    state.dockTab = tab;
+    document.querySelectorAll(".tab").forEach(el => el.classList.toggle("active", el.dataset.tab === tab));
+    $("segmentsPane").hidden = tab !== "segments";
+    $("contractorsPane").hidden = tab !== "contractors";
+    setDrawer(true);
 }
 
 function toggleFullscreen() {
@@ -481,18 +515,20 @@ function renderLayerOptions() {
 }
 
 function renderLegend() {
-    $("legend").innerHTML = `
-        <h3>${t("legendTitle")}</h3>
-        ${STATUSES.map(s => `<div class="legend-row"><span class="legend-line" style="background:${STATUS_COLORS[s]}"></span>${t(`status${s}`)}</div>`).join("")}
-        <div class="legend-row"><span class="legend-pt"><span></span></span>${t("pointA")} / ${t("pointB")}</div>
-    `;
+    $("legend").innerHTML = STATUSES.map(s => `<div class="legend-row"><span class="legend-line" style="background:${STATUS_COLORS[s]}"></span>${t(`status${s}`)}</div>`).join("");
+}
+
+function statusTone(status) {
+    return STATUS_COLORS[status] || STATUS_COLORS.layihe;
 }
 
 function renderChips() {
+    const items = state.projects.flatMap(p => p.items);
+    const count = key => key === "all" ? items.length : items.filter(r => r.status === key).length;
     const chips = [{ key: "all", label: t("filterAll") }, ...STATUSES.map(s => ({ key: s, label: t(`status${s}`), color: STATUS_COLORS[s] }))];
     $("statusChips").innerHTML = chips.map(c => `
         <button class="chip ${state.statusFilter === c.key ? "active" : ""}" data-status="${c.key}">
-            ${c.color ? `<span class="dot" style="background:${c.color}"></span>` : ""}${c.label}
+            ${c.color ? `<span class="dot" style="background:${c.color}"></span>` : ""}${c.label} <b>${count(c.key)}</b>
         </button>
     `).join("");
 }
@@ -512,7 +548,7 @@ function renderKpis() {
 function renderProjects() {
     const filtering = state.statusFilter !== "all" || state.query;
     const shown = state.projects.filter(p => !filtering || filteredItems(p).length > 0);
-    $("projectCount").textContent = `(${shown.length})`;
+    $("projectCount").textContent = shown.length;
 
     $("projectList").innerHTML = shown.length === 0 ? `<div class="empty">${t("noResults")}</div>` : shown.map(p => {
         const visible = state.visibleIds.has(p.id);
@@ -520,30 +556,78 @@ function renderProjects() {
         const sum = totals(p.items);
         const pct = percent(sum.done, sum.plan);
         return `
-            <div class="project ${visible ? "visible" : ""}" data-id="${esc(p.id)}">
+            <div class="project ${visible ? "" : "hidden-on-map"}" data-id="${esc(p.id)}">
                 <div class="project-row">
+                    <label class="check" title="${t("toggleVisibility")}"><input type="checkbox" data-action="toggle" ${visible ? "checked" : ""}></label>
                     <button class="project-main" data-action="expand" aria-expanded="${expanded}">
-                        <span class="dot" style="background:${STATUS_COLORS[p.status] || STATUS_COLORS.layihe}"></span>
                         <strong title="${esc(p.name)}">${esc(p.name)}</strong>
-                        <span class="project-pct">${pct}%</span>
+                        <small>${formatKm(sum.done)} / ${formatKm(sum.plan)} km · ${p.items.length} ${t("segmentsUnit")}</small>
                     </button>
-                    ${p.imported && isAdmin() ? `<button class="icon-btn small" data-action="delete" title="${t("delete")}"><i class="fa-solid fa-trash"></i></button>` : ""}
-                    <button class="icon-btn small" data-action="toggle" title="${t("toggleVisibility")}"><i class="fa-solid ${visible ? "fa-eye" : "fa-eye-slash"}"></i></button>
+                    <span class="project-pct">${pct}%</span>
+                    ${p.imported && isAdmin() ? `<button class="icon-btn" data-action="delete" title="${t("delete")}"><i class="fa-regular fa-trash-can"></i></button>` : ""}
+                    <button class="icon-btn" data-action="expand" aria-label="${esc(p.name)}"><i class="fa-solid fa-chevron-right chevron ${expanded ? "open" : ""}"></i></button>
                 </div>
-                <div class="progress"><span style="width:${pct}%;background:${STATUS_COLORS[p.status] || STATUS_COLORS.layihe}"></span></div>
                 ${expanded ? `<div class="segments">${filteredItems(p).map(r => `
-                    <button class="segment" data-action="focus" data-item="${esc(r.id)}">
-                        <span class="dot" style="background:${STATUS_COLORS[r.status] || STATUS_COLORS.layihe}"></span>
-                        <span title="${esc(r.name)}">${esc(r.name)}</span>
-                        <span>${formatKm(r.doneKm)}/${formatKm(r.totalKm)}</span>
+                    <button class="segment ${state.selected?.itemId === r.id && state.selected?.projectId === p.id ? "selected" : ""}" data-action="focus" data-item="${esc(r.id)}">
+                        <span class="dot" style="background:${statusTone(r.status)}"></span>
+                        <span class="segment-name" title="${esc(r.name)}">${esc(r.name)}</span>
+                        <span>${percent(r.doneKm, r.totalKm)}%</span>
                     </button>`).join("")}</div>` : ""}
             </div>`;
     }).join("");
 }
 
+function renderDetail() {
+    const entry = selectedEntry();
+    $("listView").hidden = Boolean(entry);
+    $("detailView").hidden = !entry;
+    if (!entry) return;
+
+    const { project, item: r } = entry;
+    const tone = statusTone(r.status);
+    const pct = percent(r.doneKm, r.totalKm);
+    const info = state.contractors[r.contractor];
+    const row = (label, value) => `<dt>${label}</dt><dd>${value}</dd>`;
+
+    $("detailView").innerHTML = `
+        <div class="detail-head">
+            <button class="icon-btn" data-action="back" title="${t("backToList")}"><i class="fa-solid fa-arrow-left"></i></button>
+            <span>${t("backToList")}</span>
+        </div>
+        <div class="detail-body">
+            <div class="detail-title">
+                <small>${esc(r.id)} · ${esc(project.name)}</small>
+                <h2>${esc(r.name)}</h2>
+                <span class="pill" style="--tone:${tone}"><span class="dot" style="background:${tone}"></span>${t(`status${r.status}`)}</span>
+            </div>
+            <div class="route">
+                <i class="fa-solid fa-circle"></i><strong>${esc(r.pointA)}</strong>
+                <span class="stem"></span><span></span>
+                <i class="fa-solid fa-circle"></i><strong>${esc(r.pointB)}</strong>
+            </div>
+            <div>
+                <div class="meter-row"><b>${pct}%</b><span class="muted">${formatKm(r.doneKm)} / ${formatKm(r.totalKm)} km</span></div>
+                <div class="progress"><span style="width:${pct}%;background:${tone}"></span></div>
+            </div>
+            <dl class="spec">
+                ${row(t("thLeft"), `${formatKm(Math.max(0, r.totalKm - r.doneKm))} km`)}
+                ${row(t("thDates"), `${formatDate(r.startDate)} – ${formatDate(r.endDate)}`)}
+                ${row(t("closures"), r.closures || 0)}
+                ${row(t("manholes"), r.manholes || 0)}
+            </dl>
+            <dl class="spec">
+                ${row(t("thContractor"), esc(r.contractor || t("notAssigned")))}
+                ${info ? row(t("workers"), info.workers) + row(t("machinery"), info.machinery) + row(t("engineer"), esc(info.engineer)) : ""}
+            </dl>
+            <button class="btn btn-outline" data-action="zoom"><i class="fa-solid fa-crosshairs"></i> ${t("zoomTo")}</button>
+        </div>
+    `;
+}
+
 function renderTable() {
     const entries = visibleEntries();
-    $("drawerCount").textContent = `(${entries.length})`;
+    const selected = selectedEntry();
+    $("drawerCount").textContent = entries.length;
     $("tableHead").innerHTML = `<tr>
         <th>${t("thRoute")}</th><th>${t("thDates")}</th><th>${t("thContractor")}</th>
         <th class="num">${t("thTotal")}</th><th class="num">${t("thDone")}</th><th class="num">${t("thLeft")}</th>
@@ -551,15 +635,15 @@ function renderTable() {
     </tr>`;
 
     $("tableBody").innerHTML = entries.map(({ project, item: r }, index) => `
-        <tr data-index="${index}">
-            <td><b>${esc(r.pointA)}</b> ➔ <b>${esc(r.pointB)}</b><small>${esc(project.name)} · ${esc(r.name)}</small></td>
-            <td>${formatDate(r.startDate)} ➔ ${formatDate(r.endDate)}</td>
+        <tr data-index="${index}" class="${selected?.item === r ? "selected" : ""}">
+            <td><b>${esc(r.pointA)} ➔ ${esc(r.pointB)}</b><small>${esc(project.name)} · ${esc(r.name)}</small></td>
+            <td>${formatDate(r.startDate)} – ${formatDate(r.endDate)}</td>
             <td>${esc(r.contractor || t("notAssigned"))}</td>
-            <td class="num"><b>${formatKm(r.totalKm)} km</b></td>
-            <td class="num c-done">${formatKm(r.doneKm)} km</td>
-            <td class="num c-left">${formatKm(Math.max(0, r.totalKm - r.doneKm))} km</td>
+            <td class="num">${formatKm(r.totalKm)} km</td>
+            <td class="num">${formatKm(r.doneKm)} km</td>
+            <td class="num">${formatKm(Math.max(0, r.totalKm - r.doneKm))} km</td>
             <td>${r.closures || 0} / ${r.manholes || 0}</td>
-            <td><span class="status" style="color:${STATUS_COLORS[r.status] || STATUS_COLORS.layihe}"><span class="dot" style="background:currentColor"></span>${t(`status${r.status}`)}</span></td>
+            <td><span class="pill" style="--tone:${statusTone(r.status)}">${t(`status${r.status}`)}</span></td>
         </tr>
     `).join("");
 
@@ -567,19 +651,24 @@ function renderTable() {
     $("tableFoot").innerHTML = entries.length === 0 ? "" : `<tr>
         <td colspan="3">${t("grandTotal")}</td>
         <td class="num">${formatKm(sum.plan)} km</td>
-        <td class="num c-done">${formatKm(sum.done)} km</td>
-        <td class="num c-left">${formatKm(Math.max(0, sum.plan - sum.done))} km</td>
+        <td class="num">${formatKm(sum.done)} km</td>
+        <td class="num">${formatKm(Math.max(0, sum.plan - sum.done))} km</td>
         <td colspan="2">${sum.closures} ${t("closuresUnit")} / ${sum.manholes} ${t("manholesUnit")}</td>
     </tr>`;
 }
 
 function renderContractors() {
     const names = [...new Set(visibleEntries().map(e => e.item.contractor).filter(Boolean))];
-    $("contractorList").innerHTML = names.length === 0 ? `<div class="muted">—</div>` : names.map(name => {
+    $("contractorCount").textContent = names.length;
+    $("contractorHead").innerHTML = `<tr><th>${t("thContractor")}</th><th class="num">${t("workers")}</th><th class="num">${t("machinery")}</th><th>${t("engineer")}</th></tr>`;
+    $("contractorList").innerHTML = names.map(name => {
         const info = state.contractors[name];
-        return `<div class="contractor"><strong>${esc(name)}</strong>${info
-            ? `${t("workers")}: ${info.workers} · ${t("machinery")}: ${info.machinery}<br>${t("engineer")}: ${esc(info.engineer)}`
-            : t("notAssigned")}</div>`;
+        return `<tr>
+            <td><b>${esc(name)}</b></td>
+            <td class="num">${info ? info.workers : "—"}</td>
+            <td class="num">${info ? info.machinery : "—"}</td>
+            <td>${info ? esc(info.engineer) : t("notAssigned")}</td>
+        </tr>`;
     }).join("");
 }
 
@@ -593,7 +682,9 @@ function renderMaterials() {
 function renderAll() {
     if (!map) return;
     renderKpis();
+    renderChips();
     renderProjects();
+    renderDetail();
     renderTable();
     renderContractors();
     drawRoutes();
@@ -735,10 +826,11 @@ function bindEvents() {
 
     $("langSelect").addEventListener("change", e => {
         writeStore(STORAGE.lang, e.target.value);
+        $("loginLang").value = e.target.value;
         applyLanguage(e.target.value);
     });
     $("themeBtn").addEventListener("click", () => {
-        const next = document.documentElement.dataset.theme === "light" ? "dark" : "light";
+        const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
         writeStore(STORAGE.theme, next);
         applyTheme(next);
     });
@@ -764,9 +856,18 @@ function bindEvents() {
         });
     });
 
-    $("sidebarToggle").addEventListener("click", () => setSidebar(false));
-    $("sidebarOpen").addEventListener("click", () => setSidebar(true));
+    $("sidebarToggle").addEventListener("click", () => setSidebar($("workspace").classList.contains("sidebar-closed")));
     $("drawerToggle").addEventListener("click", () => setDrawer(!$("drawer").classList.contains("open")));
+    document.querySelectorAll(".tab").forEach(tab => tab.addEventListener("click", () => setDockTab(tab.dataset.tab)));
+    $("detailView").addEventListener("click", e => {
+        const action = e.target.closest("[data-action]")?.dataset.action;
+        if (action === "back") clearSelection();
+        if (action === "zoom") flyToCoords(selectedEntry().item.coords);
+    });
+    $("loginLang").addEventListener("change", e => {
+        $("langSelect").value = e.target.value;
+        $("langSelect").dispatchEvent(new Event("change"));
+    });
 
     $("searchInput").addEventListener("input", e => {
         state.query = e.target.value.trim().toLocaleLowerCase("az");
@@ -776,7 +877,6 @@ function bindEvents() {
         const chip = e.target.closest("[data-status]");
         if (!chip) return;
         state.statusFilter = chip.dataset.status;
-        renderChips();
         renderAll();
     });
     $("showAllBtn").addEventListener("click", () => {
@@ -798,15 +898,11 @@ function bindEvents() {
             if (state.visibleIds.has(project.id)) state.visibleIds.delete(project.id);
             else state.visibleIds.add(project.id);
         } else if (action === "expand") {
-            if (state.expandedIds.has(project.id)) {
-                state.expandedIds.delete(project.id);
-            } else {
-                state.expandedIds.add(project.id);
-                state.visibleIds.add(project.id);
-                flyToCoords(project.items.flatMap(r => r.coords));
-            }
+            if (state.expandedIds.has(project.id)) state.expandedIds.delete(project.id);
+            else state.expandedIds.add(project.id);
         } else if (action === "focus") {
-            flyToCoords(project.items.find(r => r.id === button.dataset.item).coords);
+            selectSegment(project, project.items.find(r => r.id === button.dataset.item));
+            return;
         } else if (action === "delete") {
             if (!confirm(t("confirmDelete"))) return;
             try {
@@ -823,7 +919,9 @@ function bindEvents() {
 
     $("tableBody").addEventListener("click", e => {
         const row = e.target.closest("tr");
-        if (row) flyToCoords(visibleEntries()[Number(row.dataset.index)].item.coords);
+        if (!row) return;
+        const { project, item } = visibleEntries()[Number(row.dataset.index)];
+        selectSegment(project, item);
     });
 
     $("zoomInBtn").addEventListener("click", () => map.zoomIn());
@@ -857,10 +955,11 @@ async function init() {
     const lang = readStore(STORAGE.lang, "az");
     const language = I18N[lang] ? lang : "az";
     $("langSelect").value = language;
+    $("loginLang").value = language;
     state.lang = language;
-    applyTheme(readStore(STORAGE.theme, "dark"));
+    applyTheme(readStore(STORAGE.theme, "light"));
 
-    if (window.innerWidth <= 760) setSidebar(false);
+    if (window.innerWidth <= 860) setSidebar(false);
 
     bindEvents();
     initMap();

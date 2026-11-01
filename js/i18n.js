@@ -3,6 +3,8 @@
 const I18N = {
     az: {
         pageTitle: "BCG – Fiber Optik GIS Paneli",
+        loginHeadline: "Fiber optik şəbəkənin vahid idarəetmə paneli", loginLead: "Marşrutlar, icra vəziyyəti, podratçılar və materiallar bir xəritədə.",
+        segments: "Seqmentlər", segmentsUnit: "seqment", backToList: "Layihələrə qayıt", closures: "Mufta", manholes: "Quyu", zoomTo: "Xəritədə göstər",
         brandSubtitle: "GIS İdarəetmə Paneli",
         loginTitle: "Sistem Girişi", loginHint: "E-poçt və şifrənizi daxil edin.",
         loginUser: "E-poçt", loginPass: "Şifrə", loginBtn: "Daxil ol", loginRequired: "E-poçt və şifrəni daxil edin", loginFailed: "E-poçt və ya şifrə yanlışdır", notConfigured: "Supabase qoşulmayıb (js/config.js)", loadError: "Məlumat yüklənmədi", saveError: "Əməliyyat alınmadı",
@@ -29,6 +31,8 @@ const I18N = {
     },
     en: {
         pageTitle: "BCG – Fiber Optic GIS Panel",
+        loginHeadline: "One control panel for the fiber optic network", loginLead: "Routes, progress, contractors and materials on a single map.",
+        segments: "Segments", segmentsUnit: "seg.", backToList: "Back to projects", closures: "Closures", manholes: "Manholes", zoomTo: "Show on map",
         brandSubtitle: "GIS Management Panel",
         loginTitle: "System Sign-in", loginHint: "Enter your email and password.",
         loginUser: "Email", loginPass: "Password", loginBtn: "Sign in", loginRequired: "Enter your email and password", loginFailed: "Wrong email or password", notConfigured: "Supabase is not connected (js/config.js)", loadError: "Data could not be loaded", saveError: "The operation failed",
@@ -55,6 +59,8 @@ const I18N = {
     },
     ru: {
         pageTitle: "BCG – ГИС-панель оптоволокна",
+        loginHeadline: "Единая панель управления оптоволоконной сетью", loginLead: "Маршруты, ход работ, подрядчики и материалы на одной карте.",
+        segments: "Сегменты", segmentsUnit: "сегм.", backToList: "К проектам", closures: "Муфты", manholes: "Колодцы", zoomTo: "Показать на карте",
         brandSubtitle: "ГИС-панель управления",
         loginTitle: "Вход в систему", loginHint: "Введите e-mail и пароль.",
         loginUser: "E-mail", loginPass: "Пароль", loginBtn: "Войти", loginRequired: "Введите e-mail и пароль", loginFailed: "Неверный e-mail или пароль", notConfigured: "Supabase не подключён (js/config.js)", loadError: "Не удалось загрузить данные", saveError: "Операция не выполнена",
