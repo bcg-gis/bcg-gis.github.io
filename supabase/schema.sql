@@ -98,3 +98,47 @@ create policy "admin writes segments" on segments for all to authenticated using
 -- Qeydi hər kəs yaza bilər, silə bilən isə müəllif və admindir
 create policy "add own note" on notes for insert to authenticated with check (user_id = auth.uid());
 create policy "delete own note" on notes for delete to authenticated using (user_id = auth.uid() or is_admin());
+
+-- Linklə paylaşma: admin link yaradır, link sahibi girişsiz yalnız seçilmiş layihələrə baxır.
+-- Anonim istifadəçinin cədvəllərə birbaşa çıxışı yoxdur, yalnız bu funksiya işləyir.
+create table share_links (
+    token uuid primary key default gen_random_uuid(),
+    project_ids text[] not null,
+    created_by uuid default auth.uid() references auth.users on delete set null,
+    created_at timestamptz not null default now(),
+    expires_at timestamptz
+);
+
+alter table share_links enable row level security;
+create policy "admin manages share links" on share_links for all to authenticated using (is_admin()) with check (is_admin());
+
+-- Podratçı mühəndislərinin telefonları və qeydlər linkə daxil deyil
+create function get_shared_view(link uuid) returns jsonb
+language sql stable security definer set search_path = public as $$
+    select coalesce(jsonb_agg(jsonb_build_object(
+        'id', p.id, 'name', p.name, 'status', p.status, 'start_date', p.start_date, 'end_date', p.end_date,
+        'imported', false,
+        'segments', (select coalesce(jsonb_agg(jsonb_build_object(
+            'code', s.code, 'name', s.name, 'point_a', s.point_a, 'point_b', s.point_b,
+            'start_date', s.start_date, 'end_date', s.end_date, 'contractor', s.contractor,
+            'total_km', s.total_km, 'done_km', s.done_km, 'status', s.status,
+            'closures', s.closures, 'manholes', s.manholes, 'coords', s.coords
+        )), '[]'::jsonb) from segments s where s.project_id = p.id)
+    ) order by p.name), '[]'::jsonb)
+    from projects p
+    join share_links l on p.id = any(l.project_ids)
+    where l.token = link and (l.expires_at is null or l.expires_at > now());
+$$;
+
+grant execute on function get_shared_view(uuid) to anon, authenticated;
+
+-- Linkin apardığı çizgilər və baxış yeri
+alter table share_links add column drawings jsonb not null default '[]'::jsonb, add column view jsonb;
+
+create function get_shared_extras(link uuid) returns jsonb
+language sql stable security definer set search_path = public as $$
+    select jsonb_build_object('drawings', drawings, 'view', view) from share_links
+    where token = link and (expires_at is null or expires_at > now());
+$$;
+
+grant execute on function get_shared_extras(uuid) to anon, authenticated;
