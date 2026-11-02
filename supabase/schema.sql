@@ -18,9 +18,11 @@ create table projects (
     id text primary key,
     name text not null,
     status text not null check (status in ('bitmis', 'icrada', 'tehvil', 'layihe')),
+    project_type text not null default 'lines' check (project_type in ('lines', 'points')),
     start_date date,
     end_date date,
-    imported boolean not null default false
+    imported boolean not null default false,
+    check (end_date is null or start_date is null or end_date >= start_date)
 );
 
 create table segments (
@@ -32,14 +34,16 @@ create table segments (
     point_b text not null,
     start_date date,
     end_date date,
-    contractor text,
-    total_km numeric not null default 0,
-    done_km numeric not null default 0,
+    contractor text references contractors(name) on update cascade on delete set null,
+    total_km numeric not null default 0 check (total_km >= 0),
+    done_km numeric not null default 0 check (done_km >= 0 and done_km <= total_km),
     status text not null check (status in ('bitmis', 'icrada', 'tehvil', 'layihe')),
-    closures integer not null default 0,
-    manholes integer not null default 0,
+    closures integer not null default 0 check (closures >= 0),
+    manholes integer not null default 0 check (manholes >= 0),
+    antennas integer not null default 0 check (antennas >= 0),
     coords jsonb not null,
-    unique (project_id, code)
+    unique (project_id, code),
+    check (end_date is null or start_date is null or end_date >= start_date)
 );
 
 create table materials (
@@ -47,13 +51,20 @@ create table materials (
     project text not null,
     material text not null,
     quantity text not null,
-    state text not null
+    invoice_no text not null default '',
+    issued_qty text not null default '',
+    used_qty text not null default '',
+    state text not null,
+    used_date date not null default current_date
 );
 
 create table notes (
     id bigint generated always as identity primary key,
     user_id uuid not null default auth.uid() references auth.users on delete cascade,
     author text not null default (auth.jwt() ->> 'email'),
+    recipient text not null default 'all',
+    duration_hours integer not null default 24,
+    expires_at timestamptz,
     text text not null,
     created_at timestamptz not null default now()
 );
@@ -84,7 +95,7 @@ alter table materials enable row level security;
 alter table notes enable row level security;
 
 -- Oxumaq yalnız daxil olmuş istifadəçilərə açıqdır
-create policy "own profile" on profiles for select to authenticated using (id = auth.uid());
+create policy "own profile" on profiles for select to authenticated using (true);
 create policy "read contractors" on contractors for select to authenticated using (true);
 create policy "read projects" on projects for select to authenticated using (true);
 create policy "read segments" on segments for select to authenticated using (true);
@@ -95,9 +106,9 @@ create policy "read notes" on notes for select to authenticated using (true);
 create policy "admin writes projects" on projects for all to authenticated using (is_admin()) with check (is_admin());
 create policy "admin writes segments" on segments for all to authenticated using (is_admin()) with check (is_admin());
 
--- Qeydi hər kəs yaza bilər, silə bilən isə müəllif və admindir
-create policy "add own note" on notes for insert to authenticated with check (user_id = auth.uid());
-create policy "delete own note" on notes for delete to authenticated using (user_id = auth.uid() or is_admin());
+-- Qeydi hər kəs yalnız öz adı və e-poçtu ilə yaza bilər; silə bilən isə müəllif və admindir
+create policy "add own note" on notes for insert to authenticated with check (user_id = (select auth.uid()) and author = ((select auth.jwt()) ->> 'email'));
+create policy "delete own note" on notes for delete to authenticated using (user_id = (select auth.uid()) or is_admin());
 
 -- Linklə paylaşma: admin link yaradır, link sahibi girişsiz yalnız seçilmiş layihələrə baxır.
 -- Anonim istifadəçinin cədvəllərə birbaşa çıxışı yoxdur, yalnız bu funksiya işləyir.
@@ -146,3 +157,13 @@ grant execute on function get_shared_extras(uuid) to anon, authenticated;
 -- Saytdan redaktə: podratçı və materialları admin dəyişir
 create policy "admin writes contractors" on contractors for all to authenticated using (is_admin()) with check (is_admin());
 create policy "admin writes materials" on materials for all to authenticated using (is_admin()) with check (is_admin());
+
+-- Xarici açar indeksləri və funksiya icazələri
+create index segments_project_id_idx on segments(project_id);
+create index segments_contractor_idx on segments(contractor);
+create index notes_user_id_idx on notes(user_id);
+create index share_links_created_by_idx on share_links(created_by);
+
+revoke execute on function handle_new_user() from public, anon, authenticated;
+revoke execute on function is_admin() from public, anon;
+grant execute on function is_admin() to authenticated;

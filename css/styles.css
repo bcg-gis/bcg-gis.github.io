@@ -229,7 +229,6 @@ textarea.input { height: auto; padding: 8px 10px; resize: vertical; }
 .project-pct { flex: none; color: var(--ink-2); font-weight: 500; font-size: 12px; }
 .chevron { transition: transform .12s; }
 .chevron.open { transform: rotate(90deg); }
-.project .progress { margin: 0 16px 8px 39px; height: 3px; }
 .segments { padding: 0 8px 8px 31px; }
 .segment { width: 100%; display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: var(--radius); text-align: left; font-size: 12px; color: var(--ink-2); }
 .segment:hover { background: var(--hover); color: var(--ink); }
@@ -448,7 +447,6 @@ body.shared .user, body.shared #logoutBtn, body.shared .bar-sep, body.shared .ta
     .list-head .link { font-size: 11px; }
     .link + .link { margin-left: 6px; }
     .project-row { padding: 6px 4px 6px 12px; }
-    .project .progress { margin-left: 35px; margin-right: 12px; }
     .kpi { padding-left: 6px; }
     .kpi b { font-size: 14px; }
     .chip { height: 24px; padding: 0 6px; font-size: 11px; }
@@ -475,6 +473,307 @@ body.shared .user, body.shared #logoutBtn, body.shared .bar-sep, body.shared .ta
     .map-stage { height: 55vh; }
     .dock, .dock.open { height: auto; border: 0; }
     .dock-body { display: block !important; border: 0; }
+    #segmentsPane { display: block !important; }
     .table-wrap { overflow: visible; }
     th, td, tfoot td { background: #fff; color: #000; position: static; border-color: #bbb; }
 }
+
+/* === YENİLİKLƏR VƏ ÖNBAXIŞ ƏLAVƏLƏRİ === */
+
+/* 1. Sol yuxarıdakı ümumi məsafə blokunu və aşağıdakı Seqmentlər/Podratçılar cədvəlini gizlət */
+#sidebar .summary { display: none !important; }
+#drawer { display: none !important; }
+#materialsModal { width: min(980px, 95vw); }
+
+/* 2. Layihə və ya seqment seçiləndə açılan, ölçüsü dəyişdirilə bilən kvadrat məlumat pəncərəsi */
+.info-card[hidden] { display: none !important; }
+.info-card {
+    position: absolute;
+    z-index: 520;
+    left: 16px;
+    top: 16px;
+    width: 390px;
+    height: 460px;
+    min-width: 280px;
+    min-height: 240px;
+    max-width: min(680px, calc(100% - 72px));
+    max-height: calc(100% - 32px);
+    resize: both;
+    overflow: auto;
+    display: flex;
+    flex-direction: column;
+    background: var(--panel);
+    color: var(--ink);
+    border: 1px solid var(--line-strong);
+    border-radius: 8px;
+    box-shadow: var(--shadow);
+}
+.info-card-head {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 9px 12px;
+    background: var(--bar);
+    color: var(--bar-ink);
+    cursor: move;
+    user-select: none;
+}
+.info-card-head small {
+    display: block;
+    color: var(--bar-muted);
+    font-size: 11px;
+}
+.info-card-head strong {
+    display: block;
+    font-size: 13px;
+    line-height: 1.25;
+}
+.info-card-head .icon-btn {
+    color: var(--bar-muted);
+    width: 26px;
+    height: 26px;
+}
+.info-card-head .icon-btn:hover {
+    background: var(--bar-hover);
+    color: var(--bar-ink);
+}
+.info-card-body {
+    flex: 1;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    font-size: 12px;
+}
+.info-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+}
+.info-stat {
+    padding: 7px 8px;
+    border-radius: var(--radius);
+    background: var(--canvas);
+    border: 1px solid var(--line);
+}
+.info-stat small {
+    display: block;
+    color: var(--ink-3);
+    font-size: 11px;
+}
+.info-stat b {
+    font-size: 14px;
+    font-weight: 600;
+}
+.info-kv {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 5px 12px;
+    padding-top: 8px;
+    border-top: 1px solid var(--line);
+}
+.info-kv dt { color: var(--ink-3); }
+.info-kv dd { text-align: right; font-weight: 500; overflow-wrap: anywhere; }
+.info-sub-list {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+}
+.info-sub-item {
+    padding: 9px 10px;
+    border-radius: var(--radius);
+    background: var(--canvas);
+    border: 1px solid var(--line);
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.info-sub-item:hover { border-color: var(--line-strong); }
+.info-sub-box {
+    padding: 7px 9px;
+    border-radius: var(--radius);
+    background: var(--panel);
+    border: 1px solid var(--line);
+    font-weight: 500;
+}
+.info-exec-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 11.5px;
+}
+.info-exec-row select {
+    flex: 1;
+    height: 26px;
+    padding: 0 7px;
+    font-size: 11.5px;
+    font-weight: 500;
+}
+.info-card-foot {
+    position: sticky;
+    bottom: 0;
+    padding: 6px 12px;
+    border-top: 1px solid var(--line);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--ink-3);
+    background: var(--canvas);
+}
+
+/* 3. Sol sütun bağlı olanda xəritə üzərində yenidən açmaq üçün düymə */
+.reopen-sidebar-btn {
+    position: absolute;
+    z-index: 515;
+    top: 12px;
+    left: 12px;
+    display: none;
+    align-items: center;
+    gap: 7px;
+    height: 34px;
+    padding: 0 12px;
+    background: var(--panel);
+    color: var(--ink);
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    font-weight: 600;
+    font-size: 12px;
+}
+.reopen-sidebar-btn:hover { background: var(--hover); }
+.workspace.sidebar-closed .reopen-sidebar-btn { display: inline-flex; }
+.workspace.sidebar-closed .info-card { top: 54px; }
+
+/* 4. Miqyası Dondur və Sil paneli */
+.scale-control-bar {
+    position: absolute;
+    z-index: 515;
+    top: 12px;
+    right: 56px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 10px;
+    background: var(--panel);
+    color: var(--ink);
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    font-size: 12px;
+}
+.scale-frozen-chip[hidden] { display: none !important; }
+.scale-frozen-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding-left: 8px;
+    border-left: 1px solid var(--line);
+}
+.scale-frozen-badge {
+    padding: 2px 7px;
+    border-radius: 4px;
+    background: var(--brand-soft);
+    color: var(--brand);
+    font-weight: 600;
+}
+
+/* 5. Qeyd və Material filtrləri (Anbardan verilən + İstifadə olunan + Anbar Qaiməsi) */
+.note-meta-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    width: 100%;
+}
+.note-meta-grid label {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    font-size: 11px;
+    color: var(--ink-2);
+}
+.note-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-bottom: 4px;
+}
+.note-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 1px 7px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 500;
+    background: var(--brand-soft);
+    color: var(--brand);
+}
+.note-badge.time {
+    background: color-mix(in srgb, var(--amber) 16%, transparent);
+    color: var(--amber);
+}
+.mat-filters {
+    display: grid;
+    grid-template-columns: 1.2fr 1.2fr 1.1fr 1fr 1fr auto;
+    gap: 8px;
+    align-items: end;
+    padding: 10px;
+    background: var(--canvas);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+}
+.mat-filters label {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--ink-2);
+}
+.mat-summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 7px 12px;
+    border-radius: var(--radius);
+    background: var(--brand-soft);
+    color: var(--brand);
+    font-size: 12px;
+    font-weight: 500;
+}
+.invoice-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 7px;
+    border-radius: 4px;
+    background: var(--brand-soft);
+    color: var(--brand);
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 600;
+}
+.notif-toast {
+    position: fixed;
+    z-index: 3400;
+    top: 62px;
+    right: 16px;
+    width: 310px;
+    padding: 11px 13px;
+    background: var(--panel);
+    color: var(--ink);
+    border: 1px solid var(--brand);
+    border-left: 4px solid var(--brand);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    font-size: 12px;
+}
+.notif-toast strong { display: block; margin-bottom: 3px; color: var(--brand); }

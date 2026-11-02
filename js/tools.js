@@ -58,10 +58,23 @@ const tools = (() => {
         return "";
     }
 
-    /* Yaddaş */
+    /* Yaddaş: çizgilər hər istifadəçi üçün ayrıca açarda saxlanır */
+    let shapesKey = null;
     const styleOf = s => ({ ...DEFAULT_STYLE, ...s.style });
     function save() {
-        if (!st.sessionOnly) writeStore(KEYS.shapes, st.shapes);
+        if (!st.sessionOnly && shapesKey) writeStore(shapesKey, st.shapes);
+    }
+    function loadOwnShapes() {
+        if (!shapesKey) return [];
+        const own = readStore(shapesKey, null);
+        if (own) return own;
+        // Köhnə ümumi açardakı çizgilər ilk daxil olan istifadəçiyə keçir
+        const legacy = readStore(KEYS.shapes, []);
+        if (legacy.length) {
+            writeStore(shapesKey, legacy);
+            localStorage.removeItem(KEYS.shapes);
+        }
+        return legacy;
     }
     function remember() {
         st.history.push(JSON.stringify(st.shapes));
@@ -561,8 +574,6 @@ const tools = (() => {
                 render();
             }
             if (moving) {
-                const s = st.shapes.find(x => x.id === moving.id);
-                if (s.tool === "circle") s.radius = s.radius;
                 moving = null;
                 save();
                 render();
@@ -576,6 +587,7 @@ const tools = (() => {
 
         document.addEventListener("keydown", e => {
             if (e.target.matches?.("input, textarea, select")) return;
+            if (document.querySelector("dialog[open], #login:not([hidden])")) return;
             if (e.key === "Escape" && st.tool) setTool(null);
             if (e.key === "Enter" && st.draft.length) finish();
             if (e.key === "F8") {
@@ -595,8 +607,17 @@ const tools = (() => {
             ready = true;
             bindUi();
             bindMap();
-            if (!st.sessionOnly) setShapes(readStore(KEYS.shapes, []));
+            if (!st.sessionOnly) setShapes(loadOwnShapes());
             else render();
+        },
+        /* Daxil olan / çıxan istifadəçi: həmin istifadəçinin çizgiləri yüklənir */
+        setUser(userId) {
+            shapesKey = userId ? `${KEYS.shapes}.${userId}` : null;
+            if (st.sessionOnly) return;
+            st.history = [];
+            st.picked = null;
+            st.shapes = [];
+            if (ready) setShapes(loadOwnShapes());
         },
         /* Klik alət və ya çizgi üçündürsə true qaytarır */
         handleClick(e) {

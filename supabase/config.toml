@@ -1,0 +1,6 @@
+# Verilənlər bazası açarı və həqiqi məlumat repoya düşməsin
+project_id = "olbzelzdkqqmaapaugjs"
+
+[db.seed]
+enabled = true
+sql_paths = ["./seed.sql"]

@@ -13,16 +13,26 @@ const api = (() => {
         id: row.code, name: row.name, pointA: row.point_a, pointB: row.point_b,
         startDate: row.start_date || "", endDate: row.end_date || "", contractor: row.contractor || "",
         totalKm: Number(row.total_km), doneKm: Number(row.done_km), status: row.status,
-        closures: row.closures, manholes: row.manholes, coords: row.coords
+        closures: row.closures || 0, manholes: row.manholes || 0, antennas: Number(row.antennas || 0),
+        coords: row.coords
     });
 
-    const toProject = row => ({
-        id: row.id, name: row.name, status: row.status, imported: row.imported,
-        startDate: row.start_date || "", endDate: row.end_date || "",
-        items: row.segments.map(toSegment).sort((a, b) => a.id.localeCompare(b.id))
-    });
+    const toProject = row => {
+        const items = (row.segments || []).map(toSegment).sort((a, b) => a.id.localeCompare(b.id));
+        const isPoints = row.project_type === "points" || items.some(s => s.antennas > 0 || (Array.isArray(s.coords) && s.coords.length === 1));
+        return {
+            id: row.id, name: row.name, status: row.status, imported: row.imported,
+            type: isPoints ? "points" : "lines",
+            startDate: row.start_date || "", endDate: row.end_date || "",
+            items
+        };
+    };
 
-    const toNote = row => ({ id: row.id, userId: row.user_id, author: row.author, text: row.text, date: row.created_at });
+    const toNote = row => ({
+        id: row.id, userId: row.user_id, author: row.author,
+        recipient: row.recipient || "all", durationHours: row.duration_hours ?? 24,
+        expiresAt: row.expires_at, text: row.text, date: row.created_at
+    });
 
     return {
         configured,
@@ -32,45 +42,71 @@ const api = (() => {
             return data.session ? data.session.user : null;
         },
 
+        /* { user } və ya { error: "credentials" | "network" } */
         async signIn(email, password) {
-            const { data, error } = await client.auth.signInWithPassword({ email, password });
-            return error ? null : data.user;
+            try {
+                const { data, error } = await client.auth.signInWithPassword({ email, password });
+                if (!error) return { user: data.user };
+                return { error: error.status === 400 || /invalid/i.test(error.message) ? "credentials" : "network" };
+            } catch {
+                return { error: "network" };
+            }
         },
 
         signOut: () => client.auth.signOut(),
 
         async loadAll(userId) {
-            const [profile, projects, contractors, materials, notes] = await Promise.all([
-                client.from("profiles").select("role").eq("id", userId).single(),
+            const [profiles, projects, contractors, materials, notes] = await Promise.all([
+                client.from("profiles").select("id, email, role").order("email"),
                 client.from("projects").select("*, segments(*)").order("name"),
                 client.from("contractors").select("*"),
                 client.from("materials").select("*").order("id"),
                 client.from("notes").select("*").order("created_at", { ascending: false })
             ].map(query => query.then(unwrap)));
 
+            const own = profiles.find(p => p.id === userId);
+            const contractorMap = {
+                "BCG (Öz briqadamız)": { name: "BCG (Öz briqadamız)", workers: 38, machinery: 10, engineer: "BCG Daxili Briqada (+994 50 200 10 10)", isOwn: true },
+                ...Object.fromEntries(contractors.map(c => [c.name, { ...c, isOwn: /bcg/i.test(c.name) }]))
+            };
             return {
-                role: profile.role,
+                role: own ? own.role : "manager",
+                users: profiles.map(p => p.email),
                 projects: projects.map(toProject),
-                contractors: Object.fromEntries(contractors.map(c => [c.name, c])),
+                contractors: contractorMap,
                 materials,
                 notes: notes.map(toNote)
             };
         },
 
-        async addNote(text) {
-            return toNote(unwrap(await client.from("notes").insert({ text }).select().single()));
+        async addNote(text, recipient = "all", durationHours = 24) {
+            const hours = Number(durationHours) || 0;
+            const expires_at = hours > 0 ? new Date(Date.now() + hours * 3600000).toISOString() : null;
+            return toNote(unwrap(await client.from("notes").insert({
+                text, recipient: recipient || "all", duration_hours: hours, expires_at
+            }).select().single()));
         },
 
         async deleteNote(id) {
             unwrap(await client.from("notes").delete().eq("id", id));
         },
 
+        /* Layihə və seqmentləri. Seqmentlər yazılmasa, layihə geri silinir ki bazada boş layihə qalmasın */
         async saveProject(project) {
-            unwrap(await client.from("projects").insert({ id: project.id, name: project.name, status: project.status, imported: true }));
-            unwrap(await client.from("segments").insert(project.items.map(r => ({
+            unwrap(await client.from("projects").insert({
+                id: project.id, name: project.name, status: project.status,
+                project_type: project.type || "lines", imported: true
+            }));
+            const { error } = await client.from("segments").insert(project.items.map(r => ({
                 project_id: project.id, code: r.id, name: r.name, point_a: r.pointA, point_b: r.pointB,
-                total_km: r.totalKm, done_km: r.doneKm, status: r.status, coords: r.coords
-            }))));
+                contractor: r.contractor || null,
+                total_km: r.totalKm, done_km: r.doneKm, status: r.status,
+                antennas: r.antennas || 0, coords: r.coords
+            })));
+            if (error) {
+                await client.from("projects").delete().eq("id", project.id);
+                throw error;
+            }
         },
 
         async deleteProject(id) {
@@ -93,13 +129,10 @@ const api = (() => {
             unwrap(await client.from("segments").delete().eq("project_id", projectId).eq("code", code));
         },
 
+        /* Ad dəyişəndə seqmentlərdəki ad bazada FK (on update cascade) ilə yenilənir */
         async saveContractor(name, row) {
-            if (!name) {
-                unwrap(await client.from("contractors").insert(row));
-                return;
-            }
-            unwrap(await client.from("contractors").update(row).eq("name", name));
-            if (row.name !== name) unwrap(await client.from("segments").update({ contractor: row.name }).eq("contractor", name));
+            const query = name ? client.from("contractors").update(row).eq("name", name) : client.from("contractors").insert(row);
+            unwrap(await query);
         },
 
         async deleteContractor(name) {

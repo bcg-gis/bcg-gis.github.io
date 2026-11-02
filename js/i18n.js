@@ -20,18 +20,18 @@ const I18N = {
         statusbitmis: "Bitmiş", statusicrada: "İcrada", statustehvil: "Təhvilə hazır", statuslayihe: "Layihədə",
         legendTitle: "Şərti işarələr", pointA: "A nöqtəsi", pointB: "B nöqtəsi",
         zoomIn: "Yaxınlaşdır", zoomOut: "Uzaqlaşdır", home: "Bütün Azərbaycan", north: "Şimala çevir", fullscreen: "Tam ekran",
-        layers: "Xəritə qatı", ruler: "Xətkeş", clearRuler: "Ölçməni təmizlə", coords: "Koordinat",
+        layers: "Xəritə qatı", coords: "Koordinat",
         layerSatellite: "Peyk görüntüsü", layerStreet: "Küçə xəritəsi", layerDark: "Tünd xəritə", layerBlank: "Ağ fon",
         coordTitle: "Koordinat aləti", coordClicked: "Xəritəyə klikləyin, koordinat burada görünəcək:", coordGoTo: "Koordinata get (enlik, uzunluq):",
         coordPlaceholder: "Xəritəyə vurun…", copied: "Koordinat kopyalandı", copy: "Kopyala", go: "Get",
         coordInvalid: "Format yanlışdır. Nümunə: 40.4093, 49.8671", coordSearched: "Axtarılan nöqtə",
-        measureHint: "Klik: nöqtə əlavə et · Sağ klik: geri al · Esc: bitir", measureTotal: "Ümumi",
-        tableTitle: "Seçilmiş seqmentlər", thRoute: "A ➔ B nöqtəsi", thDates: "Başlama ➔ Bitmə", thContractor: "Podratçı",
+        loginNetwork: "Serverə qoşulmaq alınmadı. İnterneti yoxlayın", datesInvalid: "Bitmə tarixi başlama tarixindən əvvəl ola bilməz", kmInvalid: "Çəkilən uzunluq ümumi uzunluqdan çox ola bilməz", shareCreated: "Link yaradıldı", shareRevokeConfirm: "Link ləğv olunsun? Onunla açan hər kəs girişini itirəcək.", stateordered: "Sifariş edilib", stateinstock: "Anbardadır", stateinstalled: "Quraşdırılıb", langLabel: "Dil", mapLabel: "Xəritə", toolsLabel: "Xəritə alətləri",
+        thRoute: "A ➔ B nöqtəsi", thDates: "Başlama ➔ Bitmə", thContractor: "Podratçı",
         thTotal: "Ümumi", thDone: "Çəkilən", thLeft: "Qalan", thAssets: "Mufta / Quyu", thStatus: "Status", grandTotal: "CƏMİ",
         closuresUnit: "mufta", manholesUnit: "quyu", contractors: "Podratçılar", workers: "İşçi", machinery: "Texnika", engineer: "Mühəndis", notAssigned: "Təyin olunmayıb",
         materialsHint: "Sistemdə qeydiyyatda olan materialların ümumi siyahısı", thProject: "Layihə", thMaterial: "Material növü", thQuantity: "Miqdar", thState: "Status / Qeyd", stateissued: "Anbardan verilib",
         close: "Bağla", notesTitle: "Rəhbərlik və işçi qeydləri", notePlaceholder: "Qeyd və ya tapşırıq…", noteAdd: "Qeydi əlavə et", notesEmpty: "Hələ qeyd yoxdur.", noteAdded: "Qeyd əlavə olundu", delete: "Sil",
-        importOk: "Layihə əlavə olundu", importNoLines: "Faylda xətt (LineString) tapılmadı", importError: "Fayl oxuna bilmədi", importedLine: "İdxal edilən xətt", confirmDelete: "Bu idxal edilmiş layihə silinsin?", storageFull: "Yadda saxlamaq alınmadı: brauzer yaddaşı doludur"
+        importOk: "Layihə əlavə olundu", importNoLines: "Faylda xətt (LineString) tapılmadı", importError: "Fayl oxuna bilmədi", importedLine: "İdxal edilən xətt", storageFull: "Yadda saxlamaq alınmadı: brauzer yaddaşı doludur"
     },
     en: {
         pageTitle: "BCG – Fiber Optic GIS Panel",
@@ -52,18 +52,18 @@ const I18N = {
         statusbitmis: "Completed", statusicrada: "In progress", statustehvil: "Ready for handover", statuslayihe: "Planned",
         legendTitle: "Legend", pointA: "Point A", pointB: "Point B",
         zoomIn: "Zoom in", zoomOut: "Zoom out", home: "All of Azerbaijan", north: "Reset north", fullscreen: "Full screen",
-        layers: "Map layer", ruler: "Ruler", clearRuler: "Clear measurement", coords: "Coordinates",
+        layers: "Map layer", coords: "Coordinates",
         layerSatellite: "Satellite imagery", layerStreet: "Street map", layerDark: "Dark map", layerBlank: "White background",
         coordTitle: "Coordinate tool", coordClicked: "Click the map and the coordinate appears here:", coordGoTo: "Go to coordinate (lat, lng):",
         coordPlaceholder: "Click the map…", copied: "Coordinate copied", copy: "Copy", go: "Go",
         coordInvalid: "Invalid format. Example: 40.4093, 49.8671", coordSearched: "Searched point",
-        measureHint: "Click: add point · Right-click: undo · Esc: finish", measureTotal: "Total",
-        tableTitle: "Selected segments", thRoute: "Point A ➔ B", thDates: "Start ➔ End", thContractor: "Contractor",
+        loginNetwork: "Could not reach the server. Check your connection", datesInvalid: "The end date cannot be before the start date", kmInvalid: "Laid length cannot exceed the total length", shareCreated: "Link created", shareRevokeConfirm: "Revoke this link? Everyone using it will lose access.", stateordered: "Ordered", stateinstock: "In stock", stateinstalled: "Installed", langLabel: "Language", mapLabel: "Map", toolsLabel: "Map tools",
+        thRoute: "Point A ➔ B", thDates: "Start ➔ End", thContractor: "Contractor",
         thTotal: "Total", thDone: "Laid", thLeft: "Remaining", thAssets: "Closures / Manholes", thStatus: "Status", grandTotal: "TOTAL",
         closuresUnit: "closures", manholesUnit: "manholes", contractors: "Contractors", workers: "Workers", machinery: "Machinery", engineer: "Engineer", notAssigned: "Not assigned",
         materialsHint: "All materials registered in the system", thProject: "Project", thMaterial: "Material type", thQuantity: "Quantity", thState: "Status / Note", stateissued: "Issued from warehouse",
         close: "Close", notesTitle: "Management and staff notes", notePlaceholder: "Note or task…", noteAdd: "Add note", notesEmpty: "No notes yet.", noteAdded: "Note added", delete: "Delete",
-        importOk: "Project added", importNoLines: "No lines (LineString) found in the file", importError: "The file could not be read", importedLine: "Imported line", confirmDelete: "Delete this imported project?", storageFull: "Could not save: browser storage is full"
+        importOk: "Project added", importNoLines: "No lines (LineString) found in the file", importError: "The file could not be read", importedLine: "Imported line", storageFull: "Could not save: browser storage is full"
     },
     ru: {
         pageTitle: "BCG – ГИС-панель оптоволокна",
@@ -84,17 +84,17 @@ const I18N = {
         statusbitmis: "Завершено", statusicrada: "В работе", statustehvil: "Готово к сдаче", statuslayihe: "В проекте",
         legendTitle: "Условные обозначения", pointA: "Точка А", pointB: "Точка Б",
         zoomIn: "Приблизить", zoomOut: "Отдалить", home: "Весь Азербайджан", north: "Сбросить на север", fullscreen: "Полный экран",
-        layers: "Слой карты", ruler: "Линейка", clearRuler: "Очистить измерение", coords: "Координаты",
+        layers: "Слой карты", coords: "Координаты",
         layerSatellite: "Спутниковый снимок", layerStreet: "Карта улиц", layerDark: "Тёмная карта", layerBlank: "Белый фон",
         coordTitle: "Инструмент координат", coordClicked: "Нажмите на карту, координата появится здесь:", coordGoTo: "Перейти к координате (шир., долг.):",
         coordPlaceholder: "Нажмите на карту…", copied: "Координата скопирована", copy: "Копировать", go: "Перейти",
         coordInvalid: "Неверный формат. Пример: 40.4093, 49.8671", coordSearched: "Искомая точка",
-        measureHint: "Клик: добавить точку · Правый клик: отменить · Esc: завершить", measureTotal: "Всего",
-        tableTitle: "Выбранные сегменты", thRoute: "Точка А ➔ Б", thDates: "Начало ➔ Конец", thContractor: "Подрядчик",
+        loginNetwork: "Не удалось подключиться к серверу. Проверьте интернет", datesInvalid: "Дата окончания не может быть раньше даты начала", kmInvalid: "Проложенная длина не может превышать общую", shareCreated: "Ссылка создана", shareRevokeConfirm: "Отозвать ссылку? Все, кто ею пользуется, потеряют доступ.", stateordered: "Заказано", stateinstock: "На складе", stateinstalled: "Установлено", langLabel: "Язык", mapLabel: "Карта", toolsLabel: "Инструменты карты",
+        thRoute: "Точка А ➔ Б", thDates: "Начало ➔ Конец", thContractor: "Подрядчик",
         thTotal: "Всего", thDone: "Проложено", thLeft: "Осталось", thAssets: "Муфты / Колодцы", thStatus: "Статус", grandTotal: "ИТОГО",
         closuresUnit: "муфт", manholesUnit: "колодцев", contractors: "Подрядчики", workers: "Рабочие", machinery: "Техника", engineer: "Инженер", notAssigned: "Не назначен",
         materialsHint: "Все материалы, зарегистрированные в системе", thProject: "Проект", thMaterial: "Тип материала", thQuantity: "Количество", thState: "Статус / Примечание", stateissued: "Выдано со склада",
         close: "Закрыть", notesTitle: "Заметки руководства и сотрудников", notePlaceholder: "Заметка или задача…", noteAdd: "Добавить заметку", notesEmpty: "Заметок пока нет.", noteAdded: "Заметка добавлена", delete: "Удалить",
-        importOk: "Проект добавлен", importNoLines: "В файле не найдены линии (LineString)", importError: "Не удалось прочитать файл", importedLine: "Импортированная линия", confirmDelete: "Удалить этот импортированный проект?", storageFull: "Не удалось сохранить: память браузера заполнена"
+        importOk: "Проект добавлен", importNoLines: "В файле не найдены линии (LineString)", importError: "Не удалось прочитать файл", importedLine: "Импортированная линия", storageFull: "Не удалось сохранить: память браузера заполнена"
     }
 };

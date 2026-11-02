@@ -4,3 +4,8 @@
 .DS_Store
 Thumbs.db
 supabase/seed.sql
+supabase/.temp/
+supabase/.branches/
+*.lnk
+.env
+.env.*
