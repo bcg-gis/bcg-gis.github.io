@@ -10,19 +10,27 @@ const api = (() => {
     }
 
     const toSegment = row => ({
-        id: row.code, name: row.name, pointA: row.point_a, pointB: row.point_b,
+        id: row.code, name: String(row.name || "").replace(/\s*\(Faz-\d+\)/gi, "").trim(),
+        pointA: row.point_a || "", pointB: row.point_b || "",
         startDate: row.start_date || "", endDate: row.end_date || "", contractor: row.contractor || "",
         totalKm: Number(row.total_km), doneKm: Number(row.done_km), status: row.status,
         closures: row.closures || 0, manholes: row.manholes || 0, antennas: Number(row.antennas || 0),
         coords: row.coords
     });
 
+    const isOtherProjectRow = row =>
+        row.project_type === "other" ||
+        /^(rm\b|rm-|dendrologiya)/i.test(String(row.name || "").trim());
+
     const toProject = row => {
         const items = (row.segments || []).map(toSegment).sort((a, b) => a.id.localeCompare(b.id));
-        const isPoints = row.project_type === "points" || items.some(s => s.antennas > 0 || (Array.isArray(s.coords) && s.coords.length === 1));
+        const isOther = isOtherProjectRow(row);
+        const isPoints = !isOther && (row.project_type === "points" || items.some(s => s.antennas > 0 || (Array.isArray(s.coords) && s.coords.length === 1)));
+        const cleanProjName = String(row.name || "").replace(/\s*-\s*Faz\s*\d+/gi, "").replace(/\s*\(Faz-\d+\)/gi, "").trim();
         return {
-            id: row.id, name: row.name, status: row.status, imported: row.imported,
-            type: isPoints ? "points" : "lines",
+            id: row.id, name: cleanProjName, status: row.status, imported: row.imported,
+            category: isOther ? "other" : "project",
+            type: isOther ? "lines" : (isPoints ? "points" : "lines"),
             startDate: row.start_date || "", endDate: row.end_date || "",
             items
         };
@@ -93,16 +101,22 @@ const api = (() => {
 
         /* Layihə və seqmentləri. Seqmentlər yazılmasa, layihə geri silinir ki bazada boş layihə qalmasın */
         async saveProject(project) {
+            const pType = project.category === "other" ? "other" : (project.type || "lines");
             unwrap(await client.from("projects").insert({
-                id: project.id, name: project.name, status: project.status,
-                project_type: project.type || "lines", imported: true
+                id: project.id, name: project.name, status: project.status || "layihe",
+                project_type: pType, imported: true
             }));
-            const { error } = await client.from("segments").insert(project.items.map(r => ({
-                project_id: project.id, code: r.id, name: r.name, point_a: r.pointA, point_b: r.pointB,
-                contractor: r.contractor || null,
-                total_km: r.totalKm, done_km: r.doneKm, status: r.status,
-                antennas: r.antennas || 0, coords: r.coords
-            })));
+            const { error } = await client.from("segments").insert(project.items.map(r => {
+                const safeCoords = Array.isArray(r.coords) && r.coords.length === 1
+                    ? [r.coords[0], r.coords[0]]
+                    : r.coords;
+                return {
+                    project_id: project.id, code: r.id, name: r.name, point_a: r.pointA || "", point_b: r.pointB || "",
+                    contractor: r.contractor || null,
+                    total_km: r.totalKm || 0, done_km: r.doneKm || 0, status: r.status || "layihe",
+                    antennas: r.antennas || 0, coords: safeCoords
+                };
+            }));
             if (error) {
                 await client.from("projects").delete().eq("id", project.id);
                 throw error;

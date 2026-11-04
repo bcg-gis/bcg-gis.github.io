@@ -14,7 +14,7 @@
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap">
     <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" integrity="sha384-MinO0mNliZ3vwppuPOUnGa+iq619pfMhLVUXfC4LHwSCvF9H+6P/KO4Q7qBOYV5V" crossorigin="anonymous">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" integrity="sha384-iw3OoTErCYJJB9mCa8LNS2hbsQ7M3C0EpIsO/H5+EGAkPGc6rk+V8i04oW/K5xq0" crossorigin="anonymous">
-    <link rel="stylesheet" href="css/styles.css?v=20261102b">
+    <link rel="stylesheet" href="css/styles.css?v=20261104a">
 </head>
 <body>
 
@@ -81,6 +81,7 @@
                 <span class="count" id="notesCount" hidden></span>
             </button>
             <button class="bar-item" id="materialsBtn"><i class="fa-solid fa-boxes-stacked"></i> <span data-i18n="materials"></span></button>
+            <button class="bar-item" id="usersBtn" hidden><i class="fa-solid fa-users-gear"></i> <span>İstifadəçilər</span></button>
             <button class="bar-item" id="importBtn"><i class="fa-solid fa-arrow-up-from-bracket"></i> <span data-i18n="import"></span></button>
             <input type="file" id="importFile" accept=".kmz,.kml,.geojson,.json" multiple hidden>
             <button class="bar-item" id="printBtn"><i class="fa-solid fa-print"></i> <span data-i18n="print"></span></button>
@@ -109,6 +110,17 @@
         <!-- SOL PANEL -->
         <aside class="sidebar" id="sidebar">
             <div class="side-view" id="listView">
+                <!-- İki əsas bölmə: Layihələr və Digər -->
+                <div class="side-cat-tabs" id="sideCatTabs">
+                    <button class="side-cat-btn active" type="button" id="tabProjectsBtn">
+                        <span>📁 Layihələr</span>
+                        <span class="side-cat-badge" id="tabProjectsCount">0</span>
+                    </button>
+                    <button class="side-cat-btn" type="button" id="tabOtherBtn">
+                        <span>🗂️ Digər</span>
+                        <span class="side-cat-badge" id="tabOtherCount">0</span>
+                    </button>
+                </div>
                 <div class="summary">
                     <div class="kpis" id="kpis"></div>
                     <div class="progress" aria-hidden="true"><span id="totalProgress"></span></div>
@@ -121,7 +133,7 @@
                     <div class="chips" id="statusChips"></div>
                 </div>
                 <div class="list-head">
-                    <h2><span data-i18n="projects"></span> <span class="muted" id="projectCount"></span></h2>
+                    <h2><span id="listHeadTitle" data-i18n="projects"></span> <span class="muted" id="projectCount"></span></h2>
                     <span>
                         <button class="link" id="addProjectBtn" data-i18n="addProject" hidden></button>
                         <button class="link" id="showAllBtn" data-i18n="showAll"></button>
@@ -137,11 +149,37 @@
             <div class="map-stage">
                 <main id="map" data-i18n-aria="mapLabel"></main>
 
+                <!-- Küçə Görünüşü (Pegman) sürükləmə ipucu -->
+                <div class="pegman-drop-hint" id="pegmanDropHint" hidden>
+                    <span>🧍 Adam ikonunu xəritədə baxmaq istədiyiniz nöqtəyə buraxın (və ya klikləyin)</span>
+                    <button class="icon-btn" type="button" id="cancelPegmanBtn" style="width:22px;height:22px;color:#fff">✕</button>
+                </div>
+
+                <!-- ÇAP / PDF ÜÇÜN SAHƏ (ÇƏRÇİVƏ) SEÇİMİ -->
+                <div class="print-crop-overlay" id="printCropOverlay" hidden>
+                    <div class="print-crop-bar">
+                        <span>📐 Haranı çap / PDF edək? (Çərçivəni sürüşdürün və ya künclərindən ölçüsünü dəyişin)</span>
+                        <button class="btn btn-outline" type="button" id="cropFullBtn" style="height:28px;padding:0 10px;font-size:12px">⛶ Tam ekran</button>
+                        <button class="btn btn-primary" type="button" id="confirmCropPrintBtn" style="height:28px;padding:0 12px;font-size:12px">🖨️ Seçilmiş hissəni Çap / PDF et</button>
+                        <button class="btn btn-danger" type="button" id="cancelCropPrintBtn" style="height:28px;padding:0 10px;font-size:12px">✕ Ləğv et</button>
+                    </div>
+                    <div class="crop-box" id="cropBox" style="left:160px;top:70px;width:620px;height:380px">
+                        <div class="crop-handle nw" data-dir="nw"></div>
+                        <div class="crop-handle ne" data-dir="ne"></div>
+                        <div class="crop-handle sw" data-dir="sw"></div>
+                        <div class="crop-handle se" data-dir="se"></div>
+                        <div class="crop-label">Seçilmiş Çap / PDF sahəsi</div>
+                    </div>
+                </div>
+
                 <nav class="toolbar" data-i18n-aria="toolsLabel">
                     <div class="toolbar-main">
                         <div class="tool-group">
                             <button class="tool" id="zoomInBtn" data-i18n-title="zoomIn"><i class="fa-solid fa-plus"></i></button>
                             <button class="tool" id="zoomOutBtn" data-i18n-title="zoomOut"><i class="fa-solid fa-minus"></i></button>
+                            <button class="tool active" id="focusToggleBtn" title="Fokus işıqlandırma (Seçilmiş layihəni ön plana çıxarır)">💡</button>
+                            <button class="tool" id="myLocationBtn" title="Mənim konumum (Harada olduğumu göstər)">🧭</button>
+                            <button class="tool" id="pegmanBtn" draggable="true" title="Küçə Görünüşü (Adam ikonunu tutub xəritəyə atın və ya klikləyin)">🧍</button>
                         </div>
                         <div class="fly-group" data-fly="view">
                             <button class="tool" data-group="view" data-i18n-title="groupView"><i class="fa-solid fa-compass"></i></button>
@@ -307,6 +345,136 @@
         <div class="notes" id="shareList"></div>
     </dialog>
 
+    <!-- KÜÇƏ GÖRÜNÜŞÜ (GOOGLE STREET VIEW) -->
+    <dialog class="modal" id="streetViewModal" style="width:min(960px,95vw);height:82dvh;padding:0;overflow:hidden">
+        <div class="modal-head" style="padding:12px 16px;background:var(--bar);color:var(--bar-ink);align-items:center">
+            <div style="display:flex;align-items:center;gap:10px">
+                <span style="font-size:20px">🧍</span>
+                <div>
+                    <h2 id="svTitle" style="font-size:14px">Küçə Görünüşü (Street View)</h2>
+                    <small id="svCoords" class="mono" style="color:var(--bar-muted)">40.40930, 49.86710</small>
+                </div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px">
+                <a id="svExternalLink" href="#" target="_blank" rel="noopener" class="btn btn-outline" style="height:28px;font-size:12px;color:#fff;border-color:rgba(255,255,255,0.25)">↗ Google Maps-də aç</a>
+                <button class="icon-btn" data-close title="Bağla" style="color:#fff"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+        </div>
+        <iframe id="svIframe" style="flex:1;width:100%;height:100%;border:0;background:#050b14" allowfullscreen loading="lazy"></iframe>
+    </dialog>
+
+    <!-- ADMİN — İSTİFADƏÇİLƏRİN İDARƏ EDİLMƏSİ (User əlavə et + Şifrə / Email kodu + Edit / Baxış icazəsi) -->
+    <dialog class="modal" id="usersModal" style="width:min(880px,95vw)">
+        <div class="modal-head">
+            <div>
+                <h2>👥 İstifadəçilərin İdarə Edilməsi (Admin Panel)</h2>
+                <p class="muted">Yeni istifadəçiyə <b>şifrə təyin edin</b> və ya şifrəni boş buraxın ki, <b>öz e-poçt kodu (OTP)</b> ilə daxil olsun</p>
+            </div>
+            <button class="icon-btn" data-close title="Bağla"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        <form id="addUserForm" class="mat-filters" style="grid-template-columns:1.1fr 1.2fr 1.2fr 1fr auto">
+            <label>
+                <span>Ad və Soyad:</span>
+                <input class="input" type="text" id="newUserName" placeholder="Məs: Orxan Həsənov" required>
+            </label>
+            <label>
+                <span>E-poçt (Login):</span>
+                <input class="input" type="email" id="newUserEmail" placeholder="orxan@bcg.az" required>
+            </label>
+            <label>
+                <span>🔑 Şifrə (boş = Email kodu):</span>
+                <span style="display:flex;gap:4px">
+                    <input class="input mono" type="text" id="newUserPass" placeholder="Boş = OTP kod">
+                    <button class="btn btn-outline" type="button" id="genPassBtn" title="Avtomatik şifrə yarat" style="padding:0 9px">🎲</button>
+                </span>
+            </label>
+            <label>
+                <span>Səlahiyyət (İcazə):</span>
+                <select class="input" id="newUserPerm">
+                    <option value="view">👁️ Yalnız Baxış (View)</option>
+                    <option value="edit">✏️ Redaktə (Edit)</option>
+                    <option value="admin">👑 Admin (Tam)</option>
+                </select>
+            </label>
+            <button class="btn btn-primary" type="submit">+ Əlavə et</button>
+        </form>
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>İstifadəçi</th>
+                        <th>E-poçt</th>
+                        <th>Giriş üsulu / Şifrə</th>
+                        <th>Səlahiyyət (Edit / Baxış)</th>
+                        <th class="num">Əməliyyat</th>
+                    </tr>
+                </thead>
+                <tbody id="usersTableBody"></tbody>
+            </table>
+        </div>
+    </dialog>
+
+    <!-- İMPORT PƏNCƏRƏSİ (Admin: Layihə və ya Digər; İstifadəçi: Avtomatik Digər) -->
+    <dialog class="modal modal-sm" id="importModal">
+        <div class="modal-head">
+            <div>
+                <h2>⬆️ KMZ / KML / GeoJSON Əlavə Et</h2>
+                <p class="muted" id="importRoleSubtitle"></p>
+            </div>
+            <button class="icon-btn" data-close title="Bağla"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        <form id="importModalForm" class="edit-form">
+            <div id="adminImportChoiceWrap" style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+                <label class="imp-choice-card on" id="impOptProjectCard">
+                    <input type="radio" name="importCategory" value="project" checked>
+                    <div>
+                        <strong>📁 Layihə (Admin)</strong>
+                        <small>Status, məsafə və icraçı ilə</small>
+                    </div>
+                </label>
+                <label class="imp-choice-card" id="impOptOtherCard">
+                    <input type="radio" name="importCategory" value="other">
+                    <div>
+                        <strong>🗂️ Digər (Köməkçi)</strong>
+                        <small>Yalnız name (adı) çıxır</small>
+                    </div>
+                </label>
+            </div>
+            <div id="userAutoOtherNotice" class="mat-summary" hidden>
+                <span>ℹ️ Layihəyə import yalnız <b>Admin</b> tərəfindən edilir. Sizin yüklədiyiniz fayl avtomatik <b>🗂️ Digər</b> bölməsinə düşür.</span>
+            </div>
+            <div id="importProjTypeWrap" class="edit-fields" style="grid-template-columns:1fr 1fr">
+                <label class="wide">
+                    <span>Layihə növü:</span>
+                    <select class="input" id="importGeomType">
+                        <option value="auto">✨ Fayldan avtomatik təyin et</option>
+                        <option value="lines">〰️ Magistral Xətt layihəsi</option>
+                        <option value="points">📍 Nöqtə / Antena layihəsi</option>
+                    </select>
+                </label>
+                <label>
+                    <span>📍 Başlanğıc qovşaq adı (varsa):</span>
+                    <input class="input" type="text" id="impPointAName" placeholder="Avtomatik (atributdan)">
+                </label>
+                <label>
+                    <span>📍 Son qovşaq adı (varsa):</span>
+                    <input class="input" type="text" id="impPointBName" placeholder="Avtomatik (atributdan)">
+                </label>
+            </div>
+            <label style="display:flex;flex-direction:column;gap:5px;font-size:12px;font-weight:500;color:var(--ink-2)">
+                <span>Fayl seçin (.kmz, .kml, .geojson, .json):</span>
+                <input class="input" type="file" id="importModalFile" accept=".kmz,.kml,.geojson,.json" multiple required style="padding-top:5px">
+            </label>
+            <div class="edit-actions">
+                <span></span>
+                <button class="btn btn-outline" type="button" data-close>Ləğv et</button>
+                <button class="btn btn-primary" type="submit">⬆️ Əlavə et</button>
+            </div>
+        </form>
+    </dialog>
+
+    <div id="pegmanDragGhost" class="pegman-drag-ghost" hidden>🧍</div>
+
     <div class="link-error" id="linkError" hidden>
         <img src="favicon.svg" alt="">
         <h1 data-i18n="linkInvalid"></h1>
@@ -318,10 +486,10 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" integrity="sha384-+mbV2IY1Zk/X1p/nWllGySJSUN8uMs+gUAN10Or95UBH0fpj6GfKgPmgC5EXieXG" crossorigin="anonymous"></script>
     <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js" integrity="sha384-SYKAG6cglRMN0RVvhNeBY0r3FYKNOJtznwA0v7B5Vp9tr31xAHsZC0DqkQ/pZDmj" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js" integrity="sha384-0w2KAL2YHP6wKOkUDzkCDGgVvfmHnj02DHeQ6XcHOgTfFsGyonKOpShMH1x6nk9o" crossorigin="anonymous"></script>
-    <script src="js/config.js?v=20261102b"></script>
-    <script src="js/api.js?v=20261102b"></script>
-    <script src="js/i18n.js?v=20261102b"></script>
-    <script src="js/app.js?v=20261102b"></script>
-    <script src="js/tools.js?v=20261102b"></script>
+    <script src="js/config.js?v=20261104a"></script>
+    <script src="js/api.js?v=20261104a"></script>
+    <script src="js/i18n.js?v=20261104a"></script>
+    <script src="js/app.js?v=20261104a"></script>
+    <script src="js/tools.js?v=20261104a"></script>
 </body>
 </html>

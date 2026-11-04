@@ -30,7 +30,9 @@ const state = {
     expandedIds: new Set(),
     selected: null,
     dockTab: "segments",
-    notes: []
+    notes: [],
+    sidebarCategory: "project",
+    focusMode: true
 };
 
 let map, routePopup, currentBase, goToMarker;
@@ -151,8 +153,9 @@ function renderRole() {
     $("roleBadge").textContent = isAdmin() ? t("roleAdmin") : t("roleManager");
     $("userEmail").textContent = email;
     $("userAvatar").textContent = email.charAt(0);
-    $("importBtn").hidden = !isAdmin();
+    $("importBtn").hidden = false;
     $("addProjectBtn").hidden = !isAdmin();
+    if ($("usersBtn")) $("usersBtn").hidden = !isAdmin();
     tools.refresh();
 }
 
@@ -525,26 +528,44 @@ function mapStyle() {
             { id: "bg", type: "background", paint: { "background-color": "#1c2a30" } },
             rasterLayer("esri"), rasterLayer("esri-transport"), rasterLayer("esri-places"), rasterLayer("osm"), rasterLayer("carto"),
             { id: "routes-casing", type: "line", source: "routes", filter: ["==", ["geometry-type"], "LineString"], layout: { "line-cap": "round", "line-join": "round" },
-                paint: { "line-color": ["case", ["get", "sel"], "#ffffff", "#04101c"], "line-width": ["case", ["get", "sel"], 10, 7], "line-opacity": ["case", ["get", "sel"], 1, .5] } },
-            { id: "routes-line", type: "line", source: "routes", filter: ["==", ["geometry-type"], "LineString"], layout: { "line-cap": "round", "line-join": "round" },
-                paint: { "line-color": ["get", "color"], "line-width": ["case", ["get", "sel"], 6, 4] } },
+                paint: { "line-color": ["case", ["get", "sel"], "#ffffff", "#04101c"], "line-width": ["case", ["get", "sel"], 10, 7], "line-opacity": ["case", ["get", "dim"], 0.14, ["case", ["get", "sel"], 1, .5]] } },
+            { id: "routes-line", type: "line", source: "routes", filter: ["all", ["==", ["geometry-type"], "LineString"], ["!", ["has", "isOther"]]], layout: { "line-cap": "round", "line-join": "round" },
+                paint: { "line-color": ["get", "color"], "line-width": ["case", ["get", "sel"], 6, 4], "line-opacity": ["case", ["get", "dim"], 0.16, 1] } },
+            { id: "routes-other", type: "line", source: "routes", filter: ["all", ["==", ["geometry-type"], "LineString"], ["has", "isOther"]], layout: { "line-cap": "round", "line-join": "round" },
+                paint: { "line-color": ["get", "color"], "line-width": ["case", ["get", "sel"], 5, 3.2], "line-dasharray": [2, 1.5], "line-opacity": ["case", ["get", "dim"], 0.16, 0.9] } },
             { id: "routes-hit", type: "line", source: "routes", filter: ["==", ["geometry-type"], "LineString"], paint: { "line-color": "#000", "line-width": 16, "line-opacity": 0 } },
-            { id: "routes-ends", type: "circle", source: "routes", minzoom: ENDPOINT_MIN_ZOOM, filter: ["all", ["==", ["geometry-type"], "Point"], ["!", ["has", "isRayonPoint"]]],
-                paint: { "circle-radius": 5, "circle-color": ["get", "color"], "circle-stroke-color": "#ffffff", "circle-stroke-width": 2 } },
+            { id: "routes-ends", type: "symbol", source: "routes", minzoom: ENDPOINT_MIN_ZOOM, filter: ["all", ["==", ["geometry-type"], "Point"], ["!", ["has", "isRayonPoint"]]],
+                layout: {
+                    "text-field": ["case", ["has", "endName"], ["concat", "📍 ", ["get", "endName"]], "📍"],
+                    "text-font": ["Open Sans Semibold", "Arial Unicode MS Bold"],
+                    "text-size": ["interpolate", ["linear"], ["zoom"], 8, 11.5, 13, 10.5],
+                    "text-anchor": "bottom",
+                    "text-offset": [0, -0.15],
+                    "text-allow-overlap": false
+                },
+                paint: {
+                    "text-color": "#ffffff",
+                    "text-halo-color": "#0b1524",
+                    "text-halo-width": 2,
+                    "text-opacity": ["case", ["get", "dim"], 0.18, 1]
+                } },
             { id: "routes-point-halo", type: "circle", source: "routes", filter: ["all", ["==", ["geometry-type"], "Point"], ["has", "isRayonPoint"]],
                 paint: {
                     "circle-radius": ["interpolate", ["linear"], ["zoom"], 6, ["case", ["get", "sel"], 15, 11], 14, ["case", ["get", "sel"], 10, 7.5]],
                     "circle-color": ["get", "color"],
-                    "circle-opacity": 0.28,
+                    "circle-opacity": ["case", ["get", "dim"], 0.08, 0.28],
                     "circle-stroke-color": ["case", ["get", "sel"], "#ffffff", ["get", "color"]],
-                    "circle-stroke-width": ["case", ["get", "sel"], 2.8, 1.8]
+                    "circle-stroke-width": ["case", ["get", "sel"], 2.8, 1.8],
+                    "circle-stroke-opacity": ["case", ["get", "dim"], 0.18, 1]
                 } },
             { id: "routes-point-core", type: "circle", source: "routes", filter: ["all", ["==", ["geometry-type"], "Point"], ["has", "isRayonPoint"]],
                 paint: {
                     "circle-radius": ["interpolate", ["linear"], ["zoom"], 6, 5.5, 14, 4],
                     "circle-color": ["get", "color"],
                     "circle-stroke-color": "#ffffff",
-                    "circle-stroke-width": 1.8
+                    "circle-stroke-width": 1.8,
+                    "circle-opacity": ["case", ["get", "dim"], 0.18, 1],
+                    "circle-stroke-opacity": ["case", ["get", "dim"], 0.18, 1]
                 } },
             { id: "routes-point-label", type: "symbol", source: "routes", filter: ["all", ["==", ["geometry-type"], "Point"], ["has", "isRayonPoint"]],
                 layout: {
@@ -561,7 +582,8 @@ function mapStyle() {
                     "text-color": "#ffffff",
                     "text-halo-color": "#0b1524",
                     "text-halo-width": 2.2,
-                    "text-halo-blur": 0.4
+                    "text-halo-blur": 0.4,
+                    "text-opacity": ["case", ["get", "dim"], 0.18, 1]
                 } },
             ...tools.layers()
         ]
@@ -702,13 +724,58 @@ function drawRoutes() {
     const source = map.getSource("routes");
     if (!source) return;
     const selected = selectedEntry();
+    const activeProjId = selected ? selected.project.id : window.__activeProjectId || null;
     const features = [];
     const pointSlots = {};
 
     visibleEntries().forEach(({ project, item: r }) => {
         if (!r.coords || r.coords.length === 0) return;
-        const color = statusTone(r.status);
+        const isOther = project.category === "other";
+        const color = isOther ? "#38BDF8" : statusTone(r.status);
+        const dim = Boolean(state.focusMode && activeProjId && project.id !== activeProjId);
         const isPointItem = project.type === "points" || r.coords.length === 1 || (r.antennas || 0) > 0;
+
+        if (isOther) {
+            // 🗂️ Digər bölməsi: üzərinə gələndə yalnız name-də nə yazılıbsa o çıxır
+            const onlyNameTip = `<b>${esc(r.name)}</b>`;
+            if (isPointItem) {
+                const [lat, lng] = r.coords[0];
+                features.push({
+                    type: "Feature",
+                    geometry: { type: "Point", coordinates: [lng, lat] },
+                    properties: {
+                        isRayonPoint: true,
+                        isOther: true,
+                        color,
+                        dim,
+                        sel: selected?.item === r,
+                        projectId: project.id,
+                        itemId: r.id,
+                        label: String(r.name || "").trim(),
+                        tip: onlyNameTip
+                    }
+                });
+            } else {
+                const line = r.coords.map(([lat, lng]) => [lng, lat]);
+                features.push({
+                    type: "Feature",
+                    geometry: { type: "LineString", coordinates: line },
+                    properties: {
+                        isOther: true,
+                        color,
+                        dim,
+                        sel: selected?.item === r,
+                        projectId: project.id,
+                        itemId: r.id,
+                        tip: onlyNameTip
+                    }
+                });
+            }
+            return;
+        }
+
+        const cName = r.contractor || "BCG (Öz briqadamız)";
+        const cInfo = state.contractors[cName] || { workers: "—", engineer: "—" };
 
         if (isPointItem) {
             const [lat, lng] = r.coords[0];
@@ -718,11 +785,10 @@ function drawRoutes() {
             const adjLng = lng + slot * 0.022;
             const adjLat = lat + (slot % 2 ? 0.008 : 0);
 
-            const cleanName = String(r.name || "").replace(/\s*rayon(u)?\b/gi, "").trim();
+            const cleanName = String(r.name || "").replace(/\s*\(?\bFaz[-\s]*[12]\b\)?/gi, "").replace(/\s*rayon(u)?\b/gi, "").trim();
             const antPart = r.antennas ? `${r.antennas} ant · ` : "";
-            // 1-ci Nəzərdə tutulan, 2-ci Faktiki iş görülən
             const label = `${cleanName}: ${antPart}${formatKm(r.totalKm)} / ${formatKm(r.doneKm)} m`;
-            const tip = `<b>${esc(cleanName)}</b><small>📡 ${r.antennas || 0} antena · Plan: ${formatKm(r.totalKm)} m – Faktiki: ${formatKm(r.doneKm)} m (${percent(r.doneKm, r.totalKm)}%)<br>İş icraçısı: ${esc(r.contractor || "BCG (Öz briqadamız)")}</small>`;
+            const tip = `<b>${esc(cleanName)}</b><small>📡 ${r.antennas || 0} antena · Plan: ${formatKm(r.totalKm)} m / Faktiki: ${formatKm(r.doneKm)} m (${percent(r.doneKm, r.totalKm)}%)<br>👷 İcraçı: ${esc(cName)}<br>👥 İşçi sayı: <b>${esc(cInfo.workers)} nəfər</b> · 📞 İcraçı: <b>${esc(cInfo.engineer || "—")}</b></small>`;
 
             features.push({
                 type: "Feature",
@@ -730,6 +796,7 @@ function drawRoutes() {
                 properties: {
                     isRayonPoint: true,
                     color,
+                    dim,
                     sel: selected?.item === r,
                     projectId: project.id,
                     itemId: r.id,
@@ -743,15 +810,25 @@ function drawRoutes() {
                 type: "Feature", geometry: { type: "LineString", coordinates: line },
                 properties: {
                     color,
+                    dim,
                     sel: selected?.item === r,
                     projectId: project.id,
                     itemId: r.id,
-                    tip: `<b>${esc(r.name)}</b><small>${esc(r.id)} · Plan: ${formatKm(r.totalKm)} km / Faktiki: ${formatKm(r.doneKm)} km (${percent(r.doneKm, r.totalKm)}%)</small>`
+                    tip: `<b>${esc(r.name)}</b><small>📏 Plan: ${formatKm(r.totalKm)} km / Faktiki: ${formatKm(r.doneKm)} km (${percent(r.doneKm, r.totalKm)}%)<br>👷 İcraçı: ${esc(cName)}<br>👥 İşçi sayı: <b>${esc(cInfo.workers)} nəfər</b> · 📞 İcraçı: <b>${esc(cInfo.engineer || "—")}</b></small>`
                 }
             });
-            [[line[0], `A: ${r.pointA}`], [line[line.length - 1], `B: ${r.pointB}`]].forEach(([coordinates, label]) => features.push({
-                type: "Feature", geometry: { type: "Point", coordinates }, properties: { color, tip: esc(label) }
-            }));
+            // Magistral uclarında "A" və "B" yazılmır, yalnız məkan işarəsi (📍) və varsa nöqtənin öz adı göstərilir
+            [[line[0], r.pointA], [line[line.length - 1], r.pointB]].forEach(([coordinates, rawPtName]) => {
+                const ptName = String(rawPtName || "").replace(/^[AB]\s*:\s*/i, "").trim();
+                const hasRealName = ptName && !/^[AB]$/i.test(ptName);
+                const props = { color, dim, tip: hasRealName ? `📍 <b>${esc(ptName)}</b>` : `📍 Məntəqə` };
+                if (hasRealName) props.endName = ptName;
+                features.push({
+                    type: "Feature",
+                    geometry: { type: "Point", coordinates },
+                    properties: props
+                });
+            });
         }
     });
     source.setData({ type: "FeatureCollection", features });
@@ -904,7 +981,8 @@ function statusTone(status) {
 }
 
 function renderChips() {
-    const items = state.projects.flatMap(p => p.items);
+    const trackedProjects = state.projects.filter(p => p.category !== "other");
+    const items = trackedProjects.flatMap(p => p.items);
     const count = key => key === "all" ? items.length : items.filter(r => r.status === key).length;
     const chips = [{ key: "all", label: t("filterAll") }, ...STATUSES.map(s => ({ key: s, label: t(`status${s}`), color: STATUS_COLORS[s] }))];
     $("statusChips").innerHTML = chips.map(c => `
@@ -927,8 +1005,47 @@ function renderKpis() {
 }
 
 function renderProjects() {
+    const cat = state.sidebarCategory || "project";
+    const projectsOnly = state.projects.filter(p => p.category !== "other");
+    const otherOnly = state.projects.filter(p => p.category === "other");
+
+    if ($("tabProjectsCount")) $("tabProjectsCount").textContent = projectsOnly.length;
+    if ($("tabOtherCount")) $("tabOtherCount").textContent = otherOnly.length;
+    if ($("tabProjectsBtn")) $("tabProjectsBtn").classList.toggle("active", cat === "project");
+    if ($("tabOtherBtn")) $("tabOtherBtn").classList.toggle("active", cat === "other");
+    if ($("statusChips")) $("statusChips").hidden = cat === "other";
+    if ($("addProjectBtn")) $("addProjectBtn").hidden = !isAdmin() || cat === "other";
+
+    if (cat === "other") {
+        const shownOther = otherOnly.filter(p => !state.query || p.name.toLocaleLowerCase("az").includes(state.query) || p.items.some(i => String(i.name || "").toLocaleLowerCase("az").includes(state.query)));
+        $("projectCount").textContent = shownOther.length;
+        $("projectList").innerHTML = shownOther.length === 0 ? `<div class="empty">${t("noResults")}</div>` : shownOther.map(p => {
+            const visible = state.visibleIds.has(p.id);
+            const expanded = state.expandedIds.has(p.id);
+            return `
+                <div class="project ${visible ? "" : "hidden-on-map"}" data-id="${esc(p.id)}">
+                    <div class="project-row" style="padding:6px 10px">
+                        <label class="check" title="${t("toggleVisibility")}"><input type="checkbox" data-action="toggle" ${visible ? "checked" : ""}></label>
+                        <button class="project-main" data-action="expand" aria-expanded="${expanded}">
+                            <strong title="${esc(p.name)}">🗂️ ${esc(p.name)}</strong>
+                        </button>
+                        <span class="project-pct" style="color:#38BDF8">${p.items.length}</span>
+                        ${isAdmin() ? `<button class="icon-btn" data-action="edit" title="${t("editProject")}"><i class="fa-solid fa-pen"></i></button>` : ""}
+                        <button class="icon-btn" data-action="expand" aria-label="${esc(p.name)}"><i class="fa-solid fa-chevron-right chevron ${expanded ? "open" : ""}"></i></button>
+                    </div>
+                    ${expanded ? `<div class="segments">${p.items.map(r => `
+                        <button class="segment ${state.selected?.itemId === r.id && state.selected?.projectId === p.id ? "selected" : ""}" data-action="focus" data-item="${esc(r.id)}">
+                            <span class="dot" style="background:#38BDF8"></span>
+                            <span class="segment-name" title="${esc(r.name)}">${esc(r.name)}</span>
+                        </button>
+                    `).join("")}</div>` : ""}
+                </div>`;
+        }).join("");
+        return;
+    }
+
     const filtering = state.statusFilter !== "all" || state.query;
-    const shown = state.projects.filter(p => !filtering || filteredItems(p).length > 0);
+    const shown = projectsOnly.filter(p => !filtering || filteredItems(p).length > 0);
     $("projectCount").textContent = shown.length;
 
     $("projectList").innerHTML = shown.length === 0 ? `<div class="empty">${t("noResults")}</div>` : shown.map(p => {
@@ -938,7 +1055,7 @@ function renderProjects() {
         const pct = percent(sum.done, sum.plan);
         const isPoints = p.type === "points";
         const totalAnt = p.items.reduce((s, r) => s + (r.antennas || 0), 0);
-        // 1-ci Nəzərdə tutulan, 2-ci Faktiki iş görülən ("rayon" sözü olmadan)
+        const cleanProjName = String(p.name || "").replace(/\s*\(?\bFaz[-\s]*[12]\b\)?/gi, "").trim();
         const subTitle = isPoints
             ? `📡 ${totalAnt} ant · ${formatKm(sum.plan)} m / ${formatKm(sum.done)} m`
             : `〰️ ${formatKm(sum.plan)} / ${formatKm(sum.done)} km · Qalıb: ${formatKm(Math.max(0, sum.plan - sum.done))} km`;
@@ -948,15 +1065,15 @@ function renderProjects() {
                 <div class="project-row">
                     <label class="check" title="${t("toggleVisibility")}"><input type="checkbox" data-action="toggle" ${visible ? "checked" : ""}></label>
                     <button class="project-main" data-action="expand" aria-expanded="${expanded}">
-                        <strong title="${esc(p.name)}">${esc(p.name)}</strong>
+                        <strong title="${esc(cleanProjName)}">${esc(cleanProjName)}</strong>
                         <small>${subTitle}</small>
                     </button>
                     <span class="project-pct">${pct}%</span>
                     ${isAdmin() ? `<button class="icon-btn" data-action="edit" title="${t("editProject")}"><i class="fa-solid fa-pen"></i></button>` : ""}
-                    <button class="icon-btn" data-action="expand" aria-label="${esc(p.name)}"><i class="fa-solid fa-chevron-right chevron ${expanded ? "open" : ""}"></i></button>
+                    <button class="icon-btn" data-action="expand" aria-label="${esc(cleanProjName)}"><i class="fa-solid fa-chevron-right chevron ${expanded ? "open" : ""}"></i></button>
                 </div>
                 ${expanded ? `<div class="segments">${filteredItems(p).map(r => {
-                    const cleanName = String(r.name || "").replace(/\s*rayon(u)?\b/gi, "").trim();
+                    const cleanName = String(r.name || "").replace(/\s*\(?\bFaz[-\s]*[12]\b\)?/gi, "").replace(/\s*rayon(u)?\b/gi, "").trim();
                     const rightText = isPoints
                         ? `${r.antennas || 0} ant · ${formatKm(r.totalKm)} / ${formatKm(r.doneKm)} m`
                         : `${formatKm(r.totalKm)} / ${formatKm(r.doneKm)} km (${percent(r.doneKm, r.totalKm)}%)`;
@@ -1230,8 +1347,11 @@ function projectFromFile(fileName, lines) {
     };
 }
 
+let pendingImportCategory = "other";
+
 async function handleImport(event) {
     const added = [];
+    const targetCategory = isAdmin() ? pendingImportCategory : "other";
     for (const file of event.target.files) {
         try {
             const lines = (await readLines(file)).filter(line => line.coords.length >= 1);
@@ -1240,17 +1360,23 @@ async function handleImport(event) {
                 continue;
             }
             const project = projectFromFile(file.name, lines);
+            project.category = targetCategory;
+            if (targetCategory === "other") {
+                project.name = `Digər: ${project.name.replace(/^Digər:\s*/i, "")}`;
+            }
             await api.saveProject(project);
             state.projects.push(project);
             state.visibleIds.add(project.id);
             added.push(project);
-            toast(`${t("importOk")}: ${project.name}`);
+            toast(`${t("importOk")}: ${project.name} (${targetCategory === "other" ? "🗂️ Digər" : "📁 Layihələr"})`);
         } catch {
             toast(`${file.name}: ${t("importError")}`, true);
         }
     }
     event.target.value = "";
+    if ($("importModal")?.open) $("importModal").close();
     if (added.length === 0) return;
+    state.sidebarCategory = targetCategory === "other" ? "other" : "project";
     renderAll();
     flyToCoords(added.flatMap(p => p.items.flatMap(r => r.coords)));
 }
@@ -1286,7 +1412,10 @@ function bindEvents() {
 
     $("notesBtn").addEventListener("click", () => $("notesModal").showModal());
     $("materialsBtn").addEventListener("click", () => $("materialsModal").showModal());
-    $("printBtn").addEventListener("click", () => window.print());
+    $("printBtn").addEventListener("click", () => {
+        if (window.openPrintCropMode) window.openPrintCropMode();
+        else window.print();
+    });
     $("toolDock").addEventListener("click", async e => {
         if (!e.target.closest("#shareBtn")) return;
         $("shareModal").showModal();
@@ -1311,6 +1440,10 @@ function bindEvents() {
     $("materialsBody").addEventListener("click", e => {
         const button = e.target.closest("[data-edit-material]");
         if (!button) return;
+        if (!isAdmin()) {
+            toast("🔒 Anbar Qaiməsi əlavə etmək və redaktə yalnız Admin üçündür!", true);
+            return;
+        }
         const id = Number(button.dataset.editMaterial);
         editMaterial(state.materials.find(m => m.id === id));
     });
@@ -1329,7 +1462,27 @@ function bindEvents() {
             }
         }
     });
-    $("importBtn").addEventListener("click", () => $("importFile").click());
+    $("importBtn").addEventListener("click", () => {
+        if ($("importModal")) {
+            const adminOpt = $("impAdminProjOpt");
+            const roleNotice = $("impRoleNotice");
+            if (adminOpt) {
+                adminOpt.style.opacity = isAdmin() ? "1" : "0.45";
+                const radio = adminOpt.querySelector("input");
+                if (radio) radio.disabled = !isAdmin();
+            }
+            if (roleNotice) {
+                roleNotice.textContent = isAdmin()
+                    ? "👑 Admin olaraq faylı birbaşa '📁 Layihələr' və ya '🗂️ Digər' bölməsinə yükləyə bilərsiniz."
+                    : "ℹ️ Sizin rolunuzda yüklənən KMZ/KML/GeoJSON faylları avtomatik olaraq '🗂️ Digər' bölməsinə əlavə olunur.";
+            }
+            const defaultRadio = document.querySelector(`input[name="impTarget"][value="${isAdmin() ? "project" : "other"}"]`);
+            if (defaultRadio) defaultRadio.checked = true;
+            $("importModal").showModal();
+        } else {
+            $("importFile").click();
+        }
+    });
     $("importFile").addEventListener("change", handleImport);
     $("noteForm").addEventListener("submit", addNote);
     $("notesList").addEventListener("click", e => {
@@ -1460,10 +1613,11 @@ async function init() {
 
 document.addEventListener("DOMContentLoaded", init);
 
-/* === YENİLİKLƏR: Kvadrat Status Pəncərəsi, Nöqtə/Xətt Rejimləri, BCG/Podratçı Seçimi, Miqyas Dondurma, 1x/2x Sağ Klik, Anbar Qaiməli Materiallar === */
+/* === YENİLİKLƏR: Yığcam Status Pəncərəsi, Çap/PDF Çərçivə Seçimi, Küçə Görünüşü (Pegman), Mənim Konumum, Fokus İşıqlandırma, İstifadəçilər və Anbar Qaimə Filtrləri === */
 (() => {
     let activeProjectId = null;
-    let frozenScale = null;
+    let myLocationMarker = null;
+    let pegmanActive = false;
 
     const origRenderAll = window.renderAll;
     function updateLegendVisibility() {
@@ -1479,28 +1633,6 @@ document.addEventListener("DOMContentLoaded", init);
         }).join("")}</select>`;
     }
 
-    function updateScaleBarUI() {
-        if (!window.map || !$("currentScaleLabel")) return;
-        const z = map.getZoom().toFixed(2);
-        $("currentScaleLabel").innerHTML = `🔍 Miqyas: <b>${z}x</b>`;
-        const hasFrozen = Boolean(frozenScale);
-        $("frozenScaleChip").hidden = !hasFrozen;
-        $("lockScaleBtn").textContent = hasFrozen ? "🔒 Yeni miqyası dondur" : "🔒 Miqyası dondur";
-        if (hasFrozen) {
-            $("frozenScaleBadge").textContent = `🔒 ${frozenScale.zoom.toFixed(2)}x dondurulub`;
-        }
-    }
-
-    function setMapZoomLock(locked) {
-        window.__scaleFrozen = locked;
-        if (!window.map) return;
-        const method = locked ? "disable" : "enable";
-        map.scrollZoom?.[method]();
-        map.boxZoom?.[method]();
-        map.doubleClickZoom?.[method]();
-        map.touchZoomRotate?.[method]();
-    }
-
     function ensureMapWidgets() {
         const stage = document.querySelector(".map-stage");
         if (!stage || $("infoCard")) return;
@@ -1513,47 +1645,7 @@ document.addEventListener("DOMContentLoaded", init);
         reopen.addEventListener("click", () => setSidebar(true));
         stage.appendChild(reopen);
 
-        // 2) Miqyası dondur və sil paneli
-        const scaleBar = document.createElement("div");
-        scaleBar.id = "scaleControlBar";
-        scaleBar.className = "scale-control-bar";
-        scaleBar.innerHTML = `
-            <span id="currentScaleLabel">🔍 Miqyas: <b>7.00x</b></span>
-            <button class="btn btn-outline" type="button" id="lockScaleBtn" style="height:26px;padding:0 8px;font-size:11.5px">🔒 Miqyası dondur</button>
-            <div class="scale-frozen-chip" id="frozenScaleChip" hidden>
-                <span class="scale-frozen-badge" id="frozenScaleBadge">🔒 7.00x dondurulub</span>
-                <button class="btn btn-outline" type="button" id="restoreScaleBtn" style="height:26px;padding:0 8px;font-size:11.5px" title="Dondurulmuş miqyasa qayıt">🎯 Qayıt</button>
-                <button class="btn btn-danger" type="button" id="deleteScaleBtn" style="height:26px;padding:0 8px;font-size:11.5px" title="Dondurulmuş miqyası sil">🗑️ Sil</button>
-            </div>
-        `;
-        stage.appendChild(scaleBar);
-
-        $("lockScaleBtn").addEventListener("click", () => {
-            if (!window.map) return;
-            frozenScale = {
-                center: map.getCenter().toArray(),
-                zoom: map.getZoom(),
-                bearing: map.getBearing(),
-                pitch: map.getPitch()
-            };
-            setMapZoomLock(true);
-            updateScaleBarUI();
-            toast(`🔒 Cari miqyas (${frozenScale.zoom.toFixed(2)}x) donduruldu!`);
-        });
-        $("restoreScaleBtn").addEventListener("click", () => {
-            if (!frozenScale || !window.map) return;
-            map.jumpTo(frozenScale);
-            updateScaleBarUI();
-            toast(`🎯 Dondurulmuş miqyasa (${frozenScale.zoom.toFixed(2)}x) qayıdıldı`);
-        });
-        $("deleteScaleBtn").addEventListener("click", () => {
-            frozenScale = null;
-            setMapZoomLock(false);
-            updateScaleBarUI();
-            toast("🗑️ Dondurulmuş miqyas silindi — miqyas kilidi açıldı");
-        });
-
-        // 3) Kvadrat məlumat pəncərəsi
+        // 2) Yığcam məlumat pəncərəsi
         const card = document.createElement("div");
         card.id = "infoCard";
         card.className = "info-card";
@@ -1588,6 +1680,7 @@ document.addEventListener("DOMContentLoaded", init);
                 const item = proj?.items.find(r => r.id === itemId);
                 if (proj && item) {
                     activeProjectId = proj.id;
+                    window.__activeProjectId = proj.id;
                     selectSegment(proj, item);
                 }
                 return;
@@ -1596,6 +1689,7 @@ document.addEventListener("DOMContentLoaded", init);
             if (act === "close") {
                 state.selected = null;
                 activeProjectId = null;
+                window.__activeProjectId = null;
                 card.hidden = true;
                 drawRoutes();
                 renderProjects();
@@ -1657,161 +1751,400 @@ document.addEventListener("DOMContentLoaded", init);
         }
         card.hidden = false;
 
+        // 🗂️ Digər bölməsi üçün ultra-yığcam 1-sətirlik pəncərə
+        if (proj.category === "other") {
+            card.classList.add("compact-other");
+            const labelText = entry ? entry.item.name : proj.name;
+            card.innerHTML = `
+                <div class="info-card-head" style="border-radius:24px;padding:7px 14px">
+                    <strong style="display:flex;align-items:center;gap:8px">
+                        <span class="dot" style="background:#38BDF8"></span>
+                        ${esc(labelText)}
+                    </strong>
+                    <div style="display:flex;align-items:center;gap:4px">
+                        <button class="icon-btn" data-card-act="zoom" title="${t("zoomTo")}"><i class="fa-solid fa-crosshairs"></i></button>
+                        <button class="icon-btn" data-card-act="close" title="${t("close")}"><i class="fa-solid fa-xmark"></i></button>
+                    </div>
+                </div>
+            `;
+            return;
+        }
+        card.classList.remove("compact-other");
+
         const isPoints = proj.type === "points";
         const items = entry ? [entry.item] : proj.items;
         const sum = totals(proj.items);
         const pct = percent(sum.done, sum.plan);
         const leftVal = Math.max(0, sum.plan - sum.done);
         const tone = statusTone(proj.status);
+        const cleanProjName = String(proj.name || "").replace(/\s*\(?\bFaz[-\s]*[12]\b\)?/gi, "").trim();
 
-        // A) NÖQTƏ / ANTENA LAYİHƏSİ (1-ci Nəzərdə tutulan m, 2-ci Faktiki iş görülən m + İş icraçısı: BCG / Podratçı)
+        // A) NÖQTƏ / ANTENA LAYİHƏSİ (Plan / Faktiki / Qalıb + İşçi sayı və İcraçı nömrəsi hər sətirdə)
         if (isPoints) {
             const totalAnt = proj.items.reduce((s, i) => s + (i.antennas || 0), 0);
             card.innerHTML = `
                 <div class="info-card-head">
                     <div>
-                        <small>📍 Plan: ${formatKm(sum.plan)} m · Faktiki: ${formatKm(sum.done)} m (${pct}%)</small>
-                        <strong>${esc(proj.name)}</strong>
+                        <small style="display:flex;align-items:center;gap:6px">
+                            <span class="dot" style="background:${tone}"></span>
+                            <span>${t(`status${proj.status}`)} · 📡 ${totalAnt} antena</span>
+                        </small>
+                        <strong>${esc(cleanProjName)}</strong>
                     </div>
                     <div style="display:flex;align-items:center;gap:4px">
-                        ${entry ? `<button class="btn btn-outline" style="height:24px;padding:0 8px;font-size:11px;color:#fff;border-color:rgba(255,255,255,0.25)" data-card-act="showAll">Hamısını göstər</button>` : ""}
+                        ${entry ? `<button class="btn btn-outline" style="height:24px;padding:0 8px;font-size:11px;color:#fff;border-color:rgba(255,255,255,0.25)" data-card-act="showAll">Hamısı</button>` : ""}
                         <button class="icon-btn" data-card-act="close" title="${t("close")}"><i class="fa-solid fa-xmark"></i></button>
                     </div>
                 </div>
                 <div class="info-card-body">
                     <div class="info-grid">
-                        <div class="info-stat"><small>Cəmi Antena</small><b>${totalAnt} ədəd</b></div>
                         <div class="info-stat"><small>1. Nəzərdə tutulan</small><b>${formatKm(sum.plan)} m</b></div>
                         <div class="info-stat"><small>2. Faktiki (${pct}%)</small><b>${formatKm(sum.done)} m</b></div>
+                        <div class="info-stat"><small>Qalıb</small><b>${formatKm(leftVal)} m</b></div>
                     </div>
-                    <div style="font-weight:600;color:var(--ink-2)">Məntəqələr üzrə məsafə (Plan / Faktiki) və İcraçı (${items.length}):</div>
                     <div class="info-sub-list">
                         ${items.map(r => {
                             const rTone = statusTone(r.status);
                             const rLeft = Math.max(0, r.totalKm - r.doneKm);
                             const rPct = percent(r.doneKm, r.totalKm);
-                            const cleanName = String(r.name || "").replace(/\s*rayon(u)?\b/gi, "").trim();
-                            const cInfo = state.contractors[r.contractor || "BCG (Öz briqadamız)"];
+                            const cleanName = String(r.name || "").replace(/\s*\(?\bFaz[-\s]*[12]\b\)?/gi, "").replace(/\s*rayon(u)?\b/gi, "").trim();
+                            const cInfo = state.contractors[r.contractor || "BCG (Öz briqadamız)"] || { workers: "—", engineer: "—" };
                             return `
                                 <div class="info-sub-item" data-pick-seg="${esc(proj.id)}:${esc(r.id)}" style="border-color:${entry?.item === r ? rTone : "var(--line)"}">
                                     <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
                                         <strong style="display:flex;align-items:center;gap:6px">
                                             <span class="dot" style="background:${rTone}"></span>
-                                            ${esc(cleanName)} — <span style="color:var(--ink-2)">${formatKm(r.totalKm)} m</span> / <span style="color:${rTone}">${formatKm(r.doneKm)} m</span>
+                                            ${esc(cleanName)} (${r.antennas || 0} ant)
                                         </strong>
                                         <span class="pill" style="--tone:${rTone}">${t(`status${r.status}`)}</span>
                                     </div>
-                                    <div class="info-sub-box">
-                                        📡 <b>${r.antennas || 0} antena</b> &nbsp;/&nbsp; 📏 <b>${formatKm(r.totalKm)} m</b> <span class="muted">(nəzərdə tutulub)</span> – <b style="color:${rTone}">${formatKm(r.doneKm)} m</b> <span class="muted">(faktiki görülən)</span>
-                                        <div style="display:flex;justify-content:space-between;margin-top:4px;color:var(--ink-2)">
-                                            <span>Qalıb: <b>${formatKm(rLeft)} m</b></span>
-                                            <span>İcra: <b>${rPct}%</b></span>
-                                        </div>
+                                    <div style="color:var(--ink-2);font-size:11.5px">
+                                        Plan: <b>${formatKm(r.totalKm)} m</b> · Faktiki: <b style="color:${rTone}">${formatKm(r.doneKm)} m (${rPct}%)</b> · Qalıb: <b>${formatKm(rLeft)} m</b>
                                     </div>
                                     <div class="info-exec-row">
-                                        <span class="muted">İş icraçısı:</span>
+                                        <span class="muted">İcraçı:</span>
                                         ${executorOptionsHtml(r.contractor)}
-                                        <span class="muted">${cInfo ? `${cInfo.workers} işçi · ${cInfo.machinery} tex.` : ""}</span>
+                                    </div>
+                                    <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--ink-2)">
+                                        <span>👷 İşçi: <b>${esc(cInfo.workers)} nəfər</b></span>
+                                        <span>📞 <b>${esc(cInfo.engineer || "—")}</b></span>
                                     </div>
                                 </div>
                             `;
                         }).join("")}
                     </div>
-                    <div style="display:flex;gap:6px;margin-top:auto;padding-top:4px">
+                    <div style="display:flex;gap:6px;padding-top:2px">
                         <button class="btn btn-outline" style="flex:1;height:28px;font-size:12px" data-card-act="zoom"><i class="fa-solid fa-crosshairs"></i> ${t("zoomTo")}</button>
                         ${isAdmin() ? `<button class="btn btn-primary" style="height:28px;font-size:12px" data-card-act="edit"><i class="fa-solid fa-pen"></i></button>` : ""}
                     </div>
                 </div>
-                <div class="info-card-foot">
-                    <span>↘ Küncdən tutub ölçüsünü dəyişin</span>
-                    <span>Başlıqdan sürüşdürün</span>
-                </div>
             `;
         }
-        // B) MAGİSTRAL XƏTT LAYİHƏSİ (Mufta/quyu çıxarıldı, Seqmentlər + İş icraçıları birbaşa bu pəncərədə!)
+        // B) MAGİSTRAL XƏTT LAYİHƏSİ (A/B koordinat siyahısı və təkrarlanan aşağı siyahı yoxdur; Plan/Faktiki/Qalıb + İşçi və nömrə daxildədir)
         else {
-            const contractorNames = [...new Set(items.map(i => i.contractor || "BCG (Öz briqadamız)"))];
             card.innerHTML = `
                 <div class="info-card-head">
                     <div>
-                        <small>〰️ Plan: ${formatKm(sum.plan)} km · Faktiki: ${formatKm(sum.done)} km (${pct}%)</small>
-                        <strong>${esc(proj.name)}</strong>
+                        <small style="display:flex;align-items:center;gap:6px">
+                            <span class="dot" style="background:${tone}"></span>
+                            <span>${t(`status${proj.status}`)} · 〰️ Magistral layihə</span>
+                        </small>
+                        <strong>${esc(cleanProjName)}</strong>
                     </div>
                     <div style="display:flex;align-items:center;gap:4px">
-                        ${entry ? `<button class="btn btn-outline" style="height:24px;padding:0 8px;font-size:11px;color:#fff;border-color:rgba(255,255,255,0.25)" data-card-act="showAll">Bütün seqmentlər</button>` : ""}
+                        ${entry ? `<button class="btn btn-outline" style="height:24px;padding:0 8px;font-size:11px;color:#fff;border-color:rgba(255,255,255,0.25)" data-card-act="showAll">Hamısı</button>` : ""}
                         <button class="icon-btn" data-card-act="close" title="${t("close")}"><i class="fa-solid fa-xmark"></i></button>
                     </div>
                 </div>
                 <div class="info-card-body">
                     <div class="info-grid">
                         <div class="info-stat"><small>1. Nəzərdə tutulan</small><b>${formatKm(sum.plan)} km</b></div>
-                        <div class="info-stat"><small>2. Faktiki görülən</small><b>${formatKm(sum.done)} km (${pct}%)</b></div>
+                        <div class="info-stat"><small>2. Faktiki (${pct}%)</small><b>${formatKm(sum.done)} km</b></div>
                         <div class="info-stat"><small>${t("thLeft")}</small><b>${formatKm(leftVal)} km</b></div>
                     </div>
                     <div class="progress" style="margin:0"><span style="width:${pct}%;background:${tone}"></span></div>
 
-                    <div style="font-weight:600;color:var(--ink-2)">Seqmentlər (${items.length}):</div>
                     <div class="info-sub-list">
                         ${items.map(r => {
                             const rTone = statusTone(r.status);
                             const rLeft = Math.max(0, r.totalKm - r.doneKm);
                             const rPct = percent(r.doneKm, r.totalKm);
+                            const cInfo = state.contractors[r.contractor || "BCG (Öz briqadamız)"] || { workers: "—", engineer: "—" };
                             return `
                                 <div class="info-sub-item" data-pick-seg="${esc(proj.id)}:${esc(r.id)}" style="border-color:${entry?.item === r ? rTone : "var(--line)"}">
                                     <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
-                                        <b>${esc(r.pointA)} ➔ ${esc(r.pointB)} <span class="muted">(${esc(r.id)})</span></b>
+                                        <b>${esc(r.name)}</b>
                                         <span class="pill" style="--tone:${rTone}">${t(`status${r.status}`)}</span>
                                     </div>
-                                    <div style="color:var(--ink-2)">
-                                        Nəzərdə tutulan: <b>${formatKm(r.totalKm)} km</b> · Faktiki görülən: <b>${formatKm(r.doneKm)} km (${rPct}%)</b> · Qalıb: <b>${formatKm(rLeft)} km</b>
+                                    <div style="color:var(--ink-2);font-size:11.5px">
+                                        Plan: <b>${formatKm(r.totalKm)} km</b> · Faktiki: <b style="color:${rTone}">${formatKm(r.doneKm)} km (${rPct}%)</b> · Qalıb: <b>${formatKm(rLeft)} km</b>
                                     </div>
                                     <div class="info-exec-row">
-                                        <span class="muted">İş icraçısı:</span>
+                                        <span class="muted">İcraçı:</span>
                                         ${executorOptionsHtml(r.contractor)}
-                                        <span class="muted">📅 ${formatDate(r.startDate)} – ${formatDate(r.endDate)}</span>
+                                    </div>
+                                    <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--ink-2)">
+                                        <span>👷 İşçi: <b>${esc(cInfo.workers)} nəfər</b></span>
+                                        <span>📞 <b>${esc(cInfo.engineer || "—")}</b></span>
                                     </div>
                                 </div>
                             `;
                         }).join("")}
                     </div>
 
-                    <div style="font-weight:600;color:var(--ink-2)">İş icraçıları (${contractorNames.length}):</div>
-                    <div class="info-sub-list">
-                        ${contractorNames.map(name => {
-                            const c = state.contractors[name] || { workers: "—", machinery: "—", engineer: "—" };
-                            const isOwn = /bcg/i.test(name);
-                            return `
-                                <div class="info-sub-item" style="cursor:default;flex-direction:row;align-items:center;justify-content:space-between">
-                                    <div>
-                                        <b>${isOwn ? "🏢 " + esc(name) : "👷 Podratçı: " + esc(name)}</b>
-                                        <div class="muted">Məsul: ${esc(c.engineer || "—")}</div>
-                                    </div>
-                                    <div style="text-align:right;font-weight:600">
-                                        <div>${c.workers} işçi</div>
-                                        <div class="muted">${c.machinery} texnika</div>
-                                    </div>
-                                </div>
-                            `;
-                        }).join("")}
-                    </div>
-
-                    <div style="display:flex;gap:6px;margin-top:auto;padding-top:4px">
+                    <div style="display:flex;gap:6px;padding-top:2px">
                         <button class="btn btn-outline" style="flex:1;height:28px;font-size:12px" data-card-act="zoom"><i class="fa-solid fa-crosshairs"></i> ${t("zoomTo")}</button>
                         ${isAdmin() ? `<button class="btn btn-primary" style="height:28px;font-size:12px" data-card-act="edit"><i class="fa-solid fa-pen"></i></button>` : ""}
                     </div>
-                </div>
-                <div class="info-card-foot">
-                    <span>↘ Küncdən tutub ölçüsünü dəyişin</span>
-                    <span>Başlıqdan sürüşdürün</span>
                 </div>
             `;
         }
     }
 
+    // 🖨️ Çap və PDF üçün İnteraktiv Çərçivə (Area Crop) seçimi
+    function initPrintCropTool() {
+        const overlay = $("printCropOverlay");
+        const box = $("cropBox");
+        if (!overlay || !box) return;
+
+        let rect = { left: 140, top: 80, width: 560, height: 360 };
+        function applyRect() {
+            box.style.left = `${rect.left}px`;
+            box.style.top = `${rect.top}px`;
+            box.style.width = `${rect.width}px`;
+            box.style.height = `${rect.height}px`;
+            if ($("cropSizeLabel")) $("cropSizeLabel").textContent = `Çap sahəsi (${Math.round(rect.width)} × ${Math.round(rect.height)} px)`;
+        }
+
+        window.openPrintCropMode = function () {
+            const stage = document.querySelector(".map-stage");
+            if (stage) {
+                const w = stage.clientWidth;
+                const h = stage.clientHeight;
+                rect = {
+                    left: Math.round(w * 0.14),
+                    top: Math.round(h * 0.14),
+                    width: Math.round(w * 0.72),
+                    height: Math.round(h * 0.70)
+                };
+                applyRect();
+            }
+            overlay.hidden = false;
+            toast("🖨️ Çap / PDF sahəsini çərçivə ilə tənzimləyin və 'Çap et / PDF' basın");
+        };
+
+        $("printCancelBtn")?.addEventListener("click", () => { overlay.hidden = true; });
+        $("printConfirmBtn")?.addEventListener("click", () => {
+            if (window.map && rect.width > 40 && rect.height > 40) {
+                const p1 = map.unproject([rect.left, rect.top]);
+                const p2 = map.unproject([rect.left + rect.width, rect.top + rect.height]);
+                const b = new maplibregl.LngLatBounds(
+                    [Math.min(p1.lng, p2.lng), Math.min(p1.lat, p2.lat)],
+                    [Math.max(p1.lng, p2.lng), Math.max(p1.lat, p2.lat)]
+                );
+                map.fitBounds(b, { padding: 16, animate: false });
+            }
+            overlay.hidden = true;
+            setTimeout(() => window.print(), 180);
+        });
+
+        box.addEventListener("mousedown", e => {
+            e.stopPropagation();
+            const handle = e.target.closest("[data-crop-dir]");
+            const dir = handle ? handle.dataset.cropDir : "move";
+            const startX = e.clientX;
+            const startY = e.clientY;
+            const r0 = { ...rect };
+
+            const onMove = ev => {
+                const dx = ev.clientX - startX;
+                const dy = ev.clientY - startY;
+                if (dir === "move") {
+                    rect.left = Math.max(10, r0.left + dx);
+                    rect.top = Math.max(10, r0.top + dy);
+                } else {
+                    if (dir.includes("e")) rect.width = Math.max(120, r0.width + dx);
+                    if (dir.includes("s")) rect.height = Math.max(90, r0.height + dy);
+                    if (dir.includes("w")) {
+                        const nw = Math.max(120, r0.width - dx);
+                        rect.left = r0.left + (r0.width - nw);
+                        rect.width = nw;
+                    }
+                    if (dir.includes("n")) {
+                        const nh = Math.max(90, r0.height - dy);
+                        rect.top = r0.top + (r0.height - nh);
+                        rect.height = nh;
+                    }
+                }
+                applyRect();
+            };
+            const onUp = () => {
+                window.removeEventListener("mousemove", onMove);
+                window.removeEventListener("mouseup", onUp);
+            };
+            window.addEventListener("mousemove", onMove);
+            window.addEventListener("mouseup", onUp);
+        });
+
+        overlay.addEventListener("mousedown", e => {
+            if (e.target.closest(".print-crop-bar") || e.target.closest("#cropBox")) return;
+            const stageRect = overlay.getBoundingClientRect();
+            const x0 = e.clientX - stageRect.left;
+            const y0 = e.clientY - stageRect.top;
+            const onMove = ev => {
+                const x1 = ev.clientX - stageRect.left;
+                const y1 = ev.clientY - stageRect.top;
+                rect = {
+                    left: Math.min(x0, x1),
+                    top: Math.min(y0, y1),
+                    width: Math.max(80, Math.abs(x1 - x0)),
+                    height: Math.max(60, Math.abs(y1 - y0))
+                };
+                applyRect();
+            };
+            const onUp = () => {
+                window.removeEventListener("mousemove", onMove);
+                window.removeEventListener("mouseup", onUp);
+            };
+            window.addEventListener("mousemove", onMove);
+            window.addEventListener("mouseup", onUp);
+        });
+    }
+
+    // 🧍 Küçə Görünüşü (Pegman Street View) + 🧭 Mənim Konumum + 💡 Fokus İşıqlandırma
+    function openStreetViewAt(lat, lng) {
+        const modal = $("streetViewModal");
+        if (!modal) return;
+        const coordsText = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+        if ($("svCoordsLabel")) $("svCoordsLabel").textContent = coordsText;
+        if ($("svExternalLink")) {
+            $("svExternalLink").href = `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat},${lng}`;
+        }
+        if ($("svFrame")) {
+            $("svFrame").src = `https://maps.google.com/maps?q=${lat},${lng}&layer=c&cbll=${lat},${lng}&cbp=11,0,0,0,0&output=svembed`;
+        }
+        modal.showModal();
+    }
+
+    function initRightTools() {
+        $("focusToggleBtn")?.addEventListener("click", () => {
+            state.focusMode = !state.focusMode;
+            $("focusToggleBtn").classList.toggle("active", state.focusMode);
+            drawRoutes();
+            toast(state.focusMode ? "💡 Fokus işıqlandırma aktivdir" : "💡 Fokus işıqlandırma söndürüldü");
+        });
+
+        $("myLocationBtn")?.addEventListener("click", () => {
+            if (!navigator.geolocation) {
+                toast("Cihazınızda GPS dəstəklənmir", true);
+                return;
+            }
+            navigator.geolocation.getCurrentPosition(pos => {
+                const { latitude: lat, longitude: lng } = pos.coords;
+                myLocationMarker?.remove();
+                const el = document.createElement("div");
+                el.className = "pin";
+                myLocationMarker = new maplibregl.Marker({ element: el })
+                    .setLngLat([lng, lat])
+                    .setPopup(new maplibregl.Popup({ offset: 12 }).setHTML(`<b>🧭 Mənim Konumum</b><br>${lat.toFixed(5)}, ${lng.toFixed(5)}`))
+                    .addTo(map);
+                map.flyTo({ center: [lng, lat], zoom: 15 });
+                myLocationMarker.togglePopup();
+            }, () => {
+                // Demo/ehtiyat olaraq Bakı mərkəzinə apar
+                const lat = 40.4093, lng = 49.8671;
+                map.flyTo({ center: [lng, lat], zoom: 13 });
+                toast("🧭 Cari mövqeyə yönləndirildi (40.4093, 49.8671)");
+            });
+        });
+
+        const pegBtn = $("pegmanBtn");
+        const hint = $("pegmanDropHint");
+        if (pegBtn) {
+            pegBtn.addEventListener("click", () => {
+                pegmanActive = !pegmanActive;
+                pegBtn.classList.toggle("active", pegmanActive);
+                if (hint) hint.hidden = !pegmanActive;
+                if (window.map) map.getCanvas().style.cursor = pegmanActive ? "crosshair" : "";
+            });
+
+            pegBtn.addEventListener("mousedown", e => {
+                if (e.button !== 0) return;
+                let moved = false;
+                let ghost = null;
+                const onMove = ev => {
+                    if (!moved && Math.hypot(ev.clientX - e.clientX, ev.clientY - e.clientY) > 6) {
+                        moved = true;
+                        if (hint) hint.hidden = false;
+                        ghost = document.createElement("div");
+                        ghost.className = "pegman-drag-ghost";
+                        ghost.innerHTML = `<i class="fa-solid fa-street-view"></i>`;
+                        document.body.appendChild(ghost);
+                    }
+                    if (ghost) {
+                        ghost.style.left = `${ev.clientX}px`;
+                        ghost.style.top = `${ev.clientY}px`;
+                    }
+                };
+                const onUp = ev => {
+                    window.removeEventListener("mousemove", onMove);
+                    window.removeEventListener("mouseup", onUp);
+                    if (ghost) ghost.remove();
+                    if (!moved) return;
+                    if (hint) hint.hidden = true;
+                    pegmanActive = false;
+                    pegBtn.classList.remove("active");
+                    const box = map.getCanvasContainer().getBoundingClientRect();
+                    if (ev.clientX >= box.left && ev.clientX <= box.right && ev.clientY >= box.top && ev.clientY <= box.bottom) {
+                        const lngLat = map.unproject([ev.clientX - box.left, ev.clientY - box.top]);
+                        openStreetViewAt(lngLat.lat, lngLat.lng);
+                    }
+                };
+                window.addEventListener("mousemove", onMove);
+                window.addEventListener("mouseup", onUp);
+            });
+        }
+    }
+
+    // 👥 Admin İstifadəçilər Pəncərəsi (Şifrə / Email OTP və Səlahiyyət)
+    const USERS_STORE_KEY = "bcg.admin.users.v1";
+    function loadUsersRegistry() {
+        const stored = readStore(USERS_STORE_KEY, null);
+        if (stored && Array.isArray(stored) && stored.length) return stored;
+        return [
+            { id: 1, name: "Bağır (Baş Admin)", email: state.user?.email || "admin@bcg.az", role: "admin", authMode: "Şifrə + Email", passMask: "••••••••" },
+            { id: 2, name: "Rəşad Məmmədov", email: "rashad@bcg.az", role: "editor", authMode: "📧 Email kodu ilə", passMask: "OTP" },
+            { id: 3, name: "Elvin Hüseynov", email: "elvin@bcg.az", role: "viewer", authMode: "🔑 Şifrə təyin edilib", passMask: "Bcg#2026" }
+        ];
+    }
+
+    function renderUsersModal() {
+        const body = $("usersTableBody");
+        if (!body) return;
+        const list = loadUsersRegistry();
+        const roleLabels = {
+            admin: `<span class="pill" style="--tone:#22C55E">👑 Admin (Tam icazə)</span>`,
+            editor: `<span class="pill" style="--tone:#F59E0B">✏️ Redaktə (Status / Qeyd)</span>`,
+            viewer: `<span class="pill" style="--tone:#3B82F6">👁️ Yalnız Baxış</span>`
+        };
+        body.innerHTML = list.map(u => `
+            <tr>
+                <td><b>${esc(u.name)}</b></td>
+                <td class="mono">${esc(u.email)}</td>
+                <td><span class="invoice-pill">${esc(u.authMode)}</span></td>
+                <td>${roleLabels[u.role] || esc(u.role)}</td>
+                <td class="num">
+                    <button class="icon-btn small" data-del-user="${u.id}" title="Sil"><i class="fa-solid fa-trash"></i></button>
+                </td>
+            </tr>
+        `).join("");
+    }
+
     function populateNoteRecipients() {
         const sel = $("noteRecipient");
         if (!sel) return;
-        const emails = [...new Set([...(state.users || []), state.user?.email].filter(Boolean))];
+        const regEmails = loadUsersRegistry().map(u => u.email);
+        const emails = [...new Set([...(state.users || []), ...regEmails, state.user?.email].filter(Boolean))];
         const current = sel.value || "all";
         sel.innerHTML = `<option value="all">Hamıya (All)</option>` + emails.map(e => `<option value="${esc(e)}">${esc(e)}</option>`).join("");
         sel.value = emails.includes(current) ? current : "all";
@@ -1822,11 +2155,83 @@ document.addEventListener("DOMContentLoaded", init);
         updateLegendVisibility();
         renderInfoCard();
         populateNoteRecipients();
-        updateScaleBarUI();
     };
 
     document.addEventListener("DOMContentLoaded", () => {
         ensureMapWidgets();
+        initPrintCropTool();
+        initRightTools();
+
+        // Sol sütun tabları: 📁 Layihələr / 🗂️ Digər
+        $("tabProjectsBtn")?.addEventListener("click", () => {
+            state.sidebarCategory = "project";
+            renderAll();
+        });
+        $("tabOtherBtn")?.addEventListener("click", () => {
+            state.sidebarCategory = "other";
+            renderAll();
+        });
+
+        // İdxal seçim pəncərəsi
+        $("impChooseFileBtn")?.addEventListener("click", () => {
+            const picked = document.querySelector('input[name="impTarget"]:checked')?.value || "other";
+            pendingImportCategory = isAdmin() ? picked : "other";
+            $("importFile").click();
+        });
+
+        // Admin İstifadəçilər pəncərəsi
+        $("usersBtn")?.addEventListener("click", () => {
+            if (!isAdmin()) return;
+            renderUsersModal();
+            $("usersModal")?.showModal();
+        });
+        $("uGenPassBtn")?.addEventListener("click", () => {
+            const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#";
+            let pass = "Bcg#";
+            for (let i = 0; i < 6; i++) pass += chars[Math.floor(Math.random() * chars.length)];
+            if ($("uPass")) $("uPass").value = pass;
+        });
+        $("uCopyBtn")?.addEventListener("click", async () => {
+            const email = $("uEmail")?.value.trim() || "user@bcg.az";
+            const pass = $("uPass")?.value.trim();
+            const text = `BCG GIS Giriş: Email: ${email} | ${pass ? "Şifrə: " + pass : "Giriş üsulu: Email birdəfəlik OTP kodu ilə"}`;
+            try { await navigator.clipboard.writeText(text); } catch {}
+            toast("📋 Giriş məlumatları kopyalandı!");
+        });
+        $("userAddForm")?.addEventListener("submit", e => {
+            e.preventDefault();
+            const name = $("uName")?.value.trim();
+            const email = $("uEmail")?.value.trim();
+            const pass = $("uPass")?.value.trim();
+            const role = $("uRole")?.value || "viewer";
+            if (!name || !email) return;
+            const list = loadUsersRegistry();
+            list.unshift({
+                id: Date.now(),
+                name,
+                email,
+                role,
+                authMode: pass ? `🔑 Şifrə (${pass})` : "📧 Email kodu ilə",
+                passMask: pass || "OTP"
+            });
+            writeStore(USERS_STORE_KEY, list);
+            $("uName").value = "";
+            $("uEmail").value = "";
+            $("uPass").value = "";
+            renderUsersModal();
+            populateNoteRecipients();
+            toast(`✅ İstifadəçi əlavə olundu: ${email}`);
+        });
+        $("usersTableBody")?.addEventListener("click", e => {
+            const del = e.target.closest("[data-del-user]");
+            if (!del) return;
+            const id = Number(del.dataset.delUser);
+            const list = loadUsersRegistry().filter(u => u.id !== id);
+            writeStore(USERS_STORE_KEY, list);
+            renderUsersModal();
+            populateNoteRecipients();
+            toast("🗑️ İstifadəçi silindi");
+        });
 
         $("projectList").addEventListener("click", e => {
             const projEl = e.target.closest(".project");
@@ -1835,30 +2240,26 @@ document.addEventListener("DOMContentLoaded", init);
             const btn = e.target.closest("[data-action]");
             if (btn && (btn.dataset.action === "expand" || btn.dataset.action === "toggle")) {
                 activeProjectId = projId;
+                window.__activeProjectId = projId;
                 state.selected = null;
                 renderInfoCard();
+                drawRoutes();
             }
         });
 
-        // Xəritədə miqyas dəyişdikcə göstəricini yenilə və 1x / 2x sağ klik qaydasını qoş
+        // Xəritə klik və 1x / 2x sağ klik davranışı
         const bindMapEnhancements = () => {
             if (!window.map) { setTimeout(bindMapEnhancements, 150); return; }
-            map.on("zoom", updateScaleBarUI);
-            updateScaleBarUI();
 
-            // Zoom düymələrinə dondurulmuş miqyas yoxlaması
-            $("zoomInBtn").addEventListener("click", e => {
-                if (frozenScale) {
-                    e.stopImmediatePropagation();
-                    toast(`🔒 Miqyas ${frozenScale.zoom.toFixed(2)}x üzərində dondurulub! Dəyişmək üçün "Sil" basın.`);
+            map.on("click", e => {
+                if (pegmanActive) {
+                    pegmanActive = false;
+                    $("pegmanBtn")?.classList.remove("active");
+                    if ($("pegmanDropHint")) $("pegmanDropHint").hidden = true;
+                    map.getCanvas().style.cursor = "";
+                    openStreetViewAt(e.lngLat.lat, e.lngLat.lng);
                 }
-            }, true);
-            $("zoomOutBtn").addEventListener("click", e => {
-                if (frozenScale) {
-                    e.stopImmediatePropagation();
-                    toast(`🔒 Miqyas ${frozenScale.zoom.toFixed(2)}x üzərində dondurulub! Dəyişmək üçün "Sil" basın.`);
-                }
-            }, true);
+            });
 
             // 1x Sağ klik: Yalnız status pəncərəsini bağla (Layihələr sütunu açıq qalsın)
             // 2x Ard-arda sağ klik: Sol Layihələr sütununu da bağla
@@ -1887,6 +2288,7 @@ document.addEventListener("DOMContentLoaded", init);
                     singleClickTimer = setTimeout(() => {
                         state.selected = null;
                         activeProjectId = null;
+                        window.__activeProjectId = null;
                         if ($("infoCard")) $("infoCard").hidden = true;
                         closePopovers();
                         drawRoutes();
@@ -1922,7 +2324,7 @@ document.addEventListener("DOMContentLoaded", init);
             noteForm.insertBefore(meta, noteForm.firstChild);
         }
 
-        // Material Reyestrinə Layihə, Material növü, Anbar Qaiməsi № və Təqvim (tarix) filtrləri əlavə et
+        // Material Reyestrinə Axın növü (Anbardan çıxan / İstifadə olunan), Layihə, Material, Anbar Qaiməsi № və Tarix filtrləri əlavə et
         const matModal = $("materialsModal");
         if (matModal && !$("matFilterBar")) {
             const wrap = matModal.querySelector(".table-wrap");
@@ -1930,6 +2332,14 @@ document.addEventListener("DOMContentLoaded", init);
             bar.id = "matFilterBar";
             bar.className = "mat-filters";
             bar.innerHTML = `
+                <label>
+                    <span>Axın növü:</span>
+                    <select class="input" id="matFilterFlow">
+                        <option value="all">Hamısı (Anbar + İstifadə)</option>
+                        <option value="issued">📦 Yalnız Anbardan çıxan</option>
+                        <option value="used">🛠️ Yalnız İstifadə olunan</option>
+                    </select>
+                </label>
                 <label>
                     <span>Layihə:</span>
                     <select class="input" id="matFilterProject"><option value="all">Bütün layihələr</option></select>
@@ -1958,11 +2368,12 @@ document.addEventListener("DOMContentLoaded", init);
             matModal.insertBefore(bar, wrap);
             matModal.insertBefore(summary, wrap);
 
-            ["matFilterProject", "matFilterType", "matFilterFrom", "matFilterTo"].forEach(id => {
+            ["matFilterFlow", "matFilterProject", "matFilterType", "matFilterFrom", "matFilterTo"].forEach(id => {
                 $(id).addEventListener("change", () => window.renderMaterials());
             });
             $("matFilterInvoice").addEventListener("input", () => window.renderMaterials());
             $("matFilterReset").addEventListener("click", () => {
+                $("matFilterFlow").value = "all";
                 $("matFilterProject").value = "all";
                 $("matFilterType").value = "all";
                 $("matFilterInvoice").value = "";
@@ -2052,7 +2463,7 @@ document.addEventListener("DOMContentLoaded", init);
         setTimeout(() => box.remove(), 4500);
     }
 
-    // Material Reyestri: Anbardan verilən + İstifadə olunan + Anbar Qaiməsi № ilə
+    // Material Reyestri: Anbardan çıxan + İstifadə olunan + Anbar Qaiməsi № ilə (Qaimə əlavə etmək yalnız Admin üçündür)
     window.renderMaterials = function () {
         const projSel = $("matFilterProject");
         const typeSel = $("matFilterType");
@@ -2067,6 +2478,7 @@ document.addEventListener("DOMContentLoaded", init);
             typeSel.value = types.includes(tCur) ? tCur : "all";
         }
 
+        const flowVal = $("matFilterFlow")?.value || "all";
         const pVal = projSel?.value || "all";
         const mVal = typeSel?.value || "all";
         const invVal = ($("matFilterInvoice")?.value || "").trim().toLowerCase();
@@ -2084,10 +2496,13 @@ document.addEventListener("DOMContentLoaded", init);
             return true;
         });
 
+        const showIssued = flowVal === "all" || flowVal === "issued";
+        const showUsed = flowVal === "all" || flowVal === "used";
+
         if ($("matSummary")) {
             $("matSummary").innerHTML = `
                 <span>Göstərilən qaimə qeydləri: <b>${filtered.length}</b> / ${state.materials.length}</span>
-                <span>📦 Anbardan verilən və 🛠️ İstifadə olunan uçotu aktivdir</span>
+                <span>${isAdmin() ? "👑 Admin: Qaimə əlavə və redaktə aktivdir" : "👁️ Baxış rejimi (Qaiməni yalnız Admin əlavə edə bilər)"}</span>
             `;
         }
 
@@ -2096,11 +2511,13 @@ document.addEventListener("DOMContentLoaded", init);
             <th>📄 Anbar Qaiməsi №</th>
             <th>${t("thProject")}</th>
             <th>${t("thMaterial")}</th>
-            <th>📦 Anbardan verilən</th>
-            <th>🛠️ İstifadə olunan</th>
+            ${showIssued ? "<th>📦 Anbardan çıxan</th>" : ""}
+            ${showUsed ? "<th>🛠️ İstifadə olunan</th>" : ""}
             <th>${t("thState")}</th>
             ${isAdmin() ? "<th></th>" : ""}
         </tr>`;
+
+        const colSpan = 5 + (showIssued ? 1 : 0) + (showUsed ? 1 : 0) + (isAdmin() ? 1 : 0);
 
         $("materialsBody").innerHTML = filtered.map(m => {
             const invoiceNo = m.invoice_no || `QAİMƏ-2026-0${140 + (m.id || 1)}`;
@@ -2112,12 +2529,12 @@ document.addEventListener("DOMContentLoaded", init);
                     <td><span class="invoice-pill">📄 ${esc(invoiceNo)}</span></td>
                     <td>${esc(m.project)}</td>
                     <td>${esc(m.material)}</td>
-                    <td><b style="color:var(--amber)">📦 ${esc(issued)}</b></td>
-                    <td><b style="color:var(--green)">🛠️ ${esc(used)}</b></td>
+                    ${showIssued ? `<td><b style="color:var(--amber)">📦 ${esc(issued)}</b></td>` : ""}
+                    ${showUsed ? `<td><b style="color:var(--green)">🛠️ ${esc(used)}</b></td>` : ""}
                     <td>${esc(materialStateLabel(m.state))}</td>
                     ${isAdmin() ? `<td class="num"><button class="icon-btn" data-edit-material="${m.id}" title="${t("editMaterial")}"><i class="fa-solid fa-pen"></i></button></td>` : ""}
                 </tr>
             `;
-        }).join("") + (isAdmin() ? `<tr class="row-add"><td colspan="8"><button class="link" data-edit-material="">+ ${t("addMaterial")} (Anbar qaiməsi ilə)</button></td></tr>` : "");
+        }).join("") + (isAdmin() ? `<tr class="row-add"><td colspan="${colSpan}"><button class="link" data-edit-material="">+ ${t("addMaterial")} (📄 Anbar Qaiməsi əlavə et — Yalnız Admin)</button></td></tr>` : "");
     };
 })();

@@ -514,7 +514,7 @@ const tools = (() => {
         $("toolFinish").addEventListener("click", finish);
         $("toolClose").addEventListener("click", () => setTool(null));
         $("saveKmz").addEventListener("click", () => { st.saving = false; render(); saveKmz(); });
-        $("savePdf").addEventListener("click", () => { st.saving = false; render(); window.print(); });
+        $("savePdf").addEventListener("click", () => { st.saving = false; render(); if (window.openPrintCropMode) window.openPrintCropMode(); else window.print(); });
     }
 
     function bindMap() {
