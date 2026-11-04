@@ -18,19 +18,24 @@ const api = (() => {
         coords: row.coords
     });
 
-    const isOtherProjectRow = row =>
-        row.project_type === "other" ||
-        /^(rm\b|rm-|dendrologiya)/i.test(String(row.name || "").trim());
+    const detectCategory = row => {
+        const pt = String(row.project_type || "").toLowerCase();
+        const nm = String(row.name || "").trim();
+        if (pt === "nim" || /^nim\b|^svetofor/i.test(nm)) return "nim";
+        if (pt === "azconnect" || /^azconnect\b|^azcon/i.test(nm)) return "azconnect";
+        if (pt === "other" || /^(rm\b|rm-|dendrologiya|digər)/i.test(nm)) return "other";
+        return "project";
+    };
 
     const toProject = row => {
         const items = (row.segments || []).map(toSegment).sort((a, b) => a.id.localeCompare(b.id));
-        const isOther = isOtherProjectRow(row);
-        const isPoints = !isOther && (row.project_type === "points" || items.some(s => s.antennas > 0 || (Array.isArray(s.coords) && s.coords.length === 1)));
+        const category = detectCategory(row);
+        const isPoints = category === "nim" || (category === "project" && (row.project_type === "points" || items.some(s => s.antennas > 0 || (Array.isArray(s.coords) && s.coords.length === 1))));
         const cleanProjName = String(row.name || "").replace(/\s*-\s*Faz\s*\d+/gi, "").replace(/\s*\(Faz-\d+\)/gi, "").trim();
         return {
             id: row.id, name: cleanProjName, status: row.status, imported: row.imported,
-            category: isOther ? "other" : "project",
-            type: isOther ? "lines" : (isPoints ? "points" : "lines"),
+            category,
+            type: category === "azconnect" || category === "other" ? "lines" : (isPoints ? "points" : "lines"),
             startDate: row.start_date || "", endDate: row.end_date || "",
             items
         };
@@ -101,7 +106,7 @@ const api = (() => {
 
         /* Layihə və seqmentləri. Seqmentlər yazılmasa, layihə geri silinir ki bazada boş layihə qalmasın */
         async saveProject(project) {
-            const pType = project.category === "other" ? "other" : (project.type || "lines");
+            const pType = ["other", "nim", "azconnect"].includes(project.category) ? project.category : (project.type || "lines");
             unwrap(await client.from("projects").insert({
                 id: project.id, name: project.name, status: project.status || "layihe",
                 project_type: pType, imported: true

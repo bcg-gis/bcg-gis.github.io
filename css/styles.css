@@ -485,7 +485,7 @@ body.shared .user, body.shared #logoutBtn, body.shared .bar-sep, body.shared .ta
 #drawer { display: none !important; }
 #materialsModal { width: min(980px, 95vw); }
 
-/* Sol sütun: 📁 Layihələr və 🗂️ Digər bölmələri */
+/* Sol sütun: 4 Qovluq (📁 Layihələr, 🚦 NİM, 🌐 Azconnect, 🗂️ Digər) */
 .side-cat-tabs {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -496,7 +496,7 @@ body.shared .user, body.shared #logoutBtn, body.shared .bar-sep, body.shared .ta
 }
 .side-cat-btn {
     height: 32px;
-    padding: 0 10px;
+    padding: 0 8px;
     border: 1px solid var(--line);
     border-radius: var(--radius);
     background: var(--panel);
@@ -505,8 +505,10 @@ body.shared .user, body.shared #logoutBtn, body.shared .bar-sep, body.shared .ta
     font-size: 12px;
     display: inline-flex;
     align-items: center;
-    justify-content: center;
+    justify-content: space-between;
     gap: 6px;
+    cursor: pointer;
+    user-select: none;
     transition: all 0.15s;
 }
 .side-cat-btn:hover { background: var(--hover); color: var(--ink); }
@@ -515,6 +517,24 @@ body.shared .user, body.shared #logoutBtn, body.shared .bar-sep, body.shared .ta
     border-color: var(--brand);
     color: #fff;
     box-shadow: 0 2px 8px color-mix(in srgb, var(--brand) 35%, transparent);
+}
+.side-cat-btn.folder-off {
+    opacity: 0.52;
+}
+.folder-vis-chk {
+    width: 14px;
+    height: 14px;
+    margin: 0;
+    accent-color: #22C55E;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+.folder-btn-label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 .side-cat-badge {
     display: inline-flex;

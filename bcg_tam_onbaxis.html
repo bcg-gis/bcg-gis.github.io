@@ -1,0 +1,2548 @@
+<!DOCTYPE html>
+<html lang="az" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BCG – Fiber Optik GIS Paneli (Tam HTML Önbaxış)</title>
+    <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+    <style>
+        :root, :root[data-theme="light"] {
+            --bar: #0b1524; --bar-ink: #f1f5f9; --bar-muted: #94a3b8;
+            --canvas: #f1f5f9; --panel: #ffffff; --hover: #f8fafc; --line: #e2e8f0; --line-strong: #cbd5e1;
+            --ink: #0f172a; --ink-2: #475569; --ink-3: #64748b;
+            --brand: #2563eb; --brand-ink: #ffffff; --brand-soft: rgba(37,99,235,0.12);
+            --shadow: 0 4px 20px rgba(15,23,42,.10), 0 1px 3px rgba(15,23,42,.06);
+        }
+        :root[data-theme="dark"] {
+            --bar: #080f1a; --bar-ink: #f1f5f9; --bar-muted: #94a3b8;
+            --canvas: #0b1320; --panel: #111c2d; --hover: #17263c; --line: #1e2f47; --line-strong: #2c4263;
+            --ink: #f1f5f9; --ink-2: #94a3b8; --ink-3: #64748b;
+            --brand: #38bdf8; --brand-ink: #041321; --brand-soft: rgba(56,189,248,0.14);
+            --shadow: 0 10px 30px rgba(0,0,0,.55), 0 2px 8px rgba(0,0,0,.4);
+        }
+        :root[data-theme="ocean"] {
+            --bar: #072a3e; --bar-muted: #9cc2d6; --canvas: #eaf3f7; --panel: #ffffff; --hover: #e3eff5;
+            --line: #d1e3ec; --line-strong: #b4d0de; --ink: #0d2b3a; --ink-2: #3b5d6e; --ink-3: #688696;
+            --brand: #0284c7; --brand-ink: #fff; --brand-soft: rgba(2,132,199,0.12);
+        }
+        :root[data-theme="forest"] {
+            --bar: #0e2c21; --bar-muted: #9fc2b2; --canvas: #edf4f0; --panel: #ffffff; --hover: #e4efe9;
+            --line: #d4e4dc; --line-strong: #b8d1c4; --ink: #11261d; --ink-2: #3d574a; --ink-3: #688275;
+            --brand: #16a34a; --brand-ink: #fff; --brand-soft: rgba(22,163,74,0.12);
+        }
+        :root[data-theme="graphite"] {
+            --bar: #121316; --bar-muted: #9ca3af; --canvas: #18191d; --panel: #202227; --hover: #292c33;
+            --line: #32353e; --line-strong: #454954; --ink: #f3f4f6; --ink-2: #9ca3af; --ink-3: #6b7280;
+            --brand: #f59e0b; --brand-ink: #1c1100; --brand-soft: rgba(245,158,11,0.15);
+        }
+        * { box-sizing: border-box; }
+        [hidden] { display: none !important; }
+        body {
+            background: var(--canvas); color: var(--ink);
+            font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif;
+            font-size: 13px; margin: 0; height: 100vh; display: flex; flex-direction: column; overflow: hidden; user-select: none;
+        }
+        .input-ui { height: 31px; padding: 0 9px; border-radius: 7px; background: var(--canvas); color: var(--ink); border: 1px solid var(--line-strong); outline: none; font-size: 12px; transition: border-color .15s; }
+        .input-ui:focus { border-color: var(--brand); }
+        .btn-ui { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 31px; padding: 0 12px; border-radius: 7px; font-weight: 600; font-size: 12px; cursor: pointer; transition: all .15s; }
+        .btn-primary-ui { background: var(--brand); color: var(--brand-ink); }
+        .btn-primary-ui:hover { filter: brightness(1.08); }
+        .btn-outline-ui { border: 1px solid var(--line-strong); color: var(--ink); background: var(--panel); }
+        .btn-outline-ui:hover { background: var(--hover); }
+        .tool-btn { width: 36px; height: 31px; display: grid; place-items: center; color: var(--ink-2); cursor: pointer; font-size: 14px; transition: all .12s; }
+        .tool-btn:hover { background: var(--hover); color: var(--ink); }
+        .tool-btn.active { background: var(--brand); color: var(--brand-ink); }
+
+        /* Ölçüsü dəyişdirilə bilən Yığcam Status Pəncərəsi */
+        .info-card {
+            position: absolute; z-index: 40; left: 14px; top: 14px;
+            width: 375px; height: auto; min-width: 290px; max-width: 560px; max-height: calc(100% - 28px);
+            resize: both; overflow: auto;
+            display: flex; flex-direction: column;
+            background: var(--panel); color: var(--ink);
+            border: 1px solid var(--line-strong); border-radius: 12px; box-shadow: var(--shadow);
+        }
+        .info-card.compact-other {
+            width: auto; max-width: 340px; height: auto !important; min-width: 0; min-height: 0;
+            resize: none; border-radius: 999px; overflow: hidden;
+        }
+        .sidebar-closed-mode .info-card { top: 52px; }
+        .route-svg { cursor: pointer; transition: stroke-width .15s, opacity .2s; }
+        .route-svg:hover { filter: drop-shadow(0 0 6px rgba(255,255,255,0.45)); }
+        .rayon-node, .ab-node { cursor: pointer; transition: opacity .2s; }
+
+        /* Maus üzərinə gəldikdə çıxan HOVER TOOLTIP */
+        #hoverTip {
+            position: fixed; z-index: 90; pointer-events: none;
+            padding: 6px 10px; border-radius: 8px;
+            background: rgba(8, 15, 26, 0.95); color: #f8fafc;
+            border: 1px solid rgba(255,255,255,0.16);
+            box-shadow: 0 8px 24px rgba(0,0,0,0.55);
+            font-size: 11.5px; line-height: 1.38;
+            max-width: 290px;
+        }
+
+        /* Sürüşdürülən Küçə Görünüşü Adam İkonu (Pegman) */
+        #pegmanDragGhost {
+            position: fixed; z-index: 100; pointer-events: none;
+            width: 38px; height: 38px; border-radius: 999px;
+            background: #f59e0b; color: #fff; font-size: 22px;
+            display: grid; place-items: center;
+            box-shadow: 0 8px 20px rgba(245,158,11,0.6);
+            transform: translate(-50%, -80%);
+        }
+
+        /* Çap / PDF Çərçivə Seçimi (Crop Box) */
+        #printCropOverlay {
+            position: absolute; inset: 0; z-index: 45;
+            cursor: crosshair;
+        }
+        #cropBox {
+            position: absolute;
+            border: 2.5px dashed #38bdf8;
+            box-shadow: 0 0 0 9999px rgba(4, 12, 24, 0.68);
+            cursor: move;
+        }
+        .crop-handle {
+            position: absolute; width: 12px; height: 12px;
+            background: #38bdf8; border: 2px solid #ffffff; border-radius: 3px;
+        }
+        .crop-handle.nw { top: -6px; left: -6px; cursor: nwse-resize; }
+        .crop-handle.ne { top: -6px; right: -6px; cursor: nesw-resize; }
+        .crop-handle.sw { bottom: -6px; left: -6px; cursor: nesw-resize; }
+        .crop-handle.se { bottom: -6px; right: -6px; cursor: nwse-resize; }
+
+        @keyframes pulseRing {
+            0% { r: 6px; opacity: 0.9; }
+            100% { r: 22px; opacity: 0; }
+        }
+        .gps-pulse { animation: pulseRing 1.8s infinite ease-out; }
+
+        @media print {
+            @page { size: landscape; margin: 6mm; }
+            header, #sidebar, nav, #reopenSidebarBtn, #infoCard, #printCropOverlay, #toolBarHint, #layersPopover, #coordPopover, #toastBox, #hoverTip {
+                display: none !important;
+            }
+            body, #workspace, #mapStage {
+                height: 100vh !important; width: 100vw !important; overflow: visible !important;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- MAUS ÜZƏRİNƏ GƏLDİKDƏ ÇIXAN QISA MƏLUMAT -->
+    <div id="hoverTip" hidden></div>
+    <!-- KÜÇƏ GÖRÜNÜŞÜ SÜRÜŞDÜRÜLƏN ADAM İKONU -->
+    <div id="pegmanDragGhost" hidden>🧍</div>
+
+    <!-- ÜST PANEL (APPBAR) -->
+    <header style="background:var(--bar);color:var(--bar-ink);border-bottom:1px solid rgba(255,255,255,0.08)" class="h-12 px-3 flex items-center gap-2 shrink-0 z-50">
+        <button id="sidebarToggleBtn" class="w-8 h-8 rounded-lg grid place-items-center hover:bg-white/10 text-[#94a3b8] hover:text-white" title="Paneli aç / bağla">☰</button>
+        <div class="flex items-center gap-2 mr-auto">
+            <span class="w-6 h-6 rounded-md bg-gradient-to-br from-[#38bdf8] to-[#2563eb] grid place-items-center text-white font-bold text-xs shadow">B</span>
+            <strong class="text-sm tracking-wide">BCG</strong>
+            <span class="text-xs text-[#94a3b8] pl-2.5 border-l border-white/15 hidden sm:inline">Fiber Optik GIS İdarəetmə Paneli</span>
+        </div>
+
+        <button id="notesTopBtn" class="h-8 px-2.5 rounded-lg hover:bg-white/10 flex items-center gap-1.5 text-xs font-medium">
+            <span>📝 Qeydlər</span>
+            <span id="notesBadge" class="px-1.5 py-0.5 rounded-full text-[11px] font-bold" style="background:var(--brand);color:var(--brand-ink)">2</span>
+        </button>
+        <button id="materialsTopBtn" class="h-8 px-2.5 rounded-lg hover:bg-white/10 flex items-center gap-1.5 text-xs font-medium">
+            <span>📦 Material Reyestri</span>
+        </button>
+        <!-- YALNIZ ADMİN ÜÇÜN ADMİN PANELİ (YENİ SƏHİFƏDƏ AÇILIR) -->
+        <a id="usersTopBtn" href="admin.html" target="_blank" class="h-8 px-2.5 rounded-lg bg-amber-500/15 border border-amber-400/35 text-amber-300 hover:bg-amber-500/25 flex items-center gap-1.5 text-xs font-semibold no-underline" title="Yeni səhifədə Admin Panelini aç (Sayt məlumatları, Giriş/İş tarixçəsi və İstifadəçilər)">
+            <span>🛡️ Admin Paneli</span>
+            <span class="px-1.5 py-0.2 rounded-full text-[10px] bg-amber-400/20">↗</span>
+        </a>
+        <button id="importTopBtn" class="h-8 px-2.5 rounded-lg bg-[#2563eb]/35 border border-[#38bdf8]/40 hover:bg-[#2563eb]/55 flex items-center gap-1.5 text-xs font-semibold">
+            <span id="importTopBtnText">⬆️ İmport (Layihə / Digər)</span>
+        </button>
+        <button id="printTopBtn" class="h-8 px-2.5 rounded-lg bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 hover:bg-emerald-500/30 flex items-center gap-1.5 text-xs font-semibold" title="İstədiyiniz sahəni çərçivəyə alıb PDF və ya Çap edin">
+            <span>🖨️ Çap / PDF</span>
+        </button>
+
+        <span class="w-px h-5 bg-white/15 mx-0.5"></span>
+
+        <select id="themeSelect" class="h-8 px-2 rounded-lg bg-white/10 text-white text-xs border border-white/15 outline-none cursor-pointer" title="Mövzu">
+            <option value="dark">🌙 Tünd</option>
+            <option value="light">☀️ Açıq</option>
+            <option value="ocean">🌊 Dəniz</option>
+            <option value="forest">🌲 Meşə</option>
+            <option value="graphite">🪨 Qrafit</option>
+        </select>
+
+        <!-- Sınaq üçün Rol Keçidi: Admin vs İstifadəçi (Edit / Baxış) -->
+        <div class="flex items-center gap-1.5 pl-2 border-l border-white/15">
+            <select id="roleSelect" class="h-8 px-2.5 rounded-lg text-xs font-semibold border outline-none cursor-pointer" style="background:rgba(56,189,248,0.15);color:#38bdf8;border-color:rgba(56,189,248,0.35)" title="Sınaq üçün rolu dəyişin">
+                <option value="admin">👑 Rol: Admin (Tam səlahiyyət)</option>
+                <option value="edit">✏️ Rol: İstifadəçi (Redaktə / Edit)</option>
+                <option value="view">👁️ Rol: İstifadəçi (Yalnız Baxış)</option>
+            </select>
+        </div>
+    </header>
+
+    <!-- İŞ SAHƏSİ -->
+    <div id="workspace" class="flex-1 flex min-h-0">
+
+        <!-- SOL PANEL -->
+        <aside id="sidebar" style="background:var(--panel);border-right:1px solid var(--line)" class="w-84 flex flex-col min-h-0 shrink-0 z-30">
+            
+            <!-- SOL SÜTUNDA 4 SƏLİQƏLİ QOVLUQ (FOLDER): 1) LAYİHƏLƏR  2) NİM (Svetofor/Nöqtə)  3) AZCONNECT (Xətlər)  4) DİGƏR -->
+            <div class="p-2 border-b space-y-1.5" style="border-color:var(--line);background:var(--canvas)">
+                <div class="flex items-center justify-between px-1 text-[10.5px] font-semibold uppercase tracking-wider" style="color:var(--ink-3)">
+                    <span>Qovluqlar (Seç / Xəritədə Aktiv et)</span>
+                    <span>☑ Aktiv</span>
+                </div>
+                <div id="folderTabsGrid" class="grid grid-cols-2 gap-1.5">
+                    <div data-folder-tab="project" class="h-8 px-2 rounded-lg font-semibold text-xs flex items-center justify-between gap-1 cursor-pointer transition">
+                        <div class="flex items-center gap-1.5 min-w-0">
+                            <input type="checkbox" data-folder-vis="project" checked title="Bütün Layihələr qovluğunu xəritədə aktiv/deaktiv et" class="w-3.5 h-3.5 cursor-pointer accent-sky-400">
+                            <span class="truncate">📁 Layihələr</span>
+                        </div>
+                        <span id="tabProjectsCount" class="px-1.5 py-0.2 rounded-full text-[10.5px] bg-black/20"></span>
+                    </div>
+                    <div data-folder-tab="nim" class="h-8 px-2 rounded-lg font-semibold text-xs flex items-center justify-between gap-1 cursor-pointer transition">
+                        <div class="flex items-center gap-1.5 min-w-0">
+                            <input type="checkbox" data-folder-vis="nim" checked title="Bütün NİM (Svetofor) qovluğunu xəritədə aktiv/deaktiv et" class="w-3.5 h-3.5 cursor-pointer accent-amber-400">
+                            <span class="truncate">🚦 NİM</span>
+                        </div>
+                        <span id="tabNimCount" class="px-1.5 py-0.2 rounded-full text-[10.5px] bg-black/20"></span>
+                    </div>
+                    <div data-folder-tab="azconnect" class="h-8 px-2 rounded-lg font-semibold text-xs flex items-center justify-between gap-1 cursor-pointer transition">
+                        <div class="flex items-center gap-1.5 min-w-0">
+                            <input type="checkbox" data-folder-vis="azconnect" checked title="Bütün Azconnect qovluğunu xəritədə aktiv/deaktiv et" class="w-3.5 h-3.5 cursor-pointer accent-cyan-400">
+                            <span class="truncate">🌐 Azconnect</span>
+                        </div>
+                        <span id="tabAzconnectCount" class="px-1.5 py-0.2 rounded-full text-[10.5px] bg-black/20"></span>
+                    </div>
+                    <div data-folder-tab="other" class="h-8 px-2 rounded-lg font-semibold text-xs flex items-center justify-between gap-1 cursor-pointer transition">
+                        <div class="flex items-center gap-1.5 min-w-0">
+                            <input type="checkbox" data-folder-vis="other" checked title="Bütün Digər qovluğunu xəritədə aktiv/deaktiv et" class="w-3.5 h-3.5 cursor-pointer accent-sky-400">
+                            <span class="truncate">🗂️ Digər</span>
+                        </div>
+                        <span id="tabOtherCount" class="px-1.5 py-0.2 rounded-full text-[10.5px] bg-black/20"></span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Axtarış + Status Filtrləri -->
+            <div class="px-2.5 py-2 border-b space-y-2" style="border-color:var(--line)">
+                <input id="searchInput" type="search" placeholder="Layihə, A/B nöqtəsi, rayon və ya icraçı axtar…" class="input-ui w-full">
+                <div id="statusChips" class="flex flex-wrap gap-1"></div>
+            </div>
+
+            <div class="px-3 py-1.5 flex items-center justify-between text-[11px] border-b" style="border-color:var(--line);color:var(--ink-2)">
+                <span id="listSectionTitle" class="font-semibold uppercase tracking-wider">Layihələr</span>
+                <div class="flex gap-2.5">
+                    <button id="showAllBtn" style="color:var(--brand)" class="hover:underline font-medium">Hamısını göstər</button>
+                    <button id="hideAllBtn" style="color:var(--ink-3)" class="hover:underline font-medium">Gizlət</button>
+                </div>
+            </div>
+
+            <div id="projectList" class="flex-1 overflow-y-auto divide-y" style="border-color:var(--line)"></div>
+        </aside>
+
+        <!-- TAM EKRAN XƏRİTƏ SÜTUNU -->
+        <div class="flex-1 flex flex-col min-w-0 min-h-0">
+            <div id="mapStage" class="flex-1 relative overflow-hidden" style="background:#0f1c24">
+
+                <!-- Sol sütun bağlı olanda görünən düymə -->
+                <button id="reopenSidebarBtn" class="hidden absolute top-3 left-3 z-30 h-8 px-3 rounded-lg items-center gap-2 text-xs font-semibold shadow-lg" style="background:var(--panel);color:var(--ink);border:1px solid var(--line-strong)">
+                    <span>☰ Siyahını aç</span>
+                </button>
+
+                <!-- Küçə Görünüşü (Pegman) sürükləmə ipucu -->
+                <div id="pegmanDropHint" hidden class="absolute top-3 left-1/2 -translate-x-1/2 z-40 px-4 py-2 rounded-full text-xs font-semibold shadow-xl flex items-center gap-2" style="background:#f59e0b;color:#1c1100">
+                    <span>🧍 Adam ikonunu xəritədə baxmaq istədiyiniz nöqtəyə buraxın (və ya klikləyin)</span>
+                    <button id="cancelPegmanBtn" class="ml-2 px-1.5 py-0.5 rounded bg-black/20 text-white">✕</button>
+                </div>
+
+                <!-- ÇAP VƏ PDF ÜÇÜN SAHƏ (ÇƏRÇİVƏ) SEÇİMİ -->
+                <div id="printCropOverlay" hidden>
+                    <div class="absolute top-3 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl shadow-2xl flex items-center gap-2.5 text-xs font-semibold" style="background:var(--bar);color:var(--bar-ink);border:1px solid #38bdf8">
+                        <span>📐 Haranı çap / PDF edək? (Çərçivəni sürüşdürün, künclərindən böyüdüb-kiçildin və ya xəritədə yeni çərçivə çəkin)</span>
+                        <button id="cropFullBtn" class="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-sky-300">⛶ Tam ekran</button>
+                        <button id="confirmCropPrintBtn" class="px-3 py-1 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold">🖨️ Seçilmiş hissəni Çap / PDF et</button>
+                        <button id="cancelCropPrintBtn" class="px-2 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-500/40 text-rose-300">✕ Ləğv et</button>
+                    </div>
+                    <div id="cropBox" style="left:160px;top:80px;width:620px;height:390px">
+                        <div class="crop-handle nw" data-dir="nw"></div>
+                        <div class="crop-handle ne" data-dir="ne"></div>
+                        <div class="crop-handle sw" data-dir="sw"></div>
+                        <div class="crop-handle se" data-dir="se"></div>
+                        <div class="absolute -bottom-7 left-0 px-2 py-0.5 rounded text-[11px] font-mono bg-sky-500 text-slate-950 font-bold shadow" id="cropDimLabel">Seçilmiş Çap / PDF sahəsi</div>
+                    </div>
+                </div>
+
+                <!-- ÖLÇÜSÜ DƏYİŞDİRİLƏ BİLƏN STATUS PƏNCƏRƏSİ -->
+                <div id="infoCard" class="info-card" hidden></div>
+
+                <!-- İNTERAKTİV XƏRİTƏ KANVASI -->
+                <svg id="mapSvg" viewBox="0 0 1000 600" class="w-full h-full">
+                    <defs>
+                        <linearGradient id="satLandGrad" x1="0" y1="0" x2="1" y2="1">
+                            <stop offset="0%" stop-color="#172a22"/>
+                            <stop offset="50%" stop-color="#1f3328"/>
+                            <stop offset="100%" stop-color="#13231d"/>
+                        </linearGradient>
+                        <pattern id="satGrid" width="80" height="80" patternUnits="userSpaceOnUse">
+                            <rect width="80" height="80" fill="url(#satLandGrad)"/>
+                            <circle cx="25" cy="30" r="18" fill="rgba(20,40,25,0.30)"/>
+                            <circle cx="62" cy="58" r="22" fill="rgba(45,70,40,0.20)"/>
+                            <path d="M 80 0 L 0 0 0 80" fill="none" stroke="rgba(255,255,255,0.03)" stroke-width="1"/>
+                        </pattern>
+                        <pattern id="streetGrid" width="60" height="60" patternUnits="userSpaceOnUse">
+                            <rect width="60" height="60" fill="#e9eef2"/>
+                            <path d="M 0 30 L 60 30 M 30 0 L 30 60" fill="none" stroke="#d5dde5" stroke-width="1.5"/>
+                            <path d="M 60 0 L 0 0 0 60" fill="none" stroke="#cfd8e0" stroke-width="1"/>
+                        </pattern>
+                        <pattern id="darkGrid" width="60" height="60" patternUnits="userSpaceOnUse">
+                            <rect width="60" height="60" fill="#0b1320"/>
+                            <path d="M 60 0 L 0 0 0 60" fill="none" stroke="rgba(255,255,255,0.04)" stroke-width="1"/>
+                        </pattern>
+                    </defs>
+                    <g id="mapViewport">
+                        <rect id="mapBgRect" x="-500" y="-500" width="2200" height="1600" fill="url(#satGrid)"/>
+                        <g id="terrainLayer" opacity="0.45">
+                            <polygon points="100,120 340,60 580,110 470,210 180,190" fill="#263e30"/>
+                            <polygon points="160,330 390,290 460,460 220,490" fill="#213529"/>
+                        </g>
+                        <path id="caspianSea" d="M 730 -100 Q 690 170 765 270 Q 825 305 740 360 Q 680 430 710 680 L 1300 680 L 1300 -100 Z" fill="#09223a" opacity="0.95"/>
+                        <text x="805" y="295" fill="rgba(148,197,248,0.28)" font-size="12" font-weight="700" letter-spacing="2.5">XƏZƏR DƏNİZİ</text>
+                        <g id="roadsLayer" stroke="rgba(255,255,255,0.14)" stroke-width="1.5" fill="none">
+                            <path d="M 730 295 L 580 220 L 380 240 L 210 215"/>
+                            <path d="M 730 295 L 690 190 L 600 95"/>
+                            <path d="M 580 220 L 420,390 L 310 420"/>
+                        </g>
+                        <g id="placeNamesLayer" fill="#cbd5e1" font-size="11.5" font-weight="600" style="paint-order:stroke;stroke:#08111d;stroke-width:3px">
+                            <text x="742" y="302">Bakı</text>
+                            <text x="698" y="252">Sumqayıt</text>
+                            <text x="605" y="92">Quba</text>
+                            <text x="205" y="210">Gəncə</text>
+                            <text x="302" y="435">Şuşa</text>
+                        </g>
+                        <!-- Köməkçi (Digər / RM-lər) Xətləri -->
+                        <g id="otherGroup"></g>
+                        <!-- Magistral Xətt Marşrutları + A və B Nöqtələri -->
+                        <g id="routesGroup"></g>
+                        <g id="abEndpointsGroup"></g>
+                        <!-- Rayon Mərkəzi Nöqtələri (Rayon adı, Antena sayı, KM) -->
+                        <g id="pointsGroup"></g>
+                        <!-- İstifadəçinin Cari Konumu (GPS) -->
+                        <g id="myLocationGroup"></g>
+                        <!-- Ölçmə və çəkmə fiqurları -->
+                        <g id="drawingsGroup"></g>
+                        <g id="searchPinGroup"></g>
+                    </g>
+                </svg>
+
+                <!-- SAĞ ALƏT PANELİ (Fokus işıqlandırma, Konumum və Küçə görünüşü adam ikonu əlavə edildi!) -->
+                <nav class="absolute top-3 right-3 z-30 flex flex-col rounded-xl shadow-lg overflow-hidden" style="background:var(--panel);border:1px solid var(--line)">
+                    <button id="zoomInBtn" class="tool-btn" title="Yaxınlaşdır">＋</button>
+                    <button id="zoomOutBtn" class="tool-btn border-b" style="border-color:var(--line)" title="Uzaqlaşdır">－</button>
+                    <button id="homeBtn" class="tool-btn" title="Bütün Azərbaycan">⛶</button>
+                    <!-- 1 kliklə Fokus İşıqlandırma (Sağ paneldə!) -->
+                    <button id="focusToggleBtn" class="tool-btn active" title="Fokus işıqlandırma (Seçilmiş layihəni ön plana çıxarır)">💡</button>
+                    <!-- İstifadəçinin Konumu (GPS) -->
+                    <button id="myLocationBtn" class="tool-btn" title="Mənim konumum (Harada olduğumu göstər)">🧭</button>
+                    <!-- Google Maps tərzi Küçə Görünüşü Adam İkonu (Sürüşdürüb xəritəyə atmaq və ya klikləmək üçün) -->
+                    <button id="pegmanBtn" draggable="true" class="tool-btn border-b text-amber-400 hover:text-amber-300" style="border-color:var(--line)" title="Küçə Görünüşü (Adam ikonunu tutub xəritəyə atın)">🧍</button>
+
+                    <button id="layersBtn" class="tool-btn" title="Xəritə qatı">🗺️</button>
+                    <button id="namesBtn" class="tool-btn active" title="Şəhər adlarını göstər / gizlət">🏷️</button>
+                    <button id="coordBtn" class="tool-btn border-b" style="border-color:var(--line)" title="Koordinat aləti">🎯</button>
+                    <button data-tool="distance" class="tool-btn" title="Xətkeş: Məsafə ölç">📏</button>
+                    <button data-tool="area" class="tool-btn" title="Sahə ölç">⬠</button>
+                    <button data-tool="circle" class="tool-btn" title="Dairə ölç">◯</button>
+                    <button data-tool="pin" class="tool-btn" title="Nöqtə qoy">📍</button>
+                    <button data-tool="note" class="tool-btn border-b" style="border-color:var(--line)" title="Xəritə üzərinə mətn qeydi yaz">✏️</button>
+                    <button id="undoDrawBtn" class="tool-btn" title="Geri al">↩️</button>
+                    <button id="clearDrawBtn" class="tool-btn border-b" style="border-color:var(--line)" title="Təmizlə">🗑️</button>
+                    <button id="printSideBtn" class="tool-btn text-emerald-400 hover:text-emerald-300" title="Çap / PDF (İstədiyiniz yeri çərçivəyə alın)">🖨️</button>
+                </nav>
+
+                <!-- XƏRİTƏ QATI POPOVER -->
+                <div id="layersPopover" hidden class="absolute top-28 right-14 z-30 w-52 p-2.5 rounded-xl shadow-xl space-y-1 text-xs" style="background:var(--panel);border:1px solid var(--line-strong)">
+                    <div class="font-semibold px-2 py-1">Xəritə qatı</div>
+                    <button data-base="satellite" class="base-opt w-full text-left px-2.5 py-1.5 rounded-lg flex items-center justify-between font-medium" style="background:var(--brand-soft);color:var(--brand)">🛰️ Peyk görüntüsü <span>✓</span></button>
+                    <button data-base="street" class="base-opt w-full text-left px-2.5 py-1.5 rounded-lg flex items-center justify-between hover:bg-white/5">🛣️ Küçə xəritəsi</button>
+                    <button data-base="dark" class="base-opt w-full text-left px-2.5 py-1.5 rounded-lg flex items-center justify-between hover:bg-white/5">🌑 Tünd xəritə</button>
+                    <button data-base="blank" class="base-opt w-full text-left px-2.5 py-1.5 rounded-lg flex items-center justify-between hover:bg-white/5">⬜ Ağ fon</button>
+                </div>
+
+                <!-- KOORDİNAT POPOVER -->
+                <div id="coordPopover" hidden class="absolute top-28 right-14 z-30 w-64 p-3 rounded-xl shadow-xl space-y-2.5 text-xs" style="background:var(--panel);border:1px solid var(--line-strong)">
+                    <div class="font-semibold">Koordinat aləti</div>
+                    <label class="block space-y-1">
+                        <span style="color:var(--ink-2)">Kliklənən nöqtə:</span>
+                        <input id="coordClicked" readonly placeholder="Xəritəyə vurun…" class="input-ui w-full font-mono">
+                    </label>
+                    <form id="coordForm" class="space-y-1">
+                        <span style="color:var(--ink-2)">Koordinata get:</span>
+                        <div class="flex gap-1">
+                            <input id="coordGoTo" value="40.4093, 49.8671" class="input-ui flex-1 font-mono">
+                            <button type="submit" class="btn-ui btn-primary-ui">Get</button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- AKTİV ÖLÇMƏ ALƏTİ PANELİ -->
+                <div id="toolBarHint" hidden class="absolute top-3 right-14 z-30 flex items-center gap-2 px-3 py-1.5 rounded-xl shadow-lg text-xs" style="background:var(--panel);border:1px solid var(--line-strong)">
+                    <div id="colorSwatches" class="flex items-center gap-1 pr-2 border-r" style="border-color:var(--line)"></div>
+                    <span id="toolHintText" class="font-medium"></span>
+                    <button id="finishToolBtn" class="btn-ui btn-primary-ui h-6 px-2">Bitir</button>
+                    <button id="closeToolBtn" class="w-6 h-6 rounded grid place-items-center hover:bg-white/10">✕</button>
+                </div>
+
+                <!-- ŞƏRTİ İŞARƏLƏR -->
+                <section id="legendBox" class="absolute left-3.5 bottom-3.5 z-20 px-3 py-1.5 rounded-xl shadow-lg text-[11.5px] flex items-center gap-3" style="background:rgba(14,23,38,0.88);color:#e2e8f0;border:1px solid rgba(255,255,255,0.12);backdrop-filter:blur(8px)">
+                    <div class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-[#22C55E]"></span><span>Bitmiş</span></div>
+                    <div class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-[#F59E0B]"></span><span>İcrada</span></div>
+                    <div class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-[#3B82F6]"></span><span>Təhvil</span></div>
+                    <div class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-[#EF4444]"></span><span>Layihədə</span></div>
+                    <div class="flex items-center gap-1.5 pl-2 border-l border-white/15"><span class="text-sky-400 text-xs">📍</span><span>Magistral qovşaq</span></div>
+                    <div class="flex items-center gap-1.5 pl-2 border-l border-white/15"><span class="w-3.5 h-0.5 border-b-2 border-dashed border-[#38BDF8]"></span><span class="text-sky-300">Digər</span></div>
+                </section>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL 1: KÜÇƏ GÖRÜNÜŞÜ (GOOGLE STREET VIEW PƏNCƏRƏSİ — X və ya kənara vurmaqla bağlanır) -->
+    <div id="streetViewModal" hidden class="modal-backdrop fixed inset-0 z-50 bg-black/70 grid place-items-center p-4">
+        <div style="background:var(--panel);color:var(--ink);border:1px solid var(--line-strong)" class="w-full max-w-4xl rounded-2xl overflow-hidden shadow-2xl flex flex-col h-[82vh]">
+            <div style="background:var(--bar);color:var(--bar-ink)" class="px-4 py-2.5 flex items-center justify-between">
+                <div class="flex items-center gap-2.5">
+                    <span class="w-7 h-7 rounded-full bg-amber-500 text-black grid place-items-center text-base font-bold">🧍</span>
+                    <div>
+                        <div id="svTitle" class="font-semibold text-sm">Küçə Görünüşü (Street View)</div>
+                        <div id="svCoords" class="text-[11px] text-slate-400 font-mono">40.40930, 49.86710</div>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2">
+                    <a id="svExternalLink" href="#" target="_blank" rel="noopener" class="px-3 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-xs font-medium text-sky-300">↗ Google Maps-də tam aç</a>
+                    <button data-close-modal="streetViewModal" class="w-8 h-8 rounded-lg bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 grid place-items-center text-sm font-bold" title="Bağla (✕)">✕</button>
+                </div>
+            </div>
+            <div class="flex-1 relative bg-slate-950">
+                <iframe id="svIframe" class="w-full h-full border-0" allowfullscreen loading="lazy"></iframe>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL 2: ADMİN — İSTİFADƏÇİLƏRİN İDARƏ EDİLMƏSİ (User əlavə et + Şifrə / Email kodu + Edit / Baxış icazəsi ver) -->
+    <div id="usersModal" hidden class="modal-backdrop fixed inset-0 z-50 bg-black/60 grid place-items-center p-4">
+        <div style="background:var(--panel);color:var(--ink);border:1px solid var(--line-strong)" class="w-full max-w-4xl rounded-xl p-5 shadow-2xl flex flex-col gap-4 max-h-[88vh]">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h2 class="text-base font-semibold">👥 İstifadəçilərin İdarə Edilməsi (Admin Panel)</h2>
+                    <p class="text-xs" style="color:var(--ink-2)">Yeni istifadəçiyə <b>şifrə təyin edin</b> (ona göndərmək üçün) və ya şifrəni boş buraxın ki, <b>öz e-poçtuna gələn kodla (OTP)</b> daxil olsun</p>
+                </div>
+                <button data-close-modal="usersModal" class="w-7 h-7 rounded grid place-items-center hover:bg-white/10">✕</button>
+            </div>
+
+            <!-- Yeni İstifadəçi Əlavə Etmə Forması (Şifrə və ya Email kodu ilə) -->
+            <form id="addUserForm" class="grid grid-cols-5 gap-2 p-3 rounded-lg text-xs items-end" style="background:var(--canvas);border:1px solid var(--line)">
+                <label class="flex flex-col gap-1">
+                    <span style="color:var(--ink-2)">Ad və Soyad:</span>
+                    <input id="newUserName" type="text" placeholder="Məs: Orxan Həsənov" required class="input-ui">
+                </label>
+                <label class="flex flex-col gap-1">
+                    <span style="color:var(--ink-2)">E-poçt (Login):</span>
+                    <input id="newUserEmail" type="email" placeholder="orxan@bcg.az" required class="input-ui">
+                </label>
+                <label class="flex flex-col gap-1">
+                    <span style="color:var(--ink-2)">🔑 Şifrə <span style="color:var(--ink-3)">(boş = Email kodu)</span>:</span>
+                    <div class="flex gap-1">
+                        <input id="newUserPass" type="text" placeholder="Boş buraxsa: OTP kod" class="input-ui flex-1 font-mono">
+                        <button type="button" id="genPassBtn" title="Avtomatik şifrə yarat" class="btn-ui btn-outline-ui px-2">🎲</button>
+                    </div>
+                </label>
+                <label class="flex flex-col gap-1">
+                    <span style="color:var(--ink-2)">Səlahiyyət (İcazə):</span>
+                    <select id="newUserPerm" class="input-ui font-semibold">
+                        <option value="view">👁️ Yalnız Baxış (View)</option>
+                        <option value="edit">✏️ Redaktə (Edit)</option>
+                        <option value="admin">👑 Admin (Tam)</option>
+                    </select>
+                </label>
+                <button type="submit" class="btn-ui btn-primary-ui">+ İstifadəçi əlavə et</button>
+            </form>
+
+            <!-- Mövcud İstifadəçilər Cədvəli -->
+            <div class="flex-1 overflow-auto rounded-lg border" style="border-color:var(--line)">
+                <table class="w-full text-left border-collapse text-xs">
+                    <thead style="background:var(--canvas);color:var(--ink-2)">
+                        <tr>
+                            <th class="py-2.5 px-3">İstifadəçi</th>
+                            <th class="py-2.5 px-3">E-poçt</th>
+                            <th class="py-2.5 px-3">Giriş üsulu / Şifrə</th>
+                            <th class="py-2.5 px-3">Səlahiyyət (Edit / Baxış seçimi)</th>
+                            <th class="py-2.5 px-3 text-right">Əməliyyat</th>
+                        </tr>
+                    </thead>
+                    <tbody id="usersTableBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL 3: İMPORT SEÇİMİ (ArcGIS A və B nöqtələri dəstəyi ilə!) -->
+    <div id="importModal" hidden class="modal-backdrop fixed inset-0 z-50 bg-black/60 grid place-items-center p-4">
+        <div style="background:var(--panel);color:var(--ink);border:1px solid var(--line-strong)" class="w-full max-w-md rounded-xl p-5 shadow-2xl flex flex-col gap-3.5">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h2 class="text-base font-semibold">⬆️ KMZ / KML / GeoJSON Əlavə Et</h2>
+                    <p id="importRoleSubtitle" class="text-xs" style="color:var(--ink-2)"></p>
+                </div>
+                <button data-close-modal="importModal" class="w-7 h-7 rounded grid place-items-center hover:bg-white/10">✕</button>
+            </div>
+
+            <form id="importForm" class="space-y-3 text-xs">
+                <div id="adminImportChoiceWrap" class="grid grid-cols-2 gap-2">
+                    <label id="impOptProjectCard" class="flex items-start gap-2 p-2 rounded-lg border cursor-pointer" style="background:var(--brand-soft);border-color:var(--brand)">
+                        <input type="radio" name="importCategory" value="project" checked class="mt-0.5">
+                        <div>
+                            <div class="font-semibold">📁 Layihələr</div>
+                            <div class="text-[10.5px]" style="color:var(--ink-2)">Magistral / Antena</div>
+                        </div>
+                    </label>
+                    <label id="impOptNimCard" class="flex items-start gap-2 p-2 rounded-lg border cursor-pointer" style="background:var(--canvas);border-color:var(--line)">
+                        <input type="radio" name="importCategory" value="nim" class="mt-0.5">
+                        <div>
+                            <div class="font-semibold">🚦 NİM (Svetofor)</div>
+                            <div class="text-[10.5px]" style="color:var(--ink-2)">Kəsişmə nöqtəsi + status</div>
+                        </div>
+                    </label>
+                    <label id="impOptAzconnectCard" class="flex items-start gap-2 p-2 rounded-lg border cursor-pointer" style="background:var(--canvas);border-color:var(--line)">
+                        <input type="radio" name="importCategory" value="azconnect" class="mt-0.5">
+                        <div>
+                            <div class="font-semibold">🌐 Azconnect</div>
+                            <div class="text-[10.5px]" style="color:var(--ink-2)">Yalnız optik xətlər</div>
+                        </div>
+                    </label>
+                    <label id="impOptOtherCard" class="flex items-start gap-2 p-2 rounded-lg border cursor-pointer" style="background:var(--canvas);border-color:var(--line)">
+                        <input type="radio" name="importCategory" value="other" class="mt-0.5">
+                        <div>
+                            <div class="font-semibold">🗂️ Digər (Köməkçi)</div>
+                            <div class="text-[10.5px]" style="color:var(--ink-2)">Yalnız name (adı) çıxır</div>
+                        </div>
+                    </label>
+                </div>
+
+                <div id="userAutoOtherNotice" hidden class="p-2.5 rounded-lg border text-xs flex items-center gap-2" style="background:rgba(56,189,248,0.12);border-color:rgba(56,189,248,0.35);color:#7dd3fc">
+                    <span>ℹ️</span>
+                    <span>Layihəyə import yalnız <b>Admin</b> tərəfindən edilir. Sizin əlavə etdiyiniz KMZ / GeoJSON avtomatik <b>🗂️ Digər</b> qovluğuna düşür.</span>
+                </div>
+
+                <label class="flex flex-col gap-1">
+                    <span class="font-semibold" style="color:var(--ink-2)">Fayl / Qrup adı:</span>
+                    <input id="importTitleInput" type="text" placeholder="Məs: Cənub Magistralı və ya RM-6" required class="input-ui">
+                </label>
+
+                <div id="importProjTypeWrap" class="space-y-2.5">
+                    <label class="flex flex-col gap-1">
+                        <span class="font-semibold" style="color:var(--ink-2)">Layihə növü:</span>
+                        <select id="importGeomType" class="input-ui">
+                            <option value="lines">〰️ Magistral Xətt layihəsi (A və B nöqtələri + km ilə)</option>
+                            <option value="points">📍 Nöqtə / Antena layihəsi (Rayon + antena + km ilə)</option>
+                        </select>
+                    </label>
+
+                    <!-- Magistral Xətt üçün Başlanğıc və Son qovşaq adları (ArcGIS Pro atribut cədvəli qarşılığı) -->
+                    <div id="importABFields" class="p-2.5 rounded-lg border space-y-2" style="background:var(--canvas);border-color:var(--line)">
+                        <div class="font-semibold text-[11px]" style="color:var(--brand)">📍 Magistral qovşaq nöqtələrinin adları (ArcGIS atributlarından avtomatik oxunur):</div>
+                        <div class="grid grid-cols-2 gap-2">
+                            <input id="impPointAName" type="text" value="Ələt Qovşağı" placeholder="Başlanğıc nöqtə adı" class="input-ui">
+                            <input id="impPointBName" type="text" value="Şirvan ATS" placeholder="Son nöqtə adı" class="input-ui">
+                        </div>
+                    </div>
+                </div>
+
+                <label class="flex flex-col gap-1">
+                    <span class="font-semibold" style="color:var(--ink-2)">Fayl seçin (.kmz, .kml, .geojson, .json):</span>
+                    <input id="importFileInput" type="file" accept=".kmz,.kml,.geojson,.json" class="input-ui py-1">
+                </label>
+
+                <div class="flex justify-end gap-2 pt-1">
+                    <button type="button" data-close-modal="importModal" class="btn-ui btn-outline-ui">Ləğv et</button>
+                    <button type="submit" class="btn-ui btn-primary-ui">⬆️ Əlavə et</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL 4: QEYDLƏR (Kənara vurduqda avtomatik bağlanır!) -->
+    <div id="notesModal" hidden class="modal-backdrop fixed inset-0 z-50 bg-black/60 grid place-items-center p-4">
+        <div style="background:var(--panel);color:var(--ink);border:1px solid var(--line-strong)" class="w-full max-w-lg rounded-xl p-5 shadow-2xl flex flex-col gap-3.5 max-h-[86vh]">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h2 class="text-base font-semibold">Rəhbərlik və işçi qeydləri</h2>
+                    <p class="text-[11px]" style="color:var(--ink-3)">Pəncərədən kənara vurduqda avtomatik bağlanır</p>
+                </div>
+                <button data-close-modal="notesModal" class="w-7 h-7 rounded grid place-items-center hover:bg-white/10">✕</button>
+            </div>
+            <form id="noteForm" class="space-y-2.5 p-3 rounded-lg" style="background:var(--canvas);border:1px solid var(--line)">
+                <div class="grid grid-cols-2 gap-2.5 text-xs">
+                    <label class="flex flex-col gap-1">
+                        <span style="color:var(--ink-2)">Kimə (İstifadəçi və ya All):</span>
+                        <select id="noteRecipient" class="input-ui"></select>
+                    </label>
+                    <label class="flex flex-col gap-1">
+                        <span style="color:var(--ink-2)">Qalma vaxtı (Time):</span>
+                        <select id="noteHours" class="input-ui">
+                            <option value="24">⏱ 24 saat</option>
+                            <option value="36">⏱ 36 saat</option>
+                            <option value="0">∞ Müddətsiz</option>
+                        </select>
+                    </label>
+                </div>
+                <textarea id="noteInput" rows="2" placeholder="Qeyd və ya tapşırıq yazın…" class="input-ui w-full h-auto py-2"></textarea>
+                <div class="flex justify-end">
+                    <button type="submit" class="btn-ui btn-primary-ui">Qeydi əlavə et</button>
+                </div>
+            </form>
+            <div id="notesList" class="flex-1 overflow-y-auto divide-y text-xs" style="border-color:var(--line)"></div>
+        </div>
+    </div>
+
+    <!-- MODAL 5: MATERİAL REYESTRİ (Kənara vurduqda avtomatik bağlanır + Qaimə əlavə etmək yalnız Admin üçündür!) -->
+    <div id="materialsModal" hidden class="modal-backdrop fixed inset-0 z-50 bg-black/60 grid place-items-center p-4">
+        <div style="background:var(--panel);color:var(--ink);border:1px solid var(--line-strong)" class="w-full max-w-5xl rounded-xl p-5 shadow-2xl flex flex-col gap-3 max-h-[92vh]">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h2 class="text-base font-semibold">Material Reyestri (Anbardan Çıxan & İstifadə Olunan)</h2>
+                    <p class="text-xs" style="color:var(--ink-2)">Anbardan çıxan (verilən) və sahədə faktiki istifadə olunan materialların qaimə üzrə filtrlənməsi · <span style="color:var(--ink-3)">(Kənara kliklədikdə bağlanır)</span></p>
+                </div>
+                <button data-close-modal="materialsModal" class="w-7 h-7 rounded grid place-items-center hover:bg-white/10">✕</button>
+            </div>
+
+            <!-- Filtrlər -->
+            <div class="grid grid-cols-6 gap-2 p-2.5 rounded-lg text-xs" style="background:var(--canvas);border:1px solid var(--line)">
+                <label class="flex flex-col gap-1">
+                    <span class="font-semibold" style="color:var(--brand)">📦/🛠️ Növ (Anbar / İstifadə):</span>
+                    <select id="matFlowFilter" class="input-ui font-semibold">
+                        <option value="all">Hamısı (Anbar + İstifadə)</option>
+                        <option value="issued">📦 Anbardan çıxan (verilən)</option>
+                        <option value="used">🛠️ İstifadə olunan (sərf)</option>
+                    </select>
+                </label>
+                <label class="flex flex-col gap-1">
+                    <span style="color:var(--ink-2)">Material adı:</span>
+                    <select id="matTypeFilter" class="input-ui"></select>
+                </label>
+                <label class="flex flex-col gap-1">
+                    <span style="color:var(--ink-2)">Layihə:</span>
+                    <select id="matProjectFilter" class="input-ui"></select>
+                </label>
+                <label class="flex flex-col gap-1">
+                    <span style="color:var(--ink-2)">📄 Anbar Qaiməsi №:</span>
+                    <input type="text" id="matInvoiceFilter" placeholder="QAİMƏ-2026..." class="input-ui">
+                </label>
+                <label class="flex flex-col gap-1">
+                    <span style="color:var(--ink-2)">📅 Başlanğıc tarix:</span>
+                    <input type="date" id="matFromFilter" class="input-ui">
+                </label>
+                <label class="flex flex-col gap-1">
+                    <span style="color:var(--ink-2)">📅 Son tarix:</span>
+                    <div class="flex gap-1">
+                        <input type="date" id="matToFilter" class="input-ui flex-1">
+                        <button type="button" id="matResetBtn" class="btn-ui btn-outline-ui px-2">Sıfırla</button>
+                    </div>
+                </label>
+            </div>
+
+            <!-- Yeni Anbar Qaiməsi / Material əlavə etmə (YALNIZ ADMİN ÜÇÜN GÖRÜNÜR!) -->
+            <form id="matAddForm" class="grid grid-cols-6 gap-2 p-2.5 rounded-lg text-xs items-end" style="background:var(--canvas);border:1px dashed var(--line-strong)">
+                <label class="flex flex-col gap-1">
+                    <span style="color:var(--ink-2)">📄 Anbar Qaiməsi № (Admin):</span>
+                    <input type="text" id="newMatInvoice" value="QAİMƏ-2026-0194" required class="input-ui font-mono">
+                </label>
+                <label class="flex flex-col gap-1">
+                    <span style="color:var(--ink-2)">Layihə:</span>
+                    <select id="newMatProject" class="input-ui"></select>
+                </label>
+                <label class="flex flex-col gap-1">
+                    <span style="color:var(--ink-2)">Material adı:</span>
+                    <input type="text" id="newMatName" placeholder="Məs: FO Kabel 48-lik (m)" required class="input-ui">
+                </label>
+                <label class="flex flex-col gap-1">
+                    <span style="color:var(--ink-2)">📦 Anbardan çıxan:</span>
+                    <input type="number" id="newMatIssued" placeholder="Məs: 5000" required class="input-ui">
+                </label>
+                <label class="flex flex-col gap-1">
+                    <span style="color:var(--ink-2)">🛠️ İstifadə olunan:</span>
+                    <input type="number" id="newMatUsed" placeholder="Məs: 3200" required class="input-ui">
+                </label>
+                <button type="submit" class="btn-ui btn-primary-ui h-[31px]">+ Qaimə əlavə et</button>
+            </form>
+
+            <div id="matNonAdminNote" hidden class="px-3 py-1.5 rounded text-xs" style="background:var(--canvas);border:1px solid var(--line);color:var(--ink-2)">
+                🔒 Yeni anbar qaiməsi əlavə etmək yalnız <b>Admin</b> səlahiyyətindədir.
+            </div>
+
+            <div id="matSummaryBar" class="px-3 py-2 rounded-lg text-xs font-medium flex justify-between" style="background:var(--brand-soft);color:var(--brand)"></div>
+
+            <div class="flex-1 overflow-auto rounded-lg border" style="border-color:var(--line)">
+                <table class="w-full text-left border-collapse text-xs">
+                    <thead id="materialsHead" style="background:var(--canvas);color:var(--ink-2)"></thead>
+                    <tbody id="materialsBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div id="toastBox" class="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 flex flex-col gap-1.5 pointer-events-none"></div>
+
+    <script>
+        const STATUS_COLORS = { bitmis: "#22C55E", icrada: "#F59E0B", tehvil: "#3B82F6", layihe: "#EF4444" };
+        const STATUS_LABELS = { bitmis: "Bitmiş", icrada: "İcrada", tehvil: "Təhvil", layihe: "Layihədə" };
+        const DRAW_COLORS = ["#ff7a1a", "#e5262e", "#ffd400", "#2fbf4a", "#1e88e5", "#ffffff"];
+
+        const CONTRACTORS = {
+            "BCG (Öz briqadamız)": { workers: 38, machinery: 10, engineer: "BCG Daxili Briqada (+994 50 200 10 10)", isOwn: true },
+            "AzeElektrik MMC": { workers: 45, machinery: 12, engineer: "Elmir Məmmədov (+994 50 211 44 55)" },
+            "Körpü-Tikinti MMC": { workers: 60, machinery: 18, engineer: "Rəşad Quliyev (+994 55 300 22 11)" },
+            "Şimal-Rabitə MMC": { workers: 50, machinery: 14, engineer: "Tural İbrahimov (+994 50 999 11 22)" },
+            "Qərb-Net MMC": { workers: 42, machinery: 11, engineer: "Namiq Qasımov (+994 55 777 33 44)" },
+            "Zəngəzur Tikinti": { workers: 55, machinery: 16, engineer: "Fariz Əhmədov (+994 70 888 44 33)" }
+        };
+
+        /* İSTİFADƏÇİLƏR SİYAHISI (Admin tərəfindən əlavə edilə, şifrə və ya Email kodu təyin edilə və Edit / Baxış icazəsi dəyişdirilə bilir) */
+        let USERS = [
+            { id: 1, name: "Turan Bağırov", email: "admin@bcg.az", pass: "BcgAdmin#2026", perm: "admin" },
+            { id: 2, name: "Elmir Məmmədov", email: "elmir@bcg.az", pass: "Elmir@4455", perm: "edit" },
+            { id: 3, name: "Rəşad Quliyev", email: "resad@bcg.az", pass: "", perm: "view" },
+            { id: 4, name: "Vüqar Əliyev", email: "vuqar@bcg.az", pass: "", perm: "view" }
+        ];
+
+        /* LAYİHƏLƏR VƏ DİGƏR KÖMƏKÇİ MƏLUMATLAR:
+           - Nöqtə layihələrində xəritə etiketində: Rayon adı, Antena sayı və KM çıxır!
+           - Magistral xətlərdə: A nöqtəsi (adı + koordinatı) və B nöqtəsi (adı + koordinatı) avtomatik xəritəyə düşür! */
+        const PROJECTS = [
+            {
+                id: "proj_rayon_antena",
+                category: "project",
+                type: "points",
+                name: "1. Antena və Şəbəkə Layihəsi",
+                status: "icrada",
+                startDate: "10.03.2026",
+                endDate: "25.12.2026",
+                items: [
+                    { id: "RAY-QAX-1", name: "Qax", contractor: "BCG (Öz briqadamız)", antennas: 17, planM: 28500, doneM: 1500, status: "icrada", pt: [340, 95] },
+                    { id: "RAY-SEKI-1", name: "Şəki", contractor: "Şimal-Rabitə MMC", antennas: 24, planM: 34000, doneM: 34000, status: "bitmis", pt: [395, 132] },
+                    { id: "RAY-UCAR-1", name: "Ucar", contractor: "Körpü-Tikinti MMC", antennas: 14, planM: 21000, doneM: 0, status: "layihe", pt: [485, 260] },
+                    { id: "RAY-ZAQ-1", name: "Zaqatala", contractor: "BCG (Öz briqadamız)", antennas: 19, planM: 26400, doneM: 18200, status: "icrada", pt: [275, 72] },
+                    { id: "RAY-GOY-1", name: "Göyçay", contractor: "Körpü-Tikinti MMC", antennas: 15, planM: 19500, doneM: 19500, status: "tehvil", pt: [515, 222] }
+                ]
+            },
+            {
+                id: "proj_rayon_antena_2",
+                category: "project",
+                type: "points",
+                name: "2. Kəndlərarası Antena Layihəsi",
+                status: "icrada",
+                startDate: "15.05.2026",
+                endDate: "30.12.2026",
+                items: [
+                    { id: "RAY-QAX-2", name: "Qax", contractor: "Qərb-Net MMC", antennas: 11, planM: 16000, doneM: 9500, status: "icrada", pt: [340, 95] },
+                    { id: "RAY-SEKI-2", name: "Şəki", contractor: "BCG (Öz briqadamız)", antennas: 9, planM: 12000, doneM: 4200, status: "icrada", pt: [395, 132] },
+                    { id: "RAY-UCAR-2", name: "Ucar", contractor: "Körpü-Tikinti MMC", antennas: 8, planM: 11500, doneM: 11500, status: "bitmis", pt: [485, 260] }
+                ]
+            },
+            {
+                id: "proj_magistral",
+                category: "project",
+                type: "lines",
+                name: "3. Milli Magistral Fiber Optik",
+                status: "icrada",
+                startDate: "01.03.2026",
+                endDate: "15.12.2026",
+                items: [
+                    {
+                        id: "MAG-01", name: "Bakı - Sumqayıt Magistralı",
+                        pointA: "Bakı Mərkəzi ATS", coordA: "40.4093, 49.8671",
+                        pointB: "Sumqayıt Qovşaq", coordB: "40.5897, 49.6686",
+                        startDate: "01.03.2026", endDate: "30.06.2026",
+                        contractor: "BCG (Öz briqadamız)", totalKm: 45, doneKm: 45, status: "bitmis",
+                        pts: [[735,298],[715,275],[692,250]]
+                    },
+                    {
+                        id: "MAG-02", name: "Sumqayıt - Quba Magistralı",
+                        pointA: "Sumqayıt Qovşaq", coordA: "40.5897, 49.6686",
+                        pointB: "Quba Regional ATS", coordB: "41.3611, 48.5134",
+                        startDate: "10.04.2026", endDate: "15.09.2026",
+                        contractor: "Körpü-Tikinti MMC", totalKm: 120, doneKm: 85, status: "icrada",
+                        pts: [[692,250],[645,170],[600,95]]
+                    }
+                ]
+            },
+            {
+                id: "proj_gpon_west",
+                category: "project",
+                type: "lines",
+                name: "4. GPON Qərb Bölgəsi",
+                status: "bitmis",
+                startDate: "01.05.2026",
+                endDate: "20.12.2026",
+                items: [
+                    {
+                        id: "WES-01", name: "Gəncə - Şəmkir Magistralı",
+                        pointA: "Gəncə ATS-1", coordA: "40.6828, 46.3606",
+                        pointB: "Şəmkir Qovşaq", coordB: "40.8297, 46.0178",
+                        startDate: "01.05.2026", endDate: "30.08.2026",
+                        contractor: "Qərb-Net MMC", totalKm: 65, doneKm: 65, status: "bitmis",
+                        pts: [[210,215],[265,228]]
+                    }
+                ]
+            },
+            {
+                id: "proj_karabakh",
+                category: "project",
+                type: "lines",
+                name: "5. Qarabağ & Şərqi Zəngəzur",
+                status: "tehvil",
+                startDate: "01.05.2025",
+                endDate: "28.02.2026",
+                items: [
+                    {
+                        id: "KAR-01", name: "Şuşa - Xankəndi Magistralı",
+                        pointA: "Şuşa Stansiyası", coordA: "39.7601, 46.7496",
+                        pointB: "Xankəndi Mərkəz", coordB: "39.8265, 46.7656",
+                        startDate: "01.05.2025", endDate: "30.09.2025",
+                        contractor: "Zəngəzur Tikinti", totalKm: 35, doneKm: 35, status: "tehvil",
+                        pts: [[308,425],[348,395]]
+                    }
+                ]
+            },
+
+            /* 🚦 NİM (NƏQLİYYATIN İNTELLEKTUAL İDARƏETMƏSİ — SVETOFOR / KƏSİŞMƏ NÖQTƏLƏRİ: Xəritədə nöqtədə Adı və Statusu göstərilir!) */
+            {
+                id: "nim_baki_svetofor",
+                category: "nim",
+                type: "points",
+                name: "NİM — Bakı Svetofor Kəsişmələri",
+                status: "icrada",
+                startDate: "10.03.2026",
+                endDate: "25.12.2026",
+                items: [
+                    { id: "NIM-01", name: "20 Yanvar dairəsi", contractor: "BCG (Öz briqadamız)", status: "bitmis", pt: [718, 282] },
+                    { id: "NIM-02", name: "Tbilisi pr. – Həsən Əliyev kəs.", contractor: "BCG (Öz briqadamız)", status: "icrada", pt: [732, 292] },
+                    { id: "NIM-03", name: "28 May – R.Behbudov kəs.", contractor: "Azər-Rabita Tikinti", status: "bitmis", pt: [748, 304] },
+                    { id: "NIM-04", name: "Heydər Əliyev pr. – Koroğlu qov.", contractor: "Körpü-Tikinti MMC", status: "icrada", pt: [762, 286] }
+                ]
+            },
+            {
+                id: "nim_sumqayit_gence",
+                category: "nim",
+                type: "points",
+                name: "NİM — Sumqayıt və Gəncə Kəsişmələri",
+                status: "layihe",
+                startDate: "01.06.2026",
+                endDate: "30.12.2026",
+                items: [
+                    { id: "NIM-05", name: "Sumqayıt Sülh küç. kəsişməsi", contractor: "BCG (Öz briqadamız)", status: "tehvil", pt: [694, 246] },
+                    { id: "NIM-06", name: "Gəncə Şah İsmayıl Xətai pr. kəs.", contractor: "Qərb-Net MMC", status: "layihe", pt: [216, 208] }
+                ]
+            },
+
+            /* 🌐 AZCONNECT (YALNIZ XƏTLƏR — OPTİK MAGİSTRAL VƏ PAYLAYICI XƏTLƏR) */
+            {
+                id: "azc_abseron_ring",
+                category: "azconnect",
+                type: "lines",
+                name: "Azconnect — Abşeron Halqavari Xətti",
+                status: "bitmis",
+                startDate: "15.02.2026",
+                endDate: "30.09.2026",
+                items: [
+                    {
+                        id: "AZC-01", name: "Azconnect Bakı – Xırdalan – Sumqayıt Xətti",
+                        pointA: "Bakı Data Mərkəzi", coordA: "40.4093, 49.8671",
+                        pointB: "Sumqayıt Azconnect Qovşağı", coordB: "40.5897, 49.6686",
+                        startDate: "15.02.2026", endDate: "20.06.2026",
+                        contractor: "BCG (Öz briqadamız)", totalKm: 42, doneKm: 42, status: "bitmis",
+                        pts: [[740,302],[722,280],[696,254]]
+                    },
+                    {
+                        id: "AZC-02", name: "Azconnect Ələt – Şirvan – Hacıqabul Xətti",
+                        pointA: "Ələt Qovşağı", coordA: "39.9922, 49.4038",
+                        pointB: "Şirvan Qovşağı", coordB: "39.9378, 48.9290",
+                        startDate: "01.04.2026", endDate: "30.09.2026",
+                        contractor: "Azər-Rabita Tikinti", totalKm: 64, doneKm: 48, status: "icrada",
+                        pts: [[715,345],[635,340],[565,315]]
+                    }
+                ]
+            },
+            {
+                id: "azc_merkez_west",
+                category: "azconnect",
+                type: "lines",
+                name: "Azconnect — Mərkəz–Qərb Magistral Xətti",
+                status: "icrada",
+                startDate: "01.05.2026",
+                endDate: "15.12.2026",
+                items: [
+                    {
+                        id: "AZC-03", name: "Azconnect Kürdəmir – Yevlax – Bərdə Xətti",
+                        pointA: "Kürdəmir Qovşağı", coordA: "40.3453, 48.1508",
+                        pointB: "Bərdə Qovşağı", coordB: "40.3758, 47.1262",
+                        startDate: "01.05.2026", endDate: "15.12.2026",
+                        contractor: "Körpü-Tikinti MMC", totalKm: 88, doneKm: 52, status: "icrada",
+                        pts: [[510,260],[410,248],[345,275]]
+                    }
+                ]
+            },
+
+            /* DİGƏR (KÖMƏKÇİ MƏLUMATLAR: Maus gələndə yalnız "name" çıxır!) */
+            {
+                id: "other_rm_ler",
+                category: "other",
+                type: "lines",
+                name: "RM-lər",
+                items: [
+                    { id: "RM-01", name: "Şimal-Qərb RM", pts: [[255,60],[425,105],[410,165],[250,130],[255,60]] },
+                    { id: "RM-02", name: "Qərb RM", pts: [[160,180],[310,175],[300,260],[155,250],[160,180]] },
+                    { id: "RM-03", name: "Mərkəzi Aran RM", pts: [[445,205],[565,205],[555,295],[435,285],[445,205]] },
+                    { id: "RM-04", name: "Qarabağ RM", pts: [[275,365],[405,360],[395,465],[270,460],[275,365]] }
+                ]
+            },
+            {
+                id: "other_dendrologiya",
+                category: "other",
+                type: "lines",
+                name: "Dendrologiya bağı",
+                items: [
+                    { id: "DEND-01", name: "Daxili magistral xətt", pts: [[748,282],[762,276],[770,288]] },
+                    { id: "DEND-02", name: "Magistral FO 48", pts: [[745,290],[765,292]] }
+                ]
+            }
+        ];
+
+        const MATERIALS = [
+            { id: 1, date: "2026-10-12", invoiceNo: "QAİMƏ-2026-0142", project: "1. Antena və Şəbəkə Layihəsi", material: "Antena Dirəyi (Metal 12m)", issuedQty: 110, usedQty: 89, unit: "ədəd" },
+            { id: 2, date: "2026-10-18", invoiceNo: "QAİMƏ-2026-0156", project: "3. Milli Magistral Fiber Optik", material: "Magistral Kabel FO 96-lık", issuedQty: 165, usedQty: 130, unit: "km" },
+            { id: 3, date: "2026-10-22", invoiceNo: "QAİMƏ-2026-0169", project: "1. Antena və Şəbəkə Layihəsi", material: "Drop Kabel FTTH", issuedQty: 95000, usedQty: 73200, unit: "m" },
+            { id: 4, date: "2026-10-25", invoiceNo: "QAİMƏ-2026-0178", project: "2. Kəndlərarası Antena Layihəsi", material: "Antena Dirəyi (Metal 12m)", issuedQty: 35, usedQty: 28, unit: "ədəd" },
+            { id: 5, date: "2026-10-27", invoiceNo: "QAİMƏ-2026-0185", project: "4. GPON Qərb Bölgəsi", material: "Magistral Kabel FO 96-lık", issuedQty: 70, usedQty: 0, unit: "km" }
+        ];
+
+        let notes = [
+            { id: 1, author: "admin@bcg.az", recipient: "all", hours: 24, text: "Magistral xətlər üçün A və B nöqtələri aktivləşdirildi." },
+            { id: 2, author: "admin@bcg.az", recipient: "elmir@bcg.az", hours: 36, text: "Qax üzrə qalan xəttin çəkilişini sürətləndirin." }
+        ];
+
+        const state = {
+            role: "admin", // "admin" | "edit" | "view"
+            focusMode: true,
+            sidebarCategory: "project",
+            visibleIds: new Set(PROJECTS.map(p => p.id)),
+            expandedIds: new Set(["proj_rayon_antena", "proj_magistral", "other_rm_ler"]),
+            activeProjectId: null,
+            selectedSeg: null,
+            statusFilter: "all",
+            query: "",
+            namesOn: true,
+            myLocation: null, // { x, y, lat, lng }
+            pegmanActive: false,
+            tool: null,
+            drawColor: DRAW_COLORS[0],
+            draftPts: [],
+            drawings: [],
+            zoom: 1, panX: 0, panY: 0
+        };
+
+        const $ = id => document.getElementById(id);
+        const isAdmin = () => state.role === "admin";
+        const canEdit = () => state.role === "admin" || state.role === "edit";
+        const fmtKmFromM = m => +(m / 1000).toFixed(1) + " km";
+        const realProjects = () => PROJECTS.filter(p => p.category === "project");
+        const nimProjects = () => PROJECTS.filter(p => p.category === "nim");
+        const azconnectProjects = () => PROJECTS.filter(p => p.category === "azconnect");
+        const otherLayers = () => PROJECTS.filter(p => p.category === "other");
+        const projectsByCat = cat => PROJECTS.filter(p => (p.category || "project") === cat);
+
+        function recordAuditLog(type, folder, detail) {
+            try {
+                const key = "bcg.audit.logs.v1";
+                const list = JSON.parse(localStorage.getItem(key) || "[]");
+                const now = new Date();
+                const timeStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")} ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+                list.unshift({
+                    id: Date.now(),
+                    time: timeStr,
+                    user: isAdmin() ? "Bağır (admin@bcg.az)" : "Rəşad Məmmədov (rashad@bcg.az)",
+                    role: state.role === "admin" ? "admin" : state.role === "edit" ? "editor" : "viewer",
+                    type,
+                    folder,
+                    detail,
+                    ip: "185.43.112.19 · Xəritə Paneli"
+                });
+                localStorage.setItem(key, JSON.stringify(list.slice(0, 100)));
+            } catch {}
+        }
+
+        function toast(msg) {
+            const el = document.createElement("div");
+            el.className = "px-3.5 py-2 rounded-lg text-xs font-medium shadow-lg";
+            el.style.cssText = "background:var(--bar);color:var(--bar-ink);border:1px solid rgba(255,255,255,0.12)";
+            el.textContent = msg;
+            $("toastBox").appendChild(el);
+            setTimeout(() => el.remove(), 2500);
+        }
+
+        function setSidebar(open) {
+            $("sidebar").style.display = open ? "flex" : "none";
+            $("reopenSidebarBtn").style.display = open ? "none" : "inline-flex";
+            $("workspace").classList.toggle("sidebar-closed-mode", !open);
+        }
+
+        function applyRoleUI() {
+            const admin = isAdmin();
+            $("usersTopBtn").hidden = !admin;
+            $("importTopBtnText").textContent = admin ? "⬆️ İmport (Layihə / Digər)" : "⬆️ Fayl əlavə et (Digər)";
+            $("matAddForm").hidden = !admin;
+            $("matNonAdminNote").hidden = admin;
+            $("adminImportChoiceWrap").hidden = !admin;
+            $("userAutoOtherNotice").hidden = admin;
+            if (!admin) {
+                $("importProjTypeWrap").hidden = true;
+                $("importRoleSubtitle").textContent = "İstifadəçi rejimi: Yüklənən KMZ/GeoJSON avtomatik 'Digər' bölməsinə düşür";
+            } else {
+                const isProj = document.querySelector('input[name="importCategory"]:checked')?.value === "project";
+                $("importProjTypeWrap").hidden = !isProj;
+                $("importRoleSubtitle").textContent = "Admin rejimi: Həm Layihə, həm də Digər kimi əlavə edə bilərsiniz";
+            }
+        }
+
+        function filteredItems(p) {
+            return p.items.filter(r => {
+                if (p.category !== "other" && state.statusFilter !== "all" && r.status !== state.statusFilter) return false;
+                if (!state.query) return true;
+                return [p.name, r.id, r.name, r.pointA || "", r.pointB || "", r.contractor || ""].join(" ").toLowerCase().includes(state.query);
+            });
+        }
+
+        function renderLegend() {
+            $("legendBox").hidden = state.visibleIds.size === 0;
+        }
+
+        function executorSelectHtml(projId, itemId, currentExec) {
+            if (!canEdit()) {
+                const isOwn = CONTRACTORS[currentExec]?.isOwn;
+                return `<span class="font-semibold">${isOwn ? "🏢 " + currentExec : "👷 " + currentExec}</span>`;
+            }
+            return `<select data-exec="${projId}:${itemId}" class="input-ui h-6 px-1.5 py-0 text-xs font-medium">${Object.keys(CONTRACTORS).map(name => `<option value="${name}" ${name === currentExec ? "selected" : ""}>${CONTRACTORS[name].isOwn ? "🏢 " + name : "👷 Podratçı: " + name}</option>`).join("")}</select>`;
+        }
+
+        /* MƏLUMAT PƏNCƏRƏSİ:
+           - "Digər" seçiləndə yalnız kiçik 1-sətirlik kapsul (yalnız name!)
+           - "Magistral Xətt" seçiləndə A nöqtəsi və B nöqtəsi (adları və koordinatları ilə) də görünür! */
+        function renderInfoCard() {
+            const card = $("infoCard");
+            const seg = state.selectedSeg;
+            const proj = seg ? PROJECTS.find(p => p.id === seg.projectId) : PROJECTS.find(p => p.id === state.activeProjectId);
+            if (!proj) { card.hidden = true; return; }
+
+            // 0) DİGƏR SEÇİLƏNDƏ: Maksimum qısa (Yalnız name!)
+            if (proj.category === "other") {
+                if (!seg) { card.hidden = true; return; }
+                const item = proj.items.find(i => i.id === seg.itemId);
+                if (!item) { card.hidden = true; return; }
+                card.hidden = false;
+                card.classList.add("compact-other");
+                card.innerHTML = `
+                    <div id="infoCardHead" style="background:var(--bar);color:var(--bar-ink)" class="px-3.5 py-1.5 flex items-center gap-2 cursor-move text-xs">
+                        <span class="w-2.5 h-0.5 bg-[#38BDF8]"></span>
+                        <strong class="text-white">${item.name}</strong>
+                        <button id="closeInfoCard" class="w-5 h-5 rounded-full hover:bg-white/15 grid place-items-center ml-1">✕</button>
+                    </div>
+                `;
+                $("closeInfoCard").onclick = () => { state.selectedSeg = null; state.activeProjectId = null; renderAll(); };
+                return;
+            }
+
+            card.hidden = false;
+            card.classList.remove("compact-other");
+
+            // 🚦 NİM (SVETOFOR / KƏSİŞMƏ NÖQTƏLƏRİ: Adı + Statusu nöqtədə və paneldə!)
+            if (proj.category === "nim") {
+                const items = seg ? proj.items.filter(i => i.id === seg.itemId) : proj.items;
+                const headStatus = items.length === 1 ? items[0].status : proj.status;
+                const headTone = STATUS_COLORS[headStatus];
+                const doneCount = proj.items.filter(i => i.status === "bitmis" || i.status === "tehvil").length;
+
+                card.innerHTML = `
+                    <div id="infoCardHead" style="background:var(--bar);color:var(--bar-ink)" class="px-3.5 py-2.5 flex items-center justify-between cursor-move sticky top-0 z-10">
+                        <div class="min-w-0 pr-2">
+                            <div class="text-[10.5px] uppercase tracking-wider text-amber-400">🚦 NİM (Svetofor / Kəsişmə)</div>
+                            <div class="font-semibold text-xs truncate">${proj.name}</div>
+                        </div>
+                        <div class="flex items-center gap-1.5 shrink-0">
+                            <span class="px-2 py-0.5 rounded-full text-[11px] font-semibold" style="background:${headTone}25;color:${headTone}">${STATUS_LABELS[headStatus]}</span>
+                            ${seg ? `<button id="showAllNimBtn" class="px-2 py-0.5 rounded bg-white/10 text-xs hover:bg-white/20">Hamısı</button>` : ""}
+                            <button id="closeInfoCard" class="w-6 h-6 rounded hover:bg-white/10 grid place-items-center">✕</button>
+                        </div>
+                    </div>
+                    <div class="p-3 flex-1 flex flex-col gap-2 text-xs">
+                        <div class="grid grid-cols-3 gap-1.5">
+                            <div class="p-2 rounded-lg border" style="background:var(--canvas);border-color:var(--line)">
+                                <div class="text-[11px]" style="color:var(--ink-3)">Cəmi Kəsişmə</div>
+                                <b class="text-sm">${proj.items.length} nöqtə</b>
+                            </div>
+                            <div class="p-2 rounded-lg border" style="background:var(--canvas);border-color:var(--line)">
+                                <div class="text-[11px]" style="color:var(--ink-3)">Hazır / Təhvil</div>
+                                <b class="text-sm text-emerald-400">${doneCount} nöqtə</b>
+                            </div>
+                            <div class="p-2 rounded-lg border" style="background:var(--canvas);border-color:var(--line)">
+                                <div class="text-[11px]" style="color:var(--ink-3)">Qalıb</div>
+                                <b class="text-sm">${proj.items.length - doneCount} nöqtə</b>
+                            </div>
+                        </div>
+
+                        <div class="space-y-1.5 pt-0.5">
+                            ${items.map(r => {
+                                const tone = STATUS_COLORS[r.status];
+                                const cInfo = CONTRACTORS[r.contractor] || { workers: 15, engineer: "—" };
+                                return `
+                                    <div data-pick-rayon="${proj.id}:${r.id}" class="p-2 rounded-lg border cursor-pointer hover:brightness-105 space-y-1.5" style="background:var(--canvas);border-color:${seg?.itemId === r.id ? tone : "var(--line)"}">
+                                        <div class="flex items-center justify-between gap-2">
+                                            <strong class="text-xs flex items-center gap-1.5">
+                                                <span>🚦</span>
+                                                <span>${r.name}</span>
+                                            </strong>
+                                            <select data-nim-status="${proj.id}:${r.id}" onclick="event.stopPropagation()" class="h-6 px-2 rounded-full text-[11px] font-bold border outline-none cursor-pointer" style="background:${tone}22;color:${tone};border-color:${tone}66">
+                                                ${Object.keys(STATUS_COLORS).map(st => `<option value="${st}" ${r.status === st ? "selected" : ""} style="background:#0f172a;color:#fff">${STATUS_LABELS[st]}</option>`).join("")}
+                                            </select>
+                                        </div>
+                                        <div class="flex items-center justify-between gap-2 text-xs" onclick="event.stopPropagation()">
+                                            <span style="color:var(--ink-2)">İcraçı:</span>
+                                            <div class="flex-1">${executorSelectHtml(proj.id, r.id, r.contractor)}</div>
+                                        </div>
+                                        <div class="flex items-center justify-between px-2 py-1 rounded text-[11px]" style="background:var(--panel);border:1px solid var(--line);color:var(--ink-2)">
+                                            <span>👷 İşçi: <b style="color:var(--ink)">${cInfo.workers} nəfər</b></span>
+                                            <span>📞 <b style="color:var(--brand)">${cInfo.engineer}</b></span>
+                                        </div>
+                                    </div>
+                                `;
+                            }).join("")}
+                        </div>
+                    </div>
+                `;
+                if ($("showAllNimBtn")) $("showAllNimBtn").onclick = () => { state.selectedSeg = null; renderAll(); };
+                card.querySelectorAll("[data-nim-status]").forEach(sel => {
+                    sel.onchange = e => {
+                        const [projectId, itemId] = e.target.dataset.nimStatus.split(":");
+                        const p = PROJECTS.find(x => x.id === projectId);
+                        const item = p?.items.find(x => x.id === itemId);
+                        if (item) {
+                            item.status = e.target.value;
+                            recordAuditLog("nim", "🚦 NİM", `${item.name} svetofor nöqtəsinin statusu '${STATUS_LABELS[item.status]}' olaraq yeniləndi`);
+                            renderAll();
+                            toast(`🚦 ${item.name}: Status → ${STATUS_LABELS[item.status]}`);
+                        }
+                    };
+                });
+            }
+            // A) NÖQTƏ LAYİHƏSİ (Yuxarıda ümumi göstərici + Layihə adı, aşağıda təkrar məsafə yoxdur!)
+            else if (proj.type === "points") {
+                const items = seg ? proj.items.filter(i => i.id === seg.itemId) : proj.items;
+                const totalAnt = items.reduce((s, i) => s + i.antennas, 0);
+                const totalPlanM = items.reduce((s, i) => s + i.planM, 0);
+                const totalDoneM = items.reduce((s, i) => s + i.doneM, 0);
+                const pct = totalPlanM ? Math.round(totalDoneM / totalPlanM * 100) : 0;
+                const headStatus = items.length === 1 ? items[0].status : proj.status;
+                const headTone = STATUS_COLORS[headStatus];
+
+                card.innerHTML = `
+                    <div id="infoCardHead" style="background:var(--bar);color:var(--bar-ink)" class="px-3.5 py-2.5 flex items-center justify-between cursor-move sticky top-0 z-10">
+                        <div class="min-w-0 pr-2">
+                            <div class="text-[10.5px] uppercase tracking-wider text-slate-400">Layihə</div>
+                            <div class="font-semibold text-xs truncate">${proj.name}</div>
+                        </div>
+                        <div class="flex items-center gap-1.5 shrink-0">
+                            <span class="px-2 py-0.5 rounded-full text-[11px] font-semibold" style="background:${headTone}25;color:${headTone}">${STATUS_LABELS[headStatus]} · ${pct}%</span>
+                            ${seg ? `<button id="showAllRayonsBtn" class="px-2 py-0.5 rounded bg-white/10 text-xs hover:bg-white/20">Hamısı</button>` : ""}
+                            <button id="closeInfoCard" class="w-6 h-6 rounded hover:bg-white/10 grid place-items-center">✕</button>
+                        </div>
+                    </div>
+                    <div class="p-3 flex-1 flex flex-col gap-2 text-xs">
+                        <!-- Yuxarıda ümumi status və məsafə (Təkrarlanmayan tək blok) -->
+                        <div class="grid grid-cols-3 gap-1.5">
+                            <div class="p-2 rounded-lg border" style="background:var(--canvas);border-color:var(--line)">
+                                <div class="text-[11px]" style="color:var(--ink-3)">Antena sayı</div>
+                                <b class="text-sm">${totalAnt} əd</b>
+                            </div>
+                            <div class="p-2 rounded-lg border" style="background:var(--canvas);border-color:var(--line)">
+                                <div class="text-[11px]" style="color:var(--ink-3)">1. Nəzərdə tutulan</div>
+                                <b class="text-sm">${fmtKmFromM(totalPlanM)}</b>
+                            </div>
+                            <div class="p-2 rounded-lg border" style="background:var(--canvas);border-color:var(--line)">
+                                <div class="text-[11px]" style="color:var(--ink-3)">2. Faktiki (${pct}%)</div>
+                                <b class="text-sm" style="color:${headTone}">${fmtKmFromM(totalDoneM)}</b>
+                            </div>
+                        </div>
+                        <div class="h-1.5 rounded-full bg-slate-700 overflow-hidden"><div style="width:${pct}%;background:${headTone}" class="h-full"></div></div>
+
+                        <div class="space-y-1.5 pt-0.5">
+                            ${items.map(r => {
+                                const tone = STATUS_COLORS[r.status];
+                                const leftM = Math.max(0, r.planM - r.doneM);
+                                const rPct = r.planM ? Math.round(r.doneM / r.planM * 100) : 0;
+                                const cInfo = CONTRACTORS[r.contractor] || { workers: 25, engineer: "—" };
+                                return `
+                                    <div data-pick-rayon="${proj.id}:${r.id}" class="p-2 rounded-lg border cursor-pointer hover:brightness-105 space-y-1.5" style="background:var(--canvas);border-color:${seg?.itemId === r.id ? tone : "var(--line)"}">
+                                        <div class="flex items-center justify-between">
+                                            <strong class="text-xs flex items-center gap-1.5">
+                                                <span class="w-2 h-2 rounded-full" style="background:${tone}"></span>
+                                                ${r.name}
+                                            </strong>
+                                            <span class="px-2 py-0.5 rounded-full text-[11px] font-semibold" style="background:${tone}22;color:${tone}">${STATUS_LABELS[r.status]} · ${rPct}%</span>
+                                        </div>
+                                        <div class="flex items-center justify-between text-[11.5px]" style="color:var(--ink-2)">
+                                            <span>📡 <b>${r.antennas} ant</b> · Plan: <b>${fmtKmFromM(r.planM)}</b> · Faktiki: <b style="color:${tone}">${fmtKmFromM(r.doneM)}</b></span>
+                                            <span>Qalıb: <b>${fmtKmFromM(leftM)}</b></span>
+                                        </div>
+                                        <div class="flex items-center justify-between gap-2 text-xs" onclick="event.stopPropagation()">
+                                            <span style="color:var(--ink-2)">İcraçı:</span>
+                                            <div class="flex-1">${executorSelectHtml(proj.id, r.id, r.contractor)}</div>
+                                        </div>
+                                        <div class="flex items-center justify-between px-2 py-1 rounded text-[11px]" style="background:var(--panel);border:1px solid var(--line);color:var(--ink-2)">
+                                            <span>👷 İşçi: <b style="color:var(--ink)">${cInfo.workers} nəfər</b></span>
+                                            <span>📞 <b style="color:var(--brand)">${cInfo.engineer}</b></span>
+                                        </div>
+                                    </div>
+                                `;
+                            }).join("")}
+                        </div>
+                    </div>
+                `;
+                if ($("showAllRayonsBtn")) $("showAllRayonsBtn").onclick = () => { state.selectedSeg = null; renderAll(); };
+            }
+            // B) MAGİSTRAL XƏTT LAYİHƏSİ (A/B adı və konumu status panelində göstərilmir, Plan / Faktiki / Qalıb saxlanılır!)
+            else {
+                const items = seg ? proj.items.filter(i => i.id === seg.itemId) : proj.items;
+                const totalKm = items.reduce((s, i) => s + i.totalKm, 0);
+                const doneKm = items.reduce((s, i) => s + i.doneKm, 0);
+                const leftKm = Math.max(0, totalKm - doneKm);
+                const pct = totalKm ? Math.round(doneKm / totalKm * 100) : 0;
+                const headStatus = items.length === 1 ? items[0].status : proj.status;
+                const tone = STATUS_COLORS[headStatus];
+
+                card.innerHTML = `
+                    <div id="infoCardHead" style="background:var(--bar);color:var(--bar-ink)" class="px-3.5 py-2.5 flex items-center justify-between cursor-move sticky top-0 z-10">
+                        <div class="min-w-0 pr-2">
+                            <div class="text-[10.5px] uppercase tracking-wider text-slate-400">Layihə</div>
+                            <div class="font-semibold text-xs truncate">${proj.name}</div>
+                        </div>
+                        <div class="flex items-center gap-1.5 shrink-0">
+                            <span class="px-2 py-0.5 rounded-full text-[11px] font-semibold" style="background:${tone}25;color:${tone}">${STATUS_LABELS[headStatus]} · ${pct}%</span>
+                            ${seg ? `<button id="showAllSegsBtn" class="px-2 py-0.5 rounded bg-white/10 text-xs hover:bg-white/20">Hamısı</button>` : ""}
+                            <button id="closeInfoCard" class="w-6 h-6 rounded hover:bg-white/10 grid place-items-center">✕</button>
+                        </div>
+                    </div>
+                    <div class="p-3 flex-1 flex flex-col gap-2 text-xs">
+                        <!-- Yuxarıda ümumi status və məsafə -->
+                        <div class="grid grid-cols-3 gap-1.5">
+                            <div class="p-2 rounded-lg border" style="background:var(--canvas);border-color:var(--line)"><div class="text-[11px]" style="color:var(--ink-3)">1. Nəzərdə tutulan</div><b class="text-sm">${totalKm} km</b></div>
+                            <div class="p-2 rounded-lg border" style="background:var(--canvas);border-color:var(--line)"><div class="text-[11px]" style="color:var(--ink-3)">2. Faktiki (${pct}%)</div><b class="text-sm" style="color:${tone}">${doneKm} km</b></div>
+                            <div class="p-2 rounded-lg border" style="background:var(--canvas);border-color:var(--line)"><div class="text-[11px]" style="color:var(--ink-3)">Qalıb</div><b class="text-sm">${leftKm} km</b></div>
+                        </div>
+                        <div class="h-1.5 rounded-full bg-slate-700 overflow-hidden"><div style="width:${pct}%;background:${tone}" class="h-full"></div></div>
+
+                        <div class="space-y-1.5 pt-0.5">
+                            ${items.map(r => {
+                                const rTone = STATUS_COLORS[r.status];
+                                const rLeft = Math.max(0, r.totalKm - r.doneKm);
+                                const rPct = r.totalKm ? Math.round(r.doneKm / r.totalKm * 100) : 0;
+                                const cInfo = CONTRACTORS[r.contractor] || { workers: 25, engineer: "—" };
+                                return `
+                                    <div data-pick-rayon="${proj.id}:${r.id}" class="p-2 rounded-lg border cursor-pointer space-y-1.5" style="background:var(--canvas);border-color:${seg?.itemId === r.id ? rTone : "var(--line)"}">
+                                        <div class="flex items-center justify-between">
+                                            <b class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full" style="background:${rTone}"></span>${r.name}</b>
+                                            <span class="px-2 py-0.5 rounded-full text-[11px] font-semibold" style="background:${rTone}22;color:${rTone}">${STATUS_LABELS[r.status]} · ${rPct}%</span>
+                                        </div>
+                                        <div class="flex justify-between text-[11.5px]" style="color:var(--ink-2)">
+                                            <span>Plan: <b>${r.totalKm} km</b> · Faktiki: <b style="color:${rTone}">${r.doneKm} km</b></span>
+                                            <span>Qalıb: <b>${rLeft} km</b></span>
+                                        </div>
+                                        <div class="flex items-center justify-between gap-2" onclick="event.stopPropagation()">
+                                            <span style="color:var(--ink-2)">İcraçı:</span>
+                                            <div class="flex-1">${executorSelectHtml(proj.id, r.id, r.contractor)}</div>
+                                        </div>
+                                        <div class="flex items-center justify-between px-2 py-1 rounded text-[11px]" style="background:var(--panel);border:1px solid var(--line);color:var(--ink-2)">
+                                            <span>👷 İşçi: <b style="color:var(--ink)">${cInfo.workers} nəfər</b></span>
+                                            <span>📞 <b style="color:var(--brand)">${cInfo.engineer}</b></span>
+                                        </div>
+                                    </div>
+                                `;
+                            }).join("")}
+                        </div>
+                    </div>
+                `;
+                if ($("showAllSegsBtn")) $("showAllSegsBtn").onclick = () => { state.selectedSeg = null; renderAll(); };
+            }
+
+            $("closeInfoCard").onclick = () => { state.selectedSeg = null; state.activeProjectId = null; renderAll(); };
+            card.querySelectorAll("[data-pick-rayon]").forEach(el => {
+                el.onclick = () => {
+                    const [projectId, itemId] = el.dataset.pickRayon.split(":");
+                    state.selectedSeg = { projectId, itemId };
+                    renderAll();
+                };
+            });
+            card.querySelectorAll("[data-exec]").forEach(sel => {
+                sel.onchange = e => {
+                    const [projectId, itemId] = e.target.dataset.exec.split(":");
+                    const p = PROJECTS.find(x => x.id === projectId);
+                    const item = p?.items.find(x => x.id === itemId);
+                    if (item) {
+                        item.contractor = e.target.value;
+                        renderAll();
+                        toast(`İş icraçısı yeniləndi: ${item.contractor}`);
+                    }
+                };
+            });
+        }
+
+        // Kvadrat pəncərənin sürüşdürülməsi
+        (() => {
+            let drag = null;
+            $("infoCard").addEventListener("mousedown", e => {
+                if (!e.target.closest("#infoCardHead") || e.target.closest("button")) return;
+                e.preventDefault();
+                const card = $("infoCard");
+                drag = { x: e.clientX - card.offsetLeft, y: e.clientY - card.offsetTop };
+                const move = ev => {
+                    card.style.left = `${Math.max(8, ev.clientX - drag.x)}px`;
+                    card.style.top = `${Math.max(8, ev.clientY - drag.y)}px`;
+                };
+                const up = () => { window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up); };
+                window.addEventListener("mousemove", move);
+                window.addEventListener("mouseup", up);
+            });
+        })();
+
+        function renderChips() {
+            const cat = state.sidebarCategory;
+            const showChips = cat !== "other";
+            $("statusChips").hidden = !showChips;
+            const all = projectsByCat(cat).flatMap(p => p.items);
+            const chips = [{ key: "all", label: "Hamısı", count: all.length }, ...Object.keys(STATUS_COLORS).map(k => ({
+                key: k, label: STATUS_LABELS[k], color: STATUS_COLORS[k], count: all.filter(i => i.status === k).length
+            }))];
+            $("statusChips").innerHTML = chips.map(c => `
+                <button data-chip="${c.key}" class="h-6 px-2 rounded-md border text-[11px] flex items-center gap-1 transition" style="${state.statusFilter === c.key ? "background:var(--brand-soft);border-color:var(--brand);color:var(--brand);font-weight:600" : "border-color:var(--line);color:var(--ink-2)"}">
+                    ${c.color ? `<span class="w-2 h-2 rounded-full" style="background:${c.color}"></span>` : ""}${c.label} <b>${c.count}</b>
+                </button>
+            `).join("");
+        }
+
+        function renderProjects() {
+            const cat = state.sidebarCategory || "project";
+            const projs = realProjects();
+            const nims = nimProjects();
+            const azcs = azconnectProjects();
+            const others = otherLayers();
+
+            $("tabProjectsCount").textContent = projs.length;
+            $("tabNimCount").textContent = nims.length;
+            $("tabAzconnectCount").textContent = azcs.length;
+            $("tabOtherCount").textContent = others.length;
+
+            // Hər qovluq üçün aktivlik checkbox-unu və seçilmiş qovluq rəngini yenilə
+            const folderStyles = {
+                project: "background:var(--brand);color:var(--brand-ink);border:1px solid var(--brand)",
+                nim: "background:#d97706;color:#ffffff;border:1px solid #f59e0b",
+                azconnect: "background:#0891b2;color:#ffffff;border:1px solid #06b6d4",
+                other: "background:#0284c7;color:#ffffff;border:1px solid #38bdf8"
+            };
+            ["project", "nim", "azconnect", "other"].forEach(c => {
+                const listForCat = projectsByCat(c);
+                const anyVis = listForCat.some(p => state.visibleIds.has(p.id));
+                const cb = document.querySelector(`[data-folder-vis="${c}"]`);
+                if (cb) cb.checked = anyVis;
+                const tabEl = document.querySelector(`[data-folder-tab="${c}"]`);
+                if (tabEl) {
+                    tabEl.style.cssText = c === cat
+                        ? folderStyles[c]
+                        : "background:var(--panel);color:var(--ink-2);border:1px solid var(--line)";
+                }
+            });
+
+            const activeList = projectsByCat(cat);
+            const titles = {
+                project: `📁 Layihələr (${projs.length})`,
+                nim: `🚦 NİM — Svetofor / Kəsişmə (${nims.length})`,
+                azconnect: `🌐 Azconnect Xətləri (${azcs.length})`,
+                other: `🗂️ Digər (${others.length})`
+            };
+            $("listSectionTitle").textContent = titles[cat] || titles.project;
+
+            // A) "DİGƏR" SEÇİLƏNDƏ: Maksimum qısa və konkret
+            if (cat === "other") {
+                $("projectList").innerHTML = activeList.map(p => {
+                    const vis = state.visibleIds.has(p.id);
+                    const exp = state.expandedIds.has(p.id);
+                    const items = filteredItems(p);
+                    return `
+                        <div class="px-2.5 py-1.5 ${vis ? "" : "opacity-50"}">
+                            <div class="flex items-center gap-2">
+                                <input type="checkbox" data-toggle="${p.id}" ${vis ? "checked" : ""} class="w-3.5 h-3.5 cursor-pointer">
+                                <button data-proj="${p.id}" class="flex-1 text-left font-semibold text-xs truncate">${p.name}</button>
+                                <button data-proj="${p.id}" class="w-5 h-5 grid place-items-center text-xs" style="color:var(--ink-3)">${exp ? "▾" : "▸"}</button>
+                            </div>
+                            ${exp ? `<div class="pl-5 pt-1 space-y-0.5">${items.map(r => `
+                                <button data-seg="${p.id}:${r.id}" class="w-full flex items-center gap-1.5 px-2 py-1 rounded text-xs text-left truncate" style="${state.selectedSeg?.itemId === r.id ? "background:var(--brand-soft);color:var(--brand);font-weight:600" : "color:var(--ink-2)"}">
+                                    <span class="w-2 h-0.5 bg-[#38BDF8] shrink-0"></span>
+                                    <span class="truncate">${r.name}</span>
+                                </button>
+                            `).join("")}</div>` : ""}
+                        </div>
+                    `;
+                }).join("");
+                return;
+            }
+
+            // B) "NİM" SEÇİLƏNDƏ (Svetofor / Kəsişmə nöqtələri: Adı və Statusu!)
+            if (cat === "nim") {
+                $("projectList").innerHTML = activeList.map(p => {
+                    const vis = state.visibleIds.has(p.id);
+                    const exp = state.expandedIds.has(p.id);
+                    const items = filteredItems(p);
+                    const isActiveProj = state.activeProjectId === p.id;
+                    const doneCnt = p.items.filter(i => i.status === "bitmis" || i.status === "tehvil").length;
+                    const pct = p.items.length ? Math.round(doneCnt / p.items.length * 100) : 0;
+                    const pColor = STATUS_COLORS[p.status];
+                    return `
+                        <div class="px-2.5 py-2 transition ${vis ? "" : "opacity-45"}" style="${isActiveProj ? "background:var(--hover)" : ""}">
+                            <div class="flex items-center gap-2">
+                                <input type="checkbox" data-toggle="${p.id}" ${vis ? "checked" : ""} class="w-3.5 h-3.5 cursor-pointer">
+                                <button data-proj="${p.id}" class="flex-1 text-left min-w-0">
+                                    <div class="font-semibold text-xs truncate">🚦 ${p.name}</div>
+                                    <div class="text-[11px] truncate" style="color:var(--ink-2)">${p.items.length} kəsişmə · ${doneCnt} hazır</div>
+                                </button>
+                                <span class="px-1.5 py-0.5 rounded text-[11px] font-bold" style="background:${pColor}20;color:${pColor}">${pct}%</span>
+                                <button data-proj="${p.id}" class="w-5 h-5 grid place-items-center text-xs" style="color:var(--ink-3)">${exp ? "▾" : "▸"}</button>
+                            </div>
+                            ${exp ? `<div class="pl-5 pt-1.5 space-y-0.5">${items.map(r => `
+                                <button data-seg="${p.id}:${r.id}" class="w-full flex items-center gap-1.5 px-2 py-1 rounded-md text-[11.5px] text-left" style="${state.selectedSeg?.itemId === r.id ? "background:var(--brand-soft);color:var(--brand);font-weight:600" : "color:var(--ink-2)"}">
+                                    <span class="w-2 h-2 rounded-full shrink-0" style="background:${STATUS_COLORS[r.status]}"></span>
+                                    <span class="font-medium truncate">${r.name}</span>
+                                    <span class="ml-auto px-1.5 py-0.2 rounded text-[10.5px] font-semibold whitespace-nowrap" style="background:${STATUS_COLORS[r.status]}22;color:${STATUS_COLORS[r.status]}">${STATUS_LABELS[r.status]}</span>
+                                </button>
+                            `).join("")}</div>` : ""}
+                        </div>
+                    `;
+                }).join("");
+                return;
+            }
+
+            // C) "LAYİHƏLƏR" VƏ YA "AZCONNECT (YALNIZ XƏTLƏR)" SEÇİLƏNDƏ
+            $("projectList").innerHTML = activeList.map(p => {
+                const vis = state.visibleIds.has(p.id);
+                const exp = state.expandedIds.has(p.id);
+                const items = filteredItems(p);
+                const isActiveProj = state.activeProjectId === p.id;
+
+                let subText = "";
+                let pct = 0;
+                if (p.type === "points") {
+                    const ant = p.items.reduce((s, i) => s + i.antennas, 0);
+                    const planM = p.items.reduce((s, i) => s + i.planM, 0);
+                    const doneM = p.items.reduce((s, i) => s + i.doneM, 0);
+                    pct = planM ? Math.round(doneM / planM * 100) : 0;
+                    subText = `📡 ${ant} ant · ${fmtKmFromM(planM)} / ${fmtKmFromM(doneM)}`;
+                } else {
+                    const totalKm = p.items.reduce((s, i) => s + i.totalKm, 0);
+                    const doneKm = p.items.reduce((s, i) => s + i.doneKm, 0);
+                    pct = totalKm ? Math.round(doneKm / totalKm * 100) : 0;
+                    subText = `〰️ ${totalKm} / ${doneKm} km · Qalıb: ${Math.max(0, totalKm - doneKm)} km`;
+                }
+                const pColor = STATUS_COLORS[p.status];
+
+                return `
+                    <div class="px-2.5 py-2 transition ${vis ? "" : "opacity-45"}" style="${isActiveProj ? "background:var(--hover)" : ""}">
+                        <div class="flex items-center gap-2">
+                            <input type="checkbox" data-toggle="${p.id}" ${vis ? "checked" : ""} class="w-3.5 h-3.5 cursor-pointer">
+                            <button data-proj="${p.id}" class="flex-1 text-left min-w-0">
+                                <div class="font-semibold text-xs truncate">${p.name}</div>
+                                <div class="text-[11px] truncate" style="color:var(--ink-2)">${subText}</div>
+                            </button>
+                            <span class="px-1.5 py-0.5 rounded text-[11px] font-bold" style="background:${pColor}20;color:${pColor}">${pct}%</span>
+                            <button data-proj="${p.id}" class="w-5 h-5 grid place-items-center text-xs" style="color:var(--ink-3)">${exp ? "▾" : "▸"}</button>
+                        </div>
+                        <div class="mt-1.5 ml-5 h-1 rounded-full overflow-hidden" style="background:var(--line)">
+                            <div class="h-full rounded-full transition-all" style="width:${pct}%;background:${pColor}"></div>
+                        </div>
+                        ${exp ? `<div class="pl-5 pt-1.5 space-y-0.5">${items.map(r => {
+                            const itemRight = p.type === "points"
+                                ? `${r.antennas} ant · ${fmtKmFromM(r.planM)} / ${fmtKmFromM(r.doneM)}`
+                                : `${r.totalKm} / ${r.doneKm} km`;
+                            return `
+                                <button data-seg="${p.id}:${r.id}" class="w-full flex items-center gap-1.5 px-2 py-1 rounded-md text-[11.5px] text-left" style="${state.selectedSeg?.itemId === r.id ? "background:var(--brand-soft);color:var(--brand);font-weight:600" : "color:var(--ink-2)"}">
+                                    <span class="w-2 h-2 rounded-full shrink-0" style="background:${STATUS_COLORS[r.status]}"></span>
+                                    <span class="font-medium truncate">${r.name}</span>
+                                    <span class="ml-auto text-[11px] font-semibold whitespace-nowrap" style="color:${STATUS_COLORS[r.status]}">${itemRight}</span>
+                                </button>
+                            `;
+                        }).join("")}</div>` : ""}
+                    </div>
+                `;
+            }).join("");
+        }
+
+        /* XƏRİTƏ:
+           1) Nöqtə üzərində: Rayon adı, antena sayı, km (məs: Qax (Faz-1): 17 ant · 28.5/1.5 km)
+           2) Digər qovluğundakı layer üzərinə maus gələndə: YALNIZ name-də nə yazılıbsa o çıxır!
+           3) Magistral xətlərdə: A və B nöqtələri (adları ilə) avtomatik həmin koordinatda xəritəyə düşür! */
+        function renderMap() {
+            $("mapViewport").setAttribute("transform", `translate(${state.panX},${state.panY}) scale(${state.zoom})`);
+            $("placeNamesLayer").style.display = state.namesOn ? "block" : "none";
+
+            const invScale = 1 / Math.pow(state.zoom, 0.85);
+            $("placeNamesLayer").setAttribute("font-size", (11.5 * invScale).toFixed(2));
+            $("placeNamesLayer").style.strokeWidth = `${(3 * invScale).toFixed(2)}px`;
+
+            const otherRoutes = [];
+            const routes = [];
+            const abNodes = [];
+            const points = [];
+            const coordCounts = {};
+            const placedBoxes = [];
+
+            const hasActiveFocus = state.focusMode && Boolean(state.activeProjectId || state.selectedSeg);
+            const focusProjId = state.selectedSeg ? state.selectedSeg.projectId : state.activeProjectId;
+
+            PROJECTS.filter(p => state.visibleIds.has(p.id)).forEach(p => {
+                const dimOpacity = hasActiveFocus && p.id !== focusProjId ? 0.22 : 1;
+
+                // 0) DİGƏR QOVLUĞU: Maus üzərinə gələndə YALNIZ name-də nə yazılıbsa o çıxır!
+                if (p.category === "other") {
+                    filteredItems(p).forEach(r => {
+                        const d = r.pts.map((pt, idx) => `${idx ? "L" : "M"} ${pt[0]} ${pt[1]}`).join(" ");
+                        const isSel = state.selectedSeg?.itemId === r.id;
+                        // Yalnız r.name!
+                        const tipHtml = encodeURIComponent(`<div class="font-semibold text-white">${r.name}</div>`);
+                        otherRoutes.push(`
+                            <g data-route="${p.id}:${r.id}" data-tip="${tipHtml}" class="route-svg" opacity="${dimOpacity}">
+                                <path d="${d}" fill="none" stroke="transparent" stroke-width="${(14 * invScale).toFixed(2)}"/>
+                                <path d="${d}" fill="none" stroke="#04101c" stroke-width="${((isSel ? 5.5 : 3.5) * invScale).toFixed(2)}" stroke-linecap="round"/>
+                                <path d="${d}" fill="none" stroke="${isSel ? "#ffffff" : "#38BDF8"}" stroke-width="${((isSel ? 3.2 : 1.9) * invScale).toFixed(2)}" stroke-dasharray="${(5 * invScale).toFixed(1)},${(3.5 * invScale).toFixed(1)}" stroke-linecap="round"/>
+                            </g>
+                        `);
+                    });
+                    return;
+                }
+
+                // 1) MAGİSTRAL XƏTT LAYİHƏLƏRİ + SONLUQ QOVŞAQLARI (A/B sözü olmadan, sadəcə Konum işarəsi və yalnız name!)
+                if (p.type === "lines") {
+                    filteredItems(p).forEach(r => {
+                        const d = r.pts.map((pt, idx) => `${idx ? "L" : "M"} ${pt[0]} ${pt[1]}`).join(" ");
+                        const isSel = state.selectedSeg?.itemId === r.id;
+                        const color = STATUS_COLORS[r.status];
+                        const pct = r.totalKm ? Math.round(r.doneKm / r.totalKm * 100) : 0;
+                        const cInfo = CONTRACTORS[r.contractor] || { workers: 25, engineer: "—" };
+                        const tipHtml = encodeURIComponent(`
+                            <div class="flex items-center gap-1.5 font-semibold text-white">
+                                <span class="w-2 h-2 rounded-full" style="background:${color}"></span>
+                                <span>${r.name}</span>
+                            </div>
+                            <div class="text-slate-200 mt-0.5">📏 Məsafə: <b>${r.totalKm} km</b> / Faktiki: <b style="color:${color}">${r.doneKm} km (${pct}%)</b></div>
+                            <div class="text-slate-300">🏢 İcraçı: <b>${r.contractor}</b> · 👷 <b>${cInfo.workers} işçi</b></div>
+                            <div class="text-sky-300">📞 İcraçı nömrəsi: <b>${cInfo.engineer}</b></div>
+                        `);
+                        routes.push(`
+                            <g data-route="${p.id}:${r.id}" data-tip="${tipHtml}" class="route-svg" opacity="${dimOpacity}">
+                                <path d="${d}" fill="none" stroke="transparent" stroke-width="${(16 * invScale).toFixed(2)}"/>
+                                <path d="${d}" fill="none" stroke="${isSel ? "#fff" : "#04101c"}" stroke-width="${((isSel ? 9 : 6.5) * invScale).toFixed(2)}" stroke-linecap="round"/>
+                                <path d="${d}" fill="none" stroke="${color}" stroke-width="${((isSel ? 5.5 : 3.8) * invScale).toFixed(2)}" stroke-linecap="round"/>
+                            </g>
+                        `);
+
+                        // Magistral sonluqları: A və B sözü yazılmır, ikon sadəcə konum işarəsi (pin), name varsa yalnız name görünür!
+                        const ptA = r.pts[0];
+                        const ptB = r.pts[r.pts.length - 1];
+                        [
+                            { pt: ptA, name: (r.pointA || "").trim() },
+                            { pt: ptB, name: (r.pointB || "").trim() }
+                        ].forEach(ep => {
+                            if (!ep.pt) return;
+                            const [ex, ey] = ep.pt;
+                            const cleanName = ep.name.replace(/\s*\([AB]\)\s*$/i, "").replace(/^[AB]\s*nöqtəsi\s*:?\s*/i, "");
+                            const epTip = encodeURIComponent(
+                                cleanName
+                                    ? `<div class="font-semibold text-white">📍 ${cleanName}</div><div class="text-slate-300">${r.name}</div>`
+                                    : `<div class="font-semibold text-white">📍 ${r.name}</div>`
+                            );
+                            const pinScale = (0.95 * invScale).toFixed(3);
+                            abNodes.push(`
+                                <g data-route="${p.id}:${r.id}" data-tip="${epTip}" class="ab-node" opacity="${dimOpacity}">
+                                    <g transform="translate(${ex},${ey}) scale(${pinScale})">
+                                        <path d="M 0 0 C -5 -7 -9 -11.5 -9 -16 A 9 9 0 1 1 9 -16 C 9 -11.5 5 -7 0 0 Z" fill="#0ea5e9" stroke="#ffffff" stroke-width="1.8"/>
+                                        <circle cx="0" cy="-16" r="3.4" fill="#ffffff"/>
+                                    </g>
+                                    ${cleanName ? `<text x="${ex}" y="${(ey - 28 * invScale).toFixed(2)}" text-anchor="middle" fill="#f1f5f9" font-size="${(9.2 * invScale).toFixed(2)}" font-weight="600" style="paint-order:stroke;stroke:#08111d;stroke-width:${(2.8 * invScale).toFixed(2)}px">${cleanName}</text>` : ""}
+                                </g>
+                            `);
+                        });
+                    });
+                }
+                // 2) NÖQTƏ / ANTENA LAYİHƏLƏRİ VƏ 🚦 NİM SVETOFOR KƏSİŞMƏLƏRİ
+                else if (p.type === "points") {
+                    filteredItems(p).forEach(r => {
+                        const [rawX, rawY] = r.pt;
+                        const key = `${Math.round(rawX / 15)}_${Math.round(rawY / 15)}`;
+                        const slot = coordCounts[key] || 0;
+                        coordCounts[key] = slot + 1;
+
+                        const x = rawX + slot * (12 * invScale);
+                        const y = rawY;
+
+                        const color = STATUS_COLORS[r.status];
+                        const isSel = state.selectedSeg?.itemId === r.id;
+                        const isNim = p.category === "nim";
+                        const pct = r.planM ? Math.round(r.doneM / r.planM * 100) : 0;
+                        const planKm = +( (r.planM || 0) / 1000 ).toFixed(1);
+                        const doneKm = +( (r.doneM || 0) / 1000 ).toFixed(1);
+
+                        // 🚦 NİM nöqtəsində: Adı və Statusu birbaşa nöqtədə göstərilir! Digər nöqtələrdə: Rayon adı, antena sayı, km
+                        const labelTxt = isNim
+                            ? `🚦 ${r.name} · ${STATUS_LABELS[r.status]}`
+                            : `${r.name}: ${r.antennas} ant · ${planKm}/${doneKm} km`;
+                        const boxW = Math.max(148, labelTxt.length * 6.0) * invScale;
+                        const boxH = 18.5 * invScale;
+
+                        const candidates = [
+                            { dx: 0, dy: -26 * invScale },
+                            { dx: 0, dy: 12 * invScale },
+                            { dx: 0, dy: -46 * invScale },
+                            { dx: 0, dy: 32 * invScale },
+                            { dx: -boxW * 0.6, dy: -26 * invScale },
+                            { dx: boxW * 0.6, dy: -26 * invScale }
+                        ];
+
+                        let chosen = candidates[0];
+                        for (const cand of candidates) {
+                            const rect = {
+                                x1: x + cand.dx - boxW / 2 - 3 * invScale,
+                                y1: y + cand.dy - 2 * invScale,
+                                x2: x + cand.dx + boxW / 2 + 3 * invScale,
+                                y2: y + cand.dy + boxH + 2 * invScale
+                            };
+                            const overlaps = placedBoxes.some(b => !(rect.x2 < b.x1 || rect.x1 > b.x2 || rect.y2 < b.y1 || rect.y1 > b.y2));
+                            if (!overlaps) {
+                                chosen = cand;
+                                placedBoxes.push(rect);
+                                break;
+                            }
+                        }
+
+                        const lx = x + chosen.dx;
+                        const ly = y + chosen.dy;
+
+                        const cInfo = CONTRACTORS[r.contractor] || { workers: 25, engineer: "—" };
+                        const tipHtml = isNim
+                            ? encodeURIComponent(`
+                                <div class="flex items-center gap-1.5 font-semibold text-white">
+                                    <span>🚦</span>
+                                    <span>${r.name}</span>
+                                </div>
+                                <div class="text-slate-200 mt-0.5">📌 Status: <b style="color:${color}">${STATUS_LABELS[r.status]}</b></div>
+                                <div class="text-slate-300">🏢 İcraçı: <b>${r.contractor}</b> · 👷 <b>${cInfo.workers} işçi</b></div>
+                                <div class="text-sky-300">📞 İcraçı nömrəsi: <b>${cInfo.engineer}</b></div>
+                            `)
+                            : encodeURIComponent(`
+                                <div class="flex items-center gap-1.5 font-semibold text-white">
+                                    <span class="w-2 h-2 rounded-full" style="background:${color}"></span>
+                                    <span>${r.name}</span>
+                                    <span class="text-[10.5px] text-slate-400">(${r.antennas} antena)</span>
+                                </div>
+                                <div class="text-slate-200 mt-0.5">📏 Məsafə: <b>${planKm} km</b> / <b style="color:${color}">${doneKm} km (${pct}%)</b></div>
+                                <div class="text-slate-300">🏢 İcraçı: <b>${r.contractor}</b> · 👷 <b>${cInfo.workers} işçi</b></div>
+                                <div class="text-sky-300">📞 İcraçı nömrəsi: <b>${cInfo.engineer}</b></div>
+                            `);
+
+                        points.push(`
+                            <g data-point="${p.id}:${r.id}" data-tip="${tipHtml}" class="rayon-node" opacity="${dimOpacity}">
+                                <line x1="${x}" y1="${y}" x2="${lx}" y2="${ly + boxH / 2}" stroke="${color}" stroke-width="${(1.2 * invScale).toFixed(2)}" stroke-dasharray="${(2 * invScale).toFixed(1)},${(2 * invScale).toFixed(1)}"/>
+                                <circle cx="${x}" cy="${y}" r="${((isSel ? 12 : 8.5) * invScale).toFixed(2)}" fill="${color}" fill-opacity="0.28" stroke="${isSel ? "#fff" : color}" stroke-width="${((isSel ? 2.4 : 1.6) * invScale).toFixed(2)}"/>
+                                <circle cx="${x}" cy="${y}" r="${(4.5 * invScale).toFixed(2)}" fill="${color}" stroke="#ffffff" stroke-width="${(1.5 * invScale).toFixed(2)}"/>
+                                <rect x="${(lx - boxW / 2).toFixed(2)}" y="${ly.toFixed(2)}" width="${boxW.toFixed(2)}" height="${boxH.toFixed(2)}" rx="${(6 * invScale).toFixed(2)}" fill="rgba(10,18,30,0.92)" stroke="${isSel ? "#fff" : color}" stroke-width="${((isSel ? 1.8 : 1.1) * invScale).toFixed(2)}"/>
+                                <text x="${lx.toFixed(2)}" y="${(ly + boxH * 0.72).toFixed(2)}" text-anchor="middle" fill="#ffffff" font-size="${(9.8 * invScale).toFixed(2)}" font-weight="600">${labelTxt}</text>
+                            </g>
+                        `);
+                    });
+                }
+            });
+
+            $("otherGroup").innerHTML = otherRoutes.join("");
+            $("routesGroup").innerHTML = routes.join("");
+            $("abEndpointsGroup").innerHTML = abNodes.join("");
+            $("pointsGroup").innerHTML = points.join("");
+
+            // İstifadəçinin Cari Konumu (GPS)
+            if (state.myLocation) {
+                const { x, y, lat, lng } = state.myLocation;
+                const gpsTip = encodeURIComponent(`<div class="font-semibold text-sky-300">🧭 Sizin cari konumunuz</div><div class="font-mono text-[11px] text-slate-300">${lat}, ${lng}</div>`);
+                $("myLocationGroup").innerHTML = `
+                    <g data-tip="${gpsTip}">
+                        <circle cx="${x}" cy="${y}" r="${14 * invScale}" fill="#38bdf8" fill-opacity="0.35" class="gps-pulse"/>
+                        <circle cx="${x}" cy="${y}" r="${(6.5 * invScale).toFixed(2)}" fill="#0284c7" stroke="#ffffff" stroke-width="${(2.2 * invScale).toFixed(2)}"/>
+                        <text x="${x}" y="${(y - 11 * invScale).toFixed(2)}" text-anchor="middle" fill="#38bdf8" font-size="${(10 * invScale).toFixed(2)}" font-weight="700" style="paint-order:stroke;stroke:#08111d;stroke-width:${(3 * invScale).toFixed(2)}px">🧭 Sizin konumunuz</text>
+                    </g>
+                `;
+            } else {
+                $("myLocationGroup").innerHTML = "";
+            }
+
+            const draws = [];
+            const allShapes = [...state.drawings, ...(state.draftPts.length ? [{ tool: state.tool, color: state.drawColor, pts: state.draftPts }] : [])];
+            allShapes.forEach(s => {
+                if (s.tool === "pin") {
+                    const [x, y] = s.pts[0];
+                    draws.push(`<circle cx="${x}" cy="${y}" r="${6 * invScale}" fill="${s.color}" stroke="#fff" stroke-width="${2 * invScale}"/><text x="${x + 10 * invScale}" y="${y + 4 * invScale}" fill="#fff" font-size="${11 * invScale}" font-weight="600">${s.label || "Nöqtə"}</text>`);
+                } else if (s.tool === "note") {
+                    const [x, y] = s.pts[0];
+                    const txt = s.label || "Qeyd";
+                    const w = Math.max(90, txt.length * 7.2) * invScale;
+                    const h = 22 * invScale;
+                    draws.push(`
+                        <g>
+                            <rect x="${x}" y="${y - h}" width="${w}" height="${h}" rx="${4 * invScale}" fill="#fef08a" stroke="#ca8a04" stroke-width="${1.5 * invScale}"/>
+                            <text x="${x + 7 * invScale}" y="${y - 6 * invScale}" fill="#1e293b" font-size="${11 * invScale}" font-weight="700">📝 ${txt}</text>
+                        </g>
+                    `);
+                } else if (s.tool === "circle" && s.pts.length >= 2) {
+                    const [x1, y1] = s.pts[0], [x2, y2] = s.pts[1];
+                    const r = Math.hypot(x2 - x1, y2 - y1);
+                    draws.push(`<circle cx="${x1}" cy="${y1}" r="${r}" fill="${s.color}33" stroke="${s.color}" stroke-width="${2.5 * invScale}"/><text x="${x1}" y="${y1}" fill="#fff" font-size="${11 * invScale}" font-weight="600">R ${(r*0.85).toFixed(1)} km</text>`);
+                } else if (s.pts.length >= 2) {
+                    const d = s.pts.map((pt, i) => `${i ? "L" : "M"} ${pt[0]} ${pt[1]}`).join(" ") + (s.tool === "area" ? " Z" : "");
+                    const lenKm = s.pts.reduce((sum, pt, i) => i ? sum + Math.hypot(pt[0]-s.pts[i-1][0], pt[1]-s.pts[i-1][1])*0.85 : 0, 0);
+                    const last = s.pts[s.pts.length - 1];
+                    draws.push(`<path d="${d}" fill="${s.tool === "area" ? s.color + "33" : "none"}" stroke="${s.color}" stroke-width="${2.5 * invScale}"/><text x="${last[0] + 8 * invScale}" y="${last[1] - 6 * invScale}" fill="#fff" font-size="${11 * invScale}" font-weight="600">${lenKm.toFixed(1)} km</text>`);
+                }
+            });
+            $("drawingsGroup").innerHTML = draws.join("");
+        }
+
+        function renderAll() {
+            applyRoleUI();
+            renderLegend();
+            renderChips();
+            renderProjects();
+            renderInfoCard();
+            renderMap();
+        }
+
+        /* MAUS XƏTT VƏ YA NÖQTƏ ÜZƏRİNƏ GƏLDİKDƏ QISA MƏLUMAT */
+        $("mapSvg").addEventListener("mousemove", e => {
+            if (state.pegmanActive) {
+                $("pegmanDragGhost").hidden = false;
+                $("pegmanDragGhost").style.left = `${e.clientX}px`;
+                $("pegmanDragGhost").style.top = `${e.clientY}px`;
+            }
+            const target = e.target.closest("[data-tip]");
+            const tip = $("hoverTip");
+            if (!target || state.tool || state.pegmanActive) {
+                tip.hidden = true;
+                return;
+            }
+            tip.innerHTML = decodeURIComponent(target.dataset.tip);
+            tip.hidden = false;
+            tip.style.left = `${Math.min(window.innerWidth - 300, e.clientX + 14)}px`;
+            tip.style.top = `${Math.max(12, e.clientY - 18)}px`;
+        });
+        $("mapSvg").addEventListener("mouseleave", () => { $("hoverTip").hidden = true; });
+
+        /* SAĞ ALƏTLƏR PANELİNDƏ:
+           1) 💡 Fokus işıqlandırma (1 kliklə aktiv/deaktiv)
+           2) 🧭 Mənim Konumum (İstifadəçinin harada olduğunu göstərir)
+           3) 🧍 Küçə Görünüşü (Google Maps kimi adam ikonu — tutub xəritəyə atanda həmin yerin görüntüsü açılır, ✕ ilə bağlanır) */
+        $("focusToggleBtn").onclick = () => {
+            state.focusMode = !state.focusMode;
+            $("focusToggleBtn").classList.toggle("active", state.focusMode);
+            renderMap();
+            toast(state.focusMode ? "💡 Fokus işıqlandırma aktiv edildi" : "💡 Fokus işıqlandırma söndürüldü");
+        };
+
+        $("myLocationBtn").onclick = () => {
+            if (state.myLocation) {
+                state.myLocation = null;
+                $("myLocationBtn").classList.remove("active");
+                renderMap();
+                toast("🧭 Konum göstəricisi gizlədildi");
+                return;
+            }
+            const showGpsAt = (lat, lng, x, y) => {
+                state.myLocation = { lat: lat.toFixed(5), lng: lng.toFixed(5), x, y };
+                $("myLocationBtn").classList.add("active");
+                renderMap();
+                toast(`🧭 Cari konumunuz tapıldı: ${state.myLocation.lat}, ${state.myLocation.lng}`);
+            };
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    pos => {
+                        const lat = pos.coords.latitude;
+                        const lng = pos.coords.longitude;
+                        const x = Math.max(80, Math.min(920, Math.round((lng - 44.8) / 5.8 * 1000)));
+                        const y = Math.max(60, Math.min(540, Math.round((41.9 - lat) / 3.5 * 600)));
+                        showGpsAt(lat, lng, x, y);
+                    },
+                    () => showGpsAt(40.4093, 49.8671, 735, 298),
+                    { timeout: 3000 }
+                );
+            } else {
+                showGpsAt(40.4093, 49.8671, 735, 298);
+            }
+        };
+
+        // Küçə Görünüşü (Pegman — həm sürüşdürüb atmaqla, həm kliklə)
+        function openStreetViewAtClientPoint(clientX, clientY) {
+            const rect = $("mapSvg").getBoundingClientRect();
+            const x = Math.round(((clientX - rect.left) / rect.width * 1000 - state.panX) / state.zoom);
+            const y = Math.round(((clientY - rect.top) / rect.height * 600 - state.panY) / state.zoom);
+            const lat = (41.9 - y / 600 * 3.5).toFixed(5);
+            const lng = (44.8 + x / 1000 * 5.8).toFixed(5);
+
+            state.pegmanActive = false;
+            $("pegmanBtn").classList.remove("active");
+            $("pegmanDropHint").hidden = true;
+            $("pegmanDragGhost").hidden = true;
+
+            $("svTitle").textContent = `🧍 Küçə Görünüşü (Street View)`;
+            $("svCoords").textContent = `Koordinat: ${lat}, ${lng}`;
+            $("svExternalLink").href = `https://www.google.com/maps?q=&layer=c&cbll=${lat},${lng}&cbp=11,0,0,0,0`;
+            $("svIframe").src = `https://maps.google.com/maps?q=${lat},${lng}&hl=az&z=17&layer=c&cbll=${lat},${lng}&cbp=12,0,0,0,0&output=svembed`;
+            $("streetViewModal").hidden = false;
+        }
+
+        $("pegmanBtn").onclick = () => {
+            state.pegmanActive = !state.pegmanActive;
+            $("pegmanBtn").classList.toggle("active", state.pegmanActive);
+            $("pegmanDropHint").hidden = !state.pegmanActive;
+            $("pegmanDragGhost").hidden = !state.pegmanActive;
+            if (state.pegmanActive) toast("🧍 Xəritədə baxmaq istədiyiniz nöqtəyə klikləyin və ya adam ikonunu ora sürüşdürün");
+        };
+        $("cancelPegmanBtn").onclick = () => {
+            state.pegmanActive = false;
+            $("pegmanBtn").classList.remove("active");
+            $("pegmanDropHint").hidden = true;
+            $("pegmanDragGhost").hidden = true;
+        };
+        $("pegmanBtn").addEventListener("dragstart", e => {
+            e.dataTransfer.setData("text/plain", "pegman");
+            $("pegmanDropHint").hidden = false;
+        });
+        $("mapStage").addEventListener("dragover", e => e.preventDefault());
+        $("mapStage").addEventListener("drop", e => {
+            e.preventDefault();
+            openStreetViewAtClientPoint(e.clientX, e.clientY);
+        });
+
+        $("roleSelect").onchange = e => {
+            state.role = e.target.value;
+            renderAll();
+            const labels = {
+                admin: "👑 Admin rejimi: İstifadəçi idarəetməsi, Layihə importu və Qaimə əlavə etmək aktivdir",
+                edit: "✏️ Redaktə (Edit) rejimi: Status/icraçı dəyişə bilir, import avtomatik 'Digər'-ə düşür",
+                view: "👁️ Baxış (View) rejimi: Yalnız baxış və 'Digər'-ə fayl əlavə etmək aktivdir"
+            };
+            toast(labels[state.role]);
+        };
+
+        /* ADMİN PANELİ — İSTİFADƏÇİLƏRİN İDARƏ EDİLMƏSİ (User əlavə et + Şifrə / Email kodu + Edit / Baxış icazəsi ver) */
+        function renderUsersModal() {
+            if ($("usersCountBadge")) $("usersCountBadge").textContent = USERS.length;
+            const permSelect = u => `
+                <select data-user-perm="${u.id}" class="input-ui h-7 px-2 font-semibold text-xs">
+                    <option value="view" ${u.perm === "view" ? "selected" : ""}>👁️ Yalnız Baxış (View)</option>
+                    <option value="edit" ${u.perm === "edit" ? "selected" : ""}>✏️ Redaktə (Edit)</option>
+                    <option value="admin" ${u.perm === "admin" ? "selected" : ""}>👑 Admin (Tam)</option>
+                </select>
+            `;
+            $("usersTableBody").innerHTML = USERS.map(u => `
+                <tr class="border-b" style="border-color:var(--line)">
+                    <td class="py-2.5 px-3 font-semibold">${u.name}</td>
+                    <td class="py-2.5 px-3 font-mono text-sky-300">${u.email}</td>
+                    <td class="py-2.5 px-3">
+                        <div class="flex items-center gap-1.5">
+                            <input type="text" data-user-pass="${u.id}" value="${u.pass || ""}" placeholder="📧 Email kodu (OTP)" class="input-ui h-7 px-2 font-mono text-xs w-40">
+                            ${u.pass
+                                ? `<button type="button" data-copy-cred="${u.id}" title="Login və şifrəni kopyala" class="px-2 h-7 rounded border text-[11px] hover:bg-white/10" style="border-color:var(--line)">📋 Kopyala</button>`
+                                : `<span class="px-2 py-0.5 rounded text-[11px] font-medium bg-sky-500/15 text-sky-300 whitespace-nowrap">📧 Email kodu ilə</span>`
+                            }
+                        </div>
+                    </td>
+                    <td class="py-2.5 px-3">${permSelect(u)}</td>
+                    <td class="py-2.5 px-3 text-right">
+                        ${u.email !== "admin@bcg.az" ? `<button data-del-user="${u.id}" class="px-2 py-1 rounded text-rose-400 hover:bg-rose-500/15 font-medium">Sil</button>` : `<span style="color:var(--ink-3)">Əsas Admin</span>`}
+                    </td>
+                </tr>
+            `).join("");
+
+            // Qeydlərdə alıcı siyahısını da yenilə
+            $("noteRecipient").innerHTML = `<option value="all">🌐 Hamıya (All)</option>` + USERS.map(u => `<option value="${u.email}">👤 ${u.name} (${u.email})</option>`).join("");
+        }
+
+        $("genPassBtn").onclick = () => {
+            const rand = "Bcg#" + Math.floor(1000 + Math.random() * 9000);
+            $("newUserPass").value = rand;
+        };
+
+        // 4 Qovluq (Folder) seçimi və hər qovluğun xəritədə aktiv/deaktiv edilməsi
+        $("folderTabsGrid").addEventListener("click", e => {
+            const visCb = e.target.closest("[data-folder-vis]");
+            if (visCb) {
+                e.stopPropagation();
+                const cat = visCb.dataset.folderVis;
+                const list = projectsByCat(cat);
+                if (visCb.checked) list.forEach(p => state.visibleIds.add(p.id));
+                else list.forEach(p => state.visibleIds.delete(p.id));
+                renderAll();
+                toast(`${visCb.checked ? "✅ Qovluq aktiv edildi" : "👁️‍🗨️ Qovluq gizlədildi"}: ${cat.toUpperCase()}`);
+                return;
+            }
+            const tabEl = e.target.closest("[data-folder-tab]");
+            if (!tabEl) return;
+            const cat = tabEl.dataset.folderTab;
+            state.sidebarCategory = cat;
+            state.selectedSeg = null;
+            if (cat === "other") state.activeProjectId = null;
+            renderAll();
+        });
+
+        /* 1 DƏFƏ SAĞ KLİK vs 2 DƏFƏ ARD-ARDA SAĞ KLİK */
+        let lastRightClickTime = 0;
+        let singleRightClickTimer = null;
+
+        $("mapStage").addEventListener("contextmenu", e => {
+            e.preventDefault();
+            if (state.tool) {
+                state.draftPts.pop();
+                renderMap();
+                return;
+            }
+            const now = Date.now();
+            if (now - lastRightClickTime < 360) {
+                clearTimeout(singleRightClickTimer);
+                lastRightClickTime = 0;
+                setSidebar(false);
+                toast("2x Sağ klik: Sol sütun bağlandı");
+            } else {
+                lastRightClickTime = now;
+                singleRightClickTimer = setTimeout(() => {
+                    state.selectedSeg = null;
+                    state.activeProjectId = null;
+                    $("infoCard").hidden = true;
+                    $("layersPopover").hidden = true;
+                    $("coordPopover").hidden = true;
+                    $("layersBtn").classList.remove("active");
+                    $("coordBtn").classList.remove("active");
+                    renderAll();
+                    toast("1x Sağ klik: Məlumat pəncərəsi bağlandı");
+                }, 260);
+            }
+        });
+
+        $("sidebarToggleBtn").onclick = () => setSidebar($("sidebar").style.display === "none");
+        $("reopenSidebarBtn").onclick = () => setSidebar(true);
+
+        $("projectList").addEventListener("click", e => {
+            const toggle = e.target.closest("[data-toggle]");
+            if (toggle) {
+                const id = toggle.dataset.toggle;
+                if (state.visibleIds.has(id)) state.visibleIds.delete(id);
+                else state.visibleIds.add(id);
+                renderAll();
+                return;
+            }
+            const projBtn = e.target.closest("[data-proj]");
+            if (projBtn) {
+                const id = projBtn.dataset.proj;
+                const p = PROJECTS.find(x => x.id === id);
+                if (state.expandedIds.has(id)) state.expandedIds.delete(id);
+                else state.expandedIds.add(id);
+                state.activeProjectId = p?.category === "other" ? null : id;
+                state.selectedSeg = null;
+                renderAll();
+                return;
+            }
+            const segBtn = e.target.closest("[data-seg]");
+            if (segBtn) {
+                const [projectId, itemId] = segBtn.dataset.seg.split(":");
+                state.activeProjectId = projectId;
+                state.selectedSeg = { projectId, itemId };
+                state.visibleIds.add(projectId);
+                renderAll();
+            }
+        });
+
+        function handleMapFeatureClick(e, attr) {
+            if (state.pegmanActive) return;
+            const el = e.target.closest(`[${attr}]`);
+            if (!el || state.tool) return;
+            const [projectId, itemId] = el.getAttribute(attr).split(":");
+            const proj = PROJECTS.find(p => p.id === projectId);
+            if (proj) state.sidebarCategory = proj.category || "project";
+            state.activeProjectId = projectId;
+            state.selectedSeg = { projectId, itemId };
+            state.expandedIds.add(projectId);
+            renderAll();
+        }
+        $("otherGroup").addEventListener("click", e => handleMapFeatureClick(e, "data-route"));
+        $("routesGroup").addEventListener("click", e => handleMapFeatureClick(e, "data-route"));
+        $("abEndpointsGroup").addEventListener("click", e => handleMapFeatureClick(e, "data-route"));
+        $("pointsGroup").addEventListener("click", e => handleMapFeatureClick(e, "data-point"));
+
+        $("statusChips").addEventListener("click", e => {
+            const c = e.target.closest("[data-chip]");
+            if (c) { state.statusFilter = c.dataset.chip; renderAll(); }
+        });
+        $("searchInput").oninput = e => { state.query = e.target.value.trim().toLowerCase(); renderAll(); };
+        $("showAllBtn").onclick = () => {
+            const target = projectsByCat(state.sidebarCategory);
+            target.forEach(p => state.visibleIds.add(p.id));
+            renderAll();
+        };
+        $("hideAllBtn").onclick = () => {
+            const target = projectsByCat(state.sidebarCategory);
+            target.forEach(p => state.visibleIds.delete(p.id));
+            renderAll();
+        };
+
+        function changeZoom(delta) {
+            const next = Math.min(3.0, Math.max(0.7, +(state.zoom + delta).toFixed(2)));
+            state.zoom = next;
+            renderMap();
+        }
+        $("zoomInBtn").onclick = () => changeZoom(0.25);
+        $("zoomOutBtn").onclick = () => changeZoom(-0.25);
+        $("mapSvg").addEventListener("wheel", e => {
+            e.preventDefault();
+            changeZoom(e.deltaY < 0 ? 0.2 : -0.2);
+        }, { passive: false });
+
+        $("homeBtn").onclick = () => { state.zoom = 1; state.panX = 0; state.panY = 0; renderMap(); };
+        $("namesBtn").onclick = () => { state.namesOn = !state.namesOn; $("namesBtn").classList.toggle("active", state.namesOn); renderMap(); };
+        $("layersBtn").onclick = () => {
+            const open = $("layersPopover").hidden;
+            $("layersPopover").hidden = !open;
+            $("coordPopover").hidden = true;
+            $("layersBtn").classList.toggle("active", open);
+        };
+        $("coordBtn").onclick = () => {
+            const open = $("coordPopover").hidden;
+            $("coordPopover").hidden = !open;
+            $("layersPopover").hidden = true;
+            $("coordBtn").classList.toggle("active", open);
+        };
+
+        document.querySelectorAll(".base-opt").forEach(btn => {
+            btn.onclick = () => {
+                const b = btn.dataset.base;
+                const fills = { satellite: "url(#satGrid)", street: "url(#streetGrid)", dark: "url(#darkGrid)", blank: "#ffffff" };
+                const seaColors = { satellite: "#09223a", street: "#9ecae1", dark: "#07111e", blank: "#eef4f8" };
+                $("mapBgRect").setAttribute("fill", fills[b]);
+                $("caspianSea").setAttribute("fill", seaColors[b]);
+                $("terrainLayer").style.display = b === "satellite" ? "block" : "none";
+                document.querySelectorAll(".base-opt").forEach(opt => {
+                    const on = opt === btn;
+                    opt.style.cssText = on ? "background:var(--brand-soft);color:var(--brand)" : "";
+                    const label = opt.textContent.replace("✓", "").trim();
+                    opt.innerHTML = `${label} ${on ? "<span>✓</span>" : ""}`;
+                });
+                $("layersPopover").hidden = true;
+                $("layersBtn").classList.remove("active");
+            };
+        });
+
+        $("colorSwatches").innerHTML = DRAW_COLORS.map(c => `<button data-col="${c}" class="w-4 h-4 rounded-full border border-white/40" style="background:${c}"></button>`).join("");
+        $("colorSwatches").onclick = e => {
+            const b = e.target.closest("[data-col]");
+            if (b) state.drawColor = b.dataset.col;
+        };
+
+        document.querySelectorAll("[data-tool]").forEach(btn => {
+            btn.onclick = () => {
+                const t = btn.dataset.tool;
+                state.tool = state.tool === t ? null : t;
+                state.draftPts = [];
+                document.querySelectorAll("[data-tool]").forEach(b => b.classList.toggle("active", b.dataset.tool === state.tool));
+                $("toolBarHint").hidden = !state.tool;
+                const hints = {
+                    distance: "Xətkeş: nöqtələri klikləyin, Bitir basın",
+                    area: "Sahə: küncləri klikləyin, Bitir basın",
+                    circle: "Dairə: mərkəzi və radiusu klikləyin",
+                    pin: "Nöqtə qoymaq üçün xəritəyə klikləyin",
+                    note: "Xəritə üzərinə mətn qeydi yazmaq üçün istədiyiniz yerə klikləyin"
+                };
+                $("toolHintText").textContent = hints[state.tool] || "";
+            };
+        });
+
+        $("mapSvg").addEventListener("click", e => {
+            if (state.pegmanActive) {
+                openStreetViewAtClientPoint(e.clientX, e.clientY);
+                return;
+            }
+            const rect = $("mapSvg").getBoundingClientRect();
+            const x = Math.round(((e.clientX - rect.left) / rect.width * 1000 - state.panX) / state.zoom);
+            const y = Math.round(((e.clientY - rect.top) / rect.height * 600 - state.panY) / state.zoom);
+            const lat = (41.9 - y / 600 * 3.5).toFixed(5);
+            const lng = (44.8 + x / 1000 * 5.8).toFixed(5);
+            $("coordClicked").value = `${lat}, ${lng}`;
+            if (!state.tool) return;
+            if (state.tool === "pin") {
+                state.drawings.push({ tool: "pin", color: state.drawColor, pts: [[x, y]], label: `${lat}, ${lng}` });
+            } else if (state.tool === "note") {
+                const txt = prompt("Xəritə üzərinə yazılacaq qeydi daxil edin:", "Yoxlama nöqtəsi");
+                if (txt && txt.trim()) {
+                    state.drawings.push({ tool: "note", color: state.drawColor, pts: [[x, y]], label: txt.trim() });
+                }
+            } else if (state.tool === "circle") {
+                state.draftPts.push([x, y]);
+                if (state.draftPts.length === 2) { state.drawings.push({ tool: "circle", color: state.drawColor, pts: [...state.draftPts] }); state.draftPts = []; }
+            } else {
+                state.draftPts.push([x, y]);
+            }
+            renderMap();
+        });
+
+        /* ÇAP VƏ PDF ÇƏRÇİVƏ SEÇİMİ (Haranı çap / PDF edək?) */
+        function openPrintCropMode() {
+            const stage = $("mapStage").getBoundingClientRect();
+            const box = $("cropBox");
+            const w = Math.round(stage.width * 0.68);
+            const h = Math.round(stage.height * 0.68);
+            box.style.left = `${Math.round((stage.width - w) / 2)}px`;
+            box.style.top = `${Math.round((stage.height - h) / 2 + 16)}px`;
+            box.style.width = `${w}px`;
+            box.style.height = `${h}px`;
+            $("printCropOverlay").hidden = false;
+            toast("📐 Çap / PDF üçün çərçivəni istədiyiniz sahəyə gətirin və ya künclərindən ölçüsünü dəyişin");
+        }
+        $("printTopBtn").onclick = openPrintCropMode;
+        $("printSideBtn").onclick = openPrintCropMode;
+        $("cancelCropPrintBtn").onclick = () => { $("printCropOverlay").hidden = true; };
+        $("cropFullBtn").onclick = () => {
+            const stage = $("mapStage").getBoundingClientRect();
+            const box = $("cropBox");
+            box.style.left = "18px";
+            box.style.top = "56px";
+            box.style.width = `${Math.max(200, stage.width - 36)}px`;
+            box.style.height = `${Math.max(160, stage.height - 74)}px`;
+        };
+        $("confirmCropPrintBtn").onclick = () => {
+            const svg = $("mapSvg");
+            const stageRect = svg.getBoundingClientRect();
+            const boxRect = $("cropBox").getBoundingClientRect();
+            const prevViewBox = svg.getAttribute("viewBox") || "0 0 1000 600";
+
+            const vx = Math.max(0, ((boxRect.left - stageRect.left) / stageRect.width) * 1000);
+            const vy = Math.max(0, ((boxRect.top - stageRect.top) / stageRect.height) * 600);
+            const vw = Math.max(80, (boxRect.width / stageRect.width) * 1000);
+            const vh = Math.max(60, (boxRect.height / stageRect.height) * 600);
+
+            $("printCropOverlay").hidden = true;
+            svg.setAttribute("viewBox", `${vx.toFixed(1)} ${vy.toFixed(1)} ${vw.toFixed(1)} ${vh.toFixed(1)}`);
+            setTimeout(() => {
+                window.print();
+                setTimeout(() => {
+                    svg.setAttribute("viewBox", prevViewBox);
+                }, 300);
+            }, 120);
+        };
+
+        (() => {
+            let cropDrag = null;
+            $("printCropOverlay").addEventListener("mousedown", e => {
+                if (e.target.closest("button")) return;
+                const stageRect = $("mapStage").getBoundingClientRect();
+                const box = $("cropBox");
+                const handle = e.target.closest(".crop-handle");
+                if (handle) {
+                    e.preventDefault();
+                    cropDrag = {
+                        mode: handle.dataset.dir,
+                        startX: e.clientX, startY: e.clientY,
+                        left: box.offsetLeft, top: box.offsetTop,
+                        width: box.offsetWidth, height: box.offsetHeight
+                    };
+                } else if (e.target.closest("#cropBox")) {
+                    e.preventDefault();
+                    cropDrag = {
+                        mode: "move",
+                        startX: e.clientX, startY: e.clientY,
+                        left: box.offsetLeft, top: box.offsetTop,
+                        width: box.offsetWidth, height: box.offsetHeight,
+                        maxW: stageRect.width, maxH: stageRect.height
+                    };
+                } else {
+                    e.preventDefault();
+                    const x0 = e.clientX - stageRect.left;
+                    const y0 = e.clientY - stageRect.top;
+                    box.style.left = `${x0}px`;
+                    box.style.top = `${y0}px`;
+                    box.style.width = `40px`;
+                    box.style.height = `40px`;
+                    cropDrag = { mode: "draw", x0, y0 };
+                }
+                const onMove = ev => {
+                    if (!cropDrag) return;
+                    const dx = ev.clientX - cropDrag.startX;
+                    const dy = ev.clientY - cropDrag.startY;
+                    if (cropDrag.mode === "move") {
+                        box.style.left = `${Math.max(4, Math.min(cropDrag.maxW - cropDrag.width - 4, cropDrag.left + dx))}px`;
+                        box.style.top = `${Math.max(4, Math.min(cropDrag.maxH - cropDrag.height - 4, cropDrag.top + dy))}px`;
+                    } else if (cropDrag.mode === "draw") {
+                        const curX = ev.clientX - stageRect.left;
+                        const curY = ev.clientY - stageRect.top;
+                        box.style.left = `${Math.min(cropDrag.x0, curX)}px`;
+                        box.style.top = `${Math.min(cropDrag.y0, curY)}px`;
+                        box.style.width = `${Math.max(60, Math.abs(curX - cropDrag.x0))}px`;
+                        box.style.height = `${Math.max(50, Math.abs(curY - cropDrag.y0))}px`;
+                    } else {
+                        let { left, top, width, height } = cropDrag;
+                        if (cropDrag.mode.includes("e")) width = Math.max(80, width + dx);
+                        if (cropDrag.mode.includes("s")) height = Math.max(60, height + dy);
+                        if (cropDrag.mode.includes("w")) {
+                            const nW = Math.max(80, width - dx);
+                            left += width - nW;
+                            width = nW;
+                        }
+                        if (cropDrag.mode.includes("n")) {
+                            const nH = Math.max(60, height - dy);
+                            top += height - nH;
+                            height = nH;
+                        }
+                        box.style.left = `${left}px`;
+                        box.style.top = `${top}px`;
+                        box.style.width = `${width}px`;
+                        box.style.height = `${height}px`;
+                    }
+                };
+                const onUp = () => {
+                    cropDrag = null;
+                    window.removeEventListener("mousemove", onMove);
+                    window.removeEventListener("mouseup", onUp);
+                };
+                window.addEventListener("mousemove", onMove);
+                window.addEventListener("mouseup", onUp);
+            });
+        })();
+
+        $("finishToolBtn").onclick = () => {
+            if (state.draftPts.length >= 2) state.drawings.push({ tool: state.tool, color: state.drawColor, pts: [...state.draftPts] });
+            state.draftPts = [];
+            renderMap();
+        };
+        $("closeToolBtn").onclick = () => { state.tool = null; state.draftPts = []; $("toolBarHint").hidden = true; document.querySelectorAll("[data-tool]").forEach(b => b.classList.remove("active")); renderMap(); };
+        $("undoDrawBtn").onclick = () => { if (state.draftPts.length) state.draftPts.pop(); else state.drawings.pop(); renderMap(); };
+        $("clearDrawBtn").onclick = () => { state.draftPts = []; state.drawings = []; renderMap(); };
+
+        $("themeSelect").onchange = e => { document.documentElement.dataset.theme = e.target.value; };
+
+        /* İMPORT */
+        $("importTopBtn").onclick = () => {
+            applyRoleUI();
+            $("importModal").hidden = false;
+            $("importTitleInput").value = "";
+        };
+        $("importGeomType").onchange = e => {
+            $("importABFields").hidden = e.target.value !== "lines";
+        };
+        document.querySelectorAll('input[name="importCategory"]').forEach(radio => {
+            radio.onchange = () => {
+                const cat = document.querySelector('input[name="importCategory"]:checked').value;
+                $("importProjTypeWrap").hidden = cat !== "project";
+                ["Project", "Nim", "Azconnect", "Other"].forEach(k => {
+                    const card = $(`impOpt${k}Card`);
+                    if (card) {
+                        const on = k.toLowerCase() === cat;
+                        card.style.cssText = on ? "background:var(--brand-soft);border-color:var(--brand)" : "background:var(--canvas);border-color:var(--line)";
+                    }
+                });
+            };
+        });
+        $("importForm").onsubmit = e => {
+            e.preventDefault();
+            const cat = isAdmin() ? document.querySelector('input[name="importCategory"]:checked').value : "other";
+            const title = $("importTitleInput").value.trim() || (cat === "other" ? "Köməkçi Xətt" : cat === "nim" ? "NİM Svetofor Qrupu" : cat === "azconnect" ? "Azconnect Xətti" : "Yeni Layihə");
+            const geom = $("importGeomType").value;
+            const newId = `${cat}_${Date.now()}`;
+
+            if (cat === "other") {
+                PROJECTS.push({
+                    id: newId,
+                    category: "other",
+                    type: "lines",
+                    name: title,
+                    items: [
+                        { id: "OTH-1", name: `${title} - Xətt 1`, pts: [[560,140],[640,150],[635,215]] },
+                        { id: "OTH-2", name: `${title} - Xətt 2`, pts: [[490,320],[595,335]] }
+                    ]
+                });
+                state.sidebarCategory = "other";
+                state.activeProjectId = null;
+                recordAuditLog("import", "🗂️ Digər", `"${title}" faylını 🗂️ Digər qovluğuna əlavə etdi`);
+                toast(`🗂️ "${title}" avtomatik olaraq 'Digər' bölməsinə əlavə olundu!`);
+            } else if (cat === "nim") {
+                PROJECTS.push({
+                    id: newId,
+                    category: "nim",
+                    type: "points",
+                    name: title,
+                    status: "icrada",
+                    startDate: "04.11.2026",
+                    endDate: "30.12.2026",
+                    items: [
+                        { id: `NIM-${Date.now().toString().slice(-3)}`, name: `${title} kəsişməsi`, contractor: "BCG (Öz briqadamız)", status: "icrada", pt: [725, 288] }
+                    ]
+                });
+                state.sidebarCategory = "nim";
+                state.activeProjectId = newId;
+                recordAuditLog("nim", "🚦 NİM", `"${title}" svetofor kəsişmə nöqtələrini 🚦 NİM qovluğuna əlavə etdi`);
+                toast(`🚦 "${title}" NİM (Svetofor) qovluğuna əlavə olundu!`);
+            } else if (cat === "azconnect") {
+                PROJECTS.push({
+                    id: newId,
+                    category: "azconnect",
+                    type: "lines",
+                    name: title,
+                    status: "icrada",
+                    startDate: "04.11.2026",
+                    endDate: "30.12.2026",
+                    items: [
+                        {
+                            id: `AZC-${Date.now().toString().slice(-3)}`, name: `${title} Xətti`,
+                            pointA: "Mərkəzi Qovşaq", coordA: "40.4093, 49.8671",
+                            pointB: "Regional Qovşaq", coordB: "40.5897, 49.6686",
+                            startDate: "04.11.2026", endDate: "30.12.2026",
+                            contractor: "BCG (Öz briqadamız)", totalKm: 36, doneKm: 18, status: "icrada",
+                            pts: [[705,270],[620,255]]
+                        }
+                    ]
+                });
+                state.sidebarCategory = "azconnect";
+                state.activeProjectId = newId;
+                recordAuditLog("azconnect", "🌐 Azconnect", `"${title}" xətt marşrutunu 🌐 Azconnect qovluğuna əlavə etdi`);
+                toast(`🌐 "${title}" Azconnect qovluğuna (yalnız xətlər) əlavə olundu!`);
+            } else {
+                if (geom === "points") {
+                    PROJECTS.push({
+                        id: newId,
+                        category: "project",
+                        type: "points",
+                        name: title,
+                        status: "icrada",
+                        startDate: "02.11.2026",
+                        endDate: "30.12.2026",
+                        items: [
+                            { id: "NEW-PT-1", name: "Qəbələ", contractor: "BCG (Öz briqadamız)", antennas: 12, planM: 18000, doneM: 6000, status: "icrada", pt: [465, 138] }
+                        ]
+                    });
+                } else {
+                    const pA = $("impPointAName").value.trim() || "A nöqtəsi";
+                    const pB = $("impPointBName").value.trim() || "B nöqtəsi";
+                    PROJECTS.push({
+                        id: newId,
+                        category: "project",
+                        type: "lines",
+                        name: title,
+                        status: "icrada",
+                        startDate: "02.11.2026",
+                        endDate: "30.12.2026",
+                        items: [
+                            {
+                                id: "NEW-LN-1", name: `${title} Magistralı`,
+                                pointA: pA, coordA: "39.9512, 49.4018",
+                                pointB: pB, coordB: "39.9366, 48.9206",
+                                startDate: "02.11.2026", endDate: "30.12.2026",
+                                contractor: "BCG (Öz briqadamız)", totalKm: 48, doneKm: 16, status: "icrada",
+                                pts: [[660,350],[575,342]]
+                            }
+                        ]
+                    });
+                }
+                state.sidebarCategory = "project";
+                state.activeProjectId = newId;
+                recordAuditLog("import", "📁 Layihələr", `"${title}" layihəsini 📁 Layihələr qovluğuna əlavə etdi`);
+                toast(`📁 "${title}" Admin tərəfindən Layihələr qovluğuna əlavə olundu!`);
+            }
+
+            state.visibleIds.add(newId);
+            state.expandedIds.add(newId);
+            state.selectedSeg = null;
+            $("importModal").hidden = true;
+            renderAll();
+        };
+
+        // Qeydlər
+        function renderNotes() {
+            $("notesBadge").textContent = notes.length;
+            $("notesList").innerHTML = notes.map(n => `
+                <div class="py-2.5 flex justify-between gap-2">
+                    <div class="space-y-1">
+                        <div class="flex gap-1.5">
+                            <span class="px-2 py-0.5 rounded font-medium" style="background:var(--brand-soft);color:var(--brand)">🔔 Kimə: ${n.recipient === "all" ? "Hamıya (All)" : n.recipient}</span>
+                            <span class="px-2 py-0.5 rounded font-medium" style="background:#f59e0b22;color:#f59e0b">⏱ ${n.hours ? n.hours + " saatlıq" : "Müddətsiz"}</span>
+                        </div>
+                        <div>${n.text}</div>
+                        <div style="color:var(--ink-3)">Müəllif: ${n.author}</div>
+                    </div>
+                    <button data-del-note="${n.id}" class="text-rose-400 hover:underline">Sil</button>
+                </div>
+            `).join("");
+        }
+        $("notesTopBtn").onclick = () => { renderUsersModal(); $("notesModal").hidden = false; renderNotes(); };
+        $("noteForm").onsubmit = e => {
+            e.preventDefault();
+            const text = $("noteInput").value.trim();
+            if (!text) return;
+            const recipient = $("noteRecipient").value;
+            const hours = Number($("noteHours").value);
+            notes.unshift({ id: Date.now(), author: isAdmin() ? "admin@bcg.az" : "user@bcg.az", recipient, hours, text });
+            $("noteInput").value = "";
+            renderNotes();
+            toast(`🔔 Qeyd əlavə olundu`);
+        };
+        $("notesList").onclick = e => {
+            const del = e.target.closest("[data-del-note]");
+            if (del) { notes = notes.filter(n => n.id !== Number(del.dataset.delNote)); renderNotes(); }
+        };
+
+        /* MATERİAL REYESTRİ */
+        function initMaterials() {
+            const projs = [...new Set(MATERIALS.map(m => m.project))];
+            const types = [...new Set(MATERIALS.map(m => m.material))];
+            $("matProjectFilter").innerHTML = `<option value="all">Bütün layihələr</option>` + projs.map(p => `<option value="${p}">${p}</option>`).join("");
+            $("matTypeFilter").innerHTML = `<option value="all">Bütün materiallar</option>` + types.map(t => `<option value="${t}">${t}</option>`).join("");
+            $("newMatProject").innerHTML = projs.map(p => `<option value="${p}">${p}</option>`).join("");
+        }
+        function renderMaterials() {
+            applyRoleUI();
+            const flow = $("matFlowFilter").value;
+            const p = $("matProjectFilter").value;
+            const t = $("matTypeFilter").value;
+            const inv = ($("matInvoiceFilter").value || "").trim().toLowerCase();
+            const f = $("matFromFilter").value;
+            const to = $("matToFilter").value;
+
+            const list = MATERIALS.filter(m => {
+                if (flow === "issued" && !(m.issuedQty > 0)) return false;
+                if (flow === "used" && !(m.usedQty > 0)) return false;
+                return (p === "all" || m.project === p) &&
+                    (t === "all" || m.material === t) &&
+                    (!inv || m.invoiceNo.toLowerCase().includes(inv)) &&
+                    (!f || m.date >= f) &&
+                    (!to || m.date <= to);
+            });
+
+            const flowLabel = flow === "issued"
+                ? "📦 Yalnız Anbardan çıxan (verilən) materiallar"
+                : flow === "used"
+                    ? "🛠️ Yalnız sahədə İstifadə olunan materiallar"
+                    : "📦 Anbardan çıxan + 🛠️ İstifadə olunan birlikdə";
+
+            $("matSummaryBar").innerHTML = `
+                <span>Tapıldı: <b>${list.length}</b> qaimə qeydi</span>
+                <span>${flowLabel}</span>
+            `;
+
+            $("materialsHead").innerHTML = `
+                <tr>
+                    <th class="py-2 px-3">Tarix</th>
+                    <th class="py-2 px-3">📄 Anbar Qaiməsi №</th>
+                    <th class="py-2 px-3">Layihə</th>
+                    <th class="py-2 px-3">Material adı</th>
+                    ${flow !== "used" ? `<th class="py-2 px-3">📦 Anbardan çıxan</th>` : ""}
+                    ${flow !== "issued" ? `<th class="py-2 px-3">🛠️ İstifadə olunan</th>` : ""}
+                    ${flow === "all" ? `<th class="py-2 px-3">Qalıq</th>` : ""}
+                </tr>
+            `;
+
+            $("materialsBody").innerHTML = list.map(m => {
+                const rem = Math.max(0, m.issuedQty - m.usedQty);
+                return `
+                    <tr class="border-b" style="border-color:var(--line)">
+                        <td class="py-2 px-3 font-mono">${m.date.split("-").reverse().join(".")}</td>
+                        <td class="py-2 px-3"><span class="px-2 py-0.5 rounded font-mono font-semibold" style="background:var(--brand-soft);color:var(--brand)">📄 ${m.invoiceNo}</span></td>
+                        <td class="py-2 px-3 font-medium">${m.project}</td>
+                        <td class="py-2 px-3 font-semibold">${m.material}</td>
+                        ${flow !== "used" ? `<td class="py-2 px-3 font-semibold text-amber-400">📦 ${m.issuedQty.toLocaleString("ru-RU")} ${m.unit}</td>` : ""}
+                        ${flow !== "issued" ? `<td class="py-2 px-3 font-semibold text-emerald-400">🛠️ ${m.usedQty.toLocaleString("ru-RU")} ${m.unit}</td>` : ""}
+                        ${flow === "all" ? `<td class="py-2 px-3 font-semibold">${rem.toLocaleString("ru-RU")} ${m.unit}</td>` : ""}
+                    </tr>
+                `;
+            }).join("");
+        }
+        $("materialsTopBtn").onclick = () => { $("materialsModal").hidden = false; renderMaterials(); };
+        ["matFlowFilter","matProjectFilter","matTypeFilter","matFromFilter","matToFilter"].forEach(id => $(id).onchange = renderMaterials);
+        $("matInvoiceFilter").oninput = renderMaterials;
+        $("matResetBtn").onclick = () => {
+            $("matFlowFilter").value = "all";
+            $("matProjectFilter").value = "all";
+            $("matTypeFilter").value = "all";
+            $("matInvoiceFilter").value = "";
+            $("matFromFilter").value = "";
+            $("matToFilter").value = "";
+            renderMaterials();
+        };
+        $("matAddForm").onsubmit = e => {
+            e.preventDefault();
+            if (!isAdmin()) {
+                toast("🔒 Yalnız Admin qaimə əlavə edə bilər!");
+                return;
+            }
+            const invoiceNo = $("newMatInvoice").value.trim() || "QAİMƏ-2026-0200";
+            const project = $("newMatProject").value;
+            const material = $("newMatName").value.trim();
+            const issuedQty = Number($("newMatIssued").value) || 0;
+            const usedQty = Number($("newMatUsed").value) || 0;
+            if (!material) return;
+            MATERIALS.unshift({
+                id: Date.now(),
+                date: new Date().toISOString().slice(0, 10),
+                invoiceNo,
+                project,
+                material,
+                issuedQty,
+                usedQty,
+                unit: "m"
+            });
+            initMaterials();
+            renderMaterials();
+            $("newMatName").value = "";
+            $("newMatIssued").value = "";
+            $("newMatUsed").value = "";
+            toast(`📄 ${invoiceNo} Admin tərəfindən əlavə olundu!`);
+        };
+
+        /* BÜTÜN MODALLARDA KƏNARA (BOŞLUĞA) VURDUQDA AVTOMATİK BAĞLANMA */
+        document.querySelectorAll(".modal-backdrop").forEach(modal => {
+            modal.addEventListener("click", e => {
+                if (e.target === modal) {
+                    modal.hidden = true;
+                    if (modal.id === "streetViewModal") $("svIframe").src = "";
+                }
+            });
+        });
+
+        document.querySelectorAll("[data-close-modal]").forEach(btn => {
+            btn.onclick = () => {
+                const m = $(btn.dataset.closeModal);
+                m.hidden = true;
+                if (m.id === "streetViewModal") $("svIframe").src = "";
+            };
+        });
+
+        renderUsersModal();
+        initMaterials();
+        renderAll();
+    </script>
+</body>
+</html>

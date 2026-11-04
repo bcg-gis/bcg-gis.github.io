@@ -32,6 +32,7 @@ const state = {
     dockTab: "segments",
     notes: [],
     sidebarCategory: "project",
+    activeFolders: new Set(["project", "nim", "azconnect", "other"]),
     focusMode: true
 };
 
@@ -89,7 +90,7 @@ const filteredItems = project => project.items.filter(item => matchesFilters(pro
 
 function visibleEntries() {
     return state.projects
-        .filter(p => state.visibleIds.has(p.id))
+        .filter(p => state.visibleIds.has(p.id) && state.activeFolders.has(p.category || "project"))
         .flatMap(p => filteredItems(p).map(item => ({ project: p, item })));
 }
 
@@ -777,6 +778,30 @@ function drawRoutes() {
         const cName = r.contractor || "BCG (Öz briqadamız)";
         const cInfo = state.contractors[cName] || { workers: "—", engineer: "—" };
 
+        if (project.category === "nim") {
+            const [lat, lng] = r.coords[0];
+            const cleanName = String(r.name || "").trim();
+            const stText = t(`status${r.status}`);
+            const label = `🚦 ${cleanName} · ${stText}`;
+            const tip = `<b>🚦 ${esc(cleanName)}</b><small>Status: <b style="color:${color}">${esc(stText)}</b><br>👷 İcraçı: ${esc(cName)} · 👥 İşçi: <b>${esc(cInfo.workers)} nəfər</b><br>📞 <b>${esc(cInfo.engineer || "—")}</b></small>`;
+            features.push({
+                type: "Feature",
+                geometry: { type: "Point", coordinates: [lng, lat] },
+                properties: {
+                    isRayonPoint: true,
+                    isNim: true,
+                    color,
+                    dim,
+                    sel: selected?.item === r,
+                    projectId: project.id,
+                    itemId: r.id,
+                    label,
+                    tip
+                }
+            });
+            return;
+        }
+
         if (isPointItem) {
             const [lat, lng] = r.coords[0];
             const slotKey = `${lat.toFixed(2)}_${lng.toFixed(2)}`;
@@ -1006,15 +1031,28 @@ function renderKpis() {
 
 function renderProjects() {
     const cat = state.sidebarCategory || "project";
-    const projectsOnly = state.projects.filter(p => p.category !== "other");
+    const projectsOnly = state.projects.filter(p => (p.category || "project") === "project");
+    const nimOnly = state.projects.filter(p => p.category === "nim");
+    const azcOnly = state.projects.filter(p => p.category === "azconnect");
     const otherOnly = state.projects.filter(p => p.category === "other");
 
     if ($("tabProjectsCount")) $("tabProjectsCount").textContent = projectsOnly.length;
+    if ($("tabNimCount")) $("tabNimCount").textContent = nimOnly.length;
+    if ($("tabAzconnectCount")) $("tabAzconnectCount").textContent = azcOnly.length;
     if ($("tabOtherCount")) $("tabOtherCount").textContent = otherOnly.length;
-    if ($("tabProjectsBtn")) $("tabProjectsBtn").classList.toggle("active", cat === "project");
-    if ($("tabOtherBtn")) $("tabOtherBtn").classList.toggle("active", cat === "other");
+
+    document.querySelectorAll("[data-folder-tab]").forEach(btn => {
+        const f = btn.dataset.folderTab;
+        btn.classList.toggle("active", f === cat);
+        btn.classList.toggle("folder-off", !state.activeFolders.has(f));
+        const chk = btn.querySelector("[data-folder-vis]");
+        if (chk) chk.checked = state.activeFolders.has(f);
+    });
+
     if ($("statusChips")) $("statusChips").hidden = cat === "other";
     if ($("addProjectBtn")) $("addProjectBtn").hidden = !isAdmin() || cat === "other";
+    const headTitles = { project: t("projects"), nim: "🚦 NİM (Svetofor Kəsişmələri)", azconnect: "🌐 Azconnect Xətləri", other: "🗂️ Digər" };
+    if ($("listHeadTitle")) $("listHeadTitle").textContent = headTitles[cat] || t("projects");
 
     if (cat === "other") {
         const shownOther = otherOnly.filter(p => !state.query || p.name.toLocaleLowerCase("az").includes(state.query) || p.items.some(i => String(i.name || "").toLocaleLowerCase("az").includes(state.query)));
@@ -1044,8 +1082,9 @@ function renderProjects() {
         return;
     }
 
+    const activePool = cat === "nim" ? nimOnly : (cat === "azconnect" ? azcOnly : projectsOnly);
     const filtering = state.statusFilter !== "all" || state.query;
-    const shown = projectsOnly.filter(p => !filtering || filteredItems(p).length > 0);
+    const shown = activePool.filter(p => !filtering || filteredItems(p).length > 0);
     $("projectCount").textContent = shown.length;
 
     $("projectList").innerHTML = shown.length === 0 ? `<div class="empty">${t("noResults")}</div>` : shown.map(p => {
@@ -1053,34 +1092,41 @@ function renderProjects() {
         const expanded = state.expandedIds.has(p.id);
         const sum = totals(p.items);
         const pct = percent(sum.done, sum.plan);
+        const isNim = p.category === "nim";
         const isPoints = p.type === "points";
         const totalAnt = p.items.reduce((s, r) => s + (r.antennas || 0), 0);
         const cleanProjName = String(p.name || "").replace(/\s*\(?\bFaz[-\s]*[12]\b\)?/gi, "").trim();
-        const subTitle = isPoints
-            ? `📡 ${totalAnt} ant · ${formatKm(sum.plan)} m / ${formatKm(sum.done)} m`
-            : `〰️ ${formatKm(sum.plan)} / ${formatKm(sum.done)} km · Qalıb: ${formatKm(Math.max(0, sum.plan - sum.done))} km`;
+        const donePts = p.items.filter(i => i.status === "bitmis" || i.status === "tehvil").length;
+        const subTitle = isNim
+            ? `🚦 ${p.items.length} svetofor kəsişməsi · Hazır: ${donePts}/${p.items.length}`
+            : (isPoints
+                ? `📡 ${totalAnt} ant · ${formatKm(sum.plan)} m / ${formatKm(sum.done)} m`
+                : `〰️ ${formatKm(sum.plan)} / ${formatKm(sum.done)} km · Qalıb: ${formatKm(Math.max(0, sum.plan - sum.done))} km`);
+        const rightPct = isNim ? `${p.items.length ? Math.round(donePts / p.items.length * 100) : 0}%` : `${pct}%`;
 
         return `
             <div class="project ${visible ? "" : "hidden-on-map"}" data-id="${esc(p.id)}">
                 <div class="project-row">
                     <label class="check" title="${t("toggleVisibility")}"><input type="checkbox" data-action="toggle" ${visible ? "checked" : ""}></label>
                     <button class="project-main" data-action="expand" aria-expanded="${expanded}">
-                        <strong title="${esc(cleanProjName)}">${esc(cleanProjName)}</strong>
+                        <strong title="${esc(cleanProjName)}">${isNim ? "🚦 " : (p.category === "azconnect" ? "🌐 " : "")}${esc(cleanProjName)}</strong>
                         <small>${subTitle}</small>
                     </button>
-                    <span class="project-pct">${pct}%</span>
+                    <span class="project-pct">${rightPct}</span>
                     ${isAdmin() ? `<button class="icon-btn" data-action="edit" title="${t("editProject")}"><i class="fa-solid fa-pen"></i></button>` : ""}
                     <button class="icon-btn" data-action="expand" aria-label="${esc(cleanProjName)}"><i class="fa-solid fa-chevron-right chevron ${expanded ? "open" : ""}"></i></button>
                 </div>
                 ${expanded ? `<div class="segments">${filteredItems(p).map(r => {
                     const cleanName = String(r.name || "").replace(/\s*\(?\bFaz[-\s]*[12]\b\)?/gi, "").replace(/\s*rayon(u)?\b/gi, "").trim();
-                    const rightText = isPoints
-                        ? `${r.antennas || 0} ant · ${formatKm(r.totalKm)} / ${formatKm(r.doneKm)} m`
-                        : `${formatKm(r.totalKm)} / ${formatKm(r.doneKm)} km (${percent(r.doneKm, r.totalKm)}%)`;
+                    const rightText = isNim
+                        ? t(`status${r.status}`)
+                        : (isPoints
+                            ? `${r.antennas || 0} ant · ${formatKm(r.totalKm)} / ${formatKm(r.doneKm)} m`
+                            : `${formatKm(r.totalKm)} / ${formatKm(r.doneKm)} km (${percent(r.doneKm, r.totalKm)}%)`);
                     return `
                     <button class="segment ${state.selected?.itemId === r.id && state.selected?.projectId === p.id ? "selected" : ""}" data-action="focus" data-item="${esc(r.id)}">
                         <span class="dot" style="background:${statusTone(r.status)}"></span>
-                        <span class="segment-name" title="${esc(cleanName)}">${esc(cleanName)}</span>
+                        <span class="segment-name" title="${esc(cleanName)}">${isNim ? "🚦 " : ""}${esc(cleanName)}</span>
                         <span style="color:${statusTone(r.status)};font-weight:600;white-space:nowrap">${rightText}</span>
                     </button>`;
                 }).join("")}${isAdmin() ? `<button class="link add-seg" data-action="addSegment">+ ${t("addSegment")}</button>` : ""}</div>` : ""}
@@ -1349,10 +1395,11 @@ function projectFromFile(fileName, lines) {
 
 let pendingImportCategory = "other";
 
-async function handleImport(event) {
+async function handleImportFiles(fileList, targetCategory) {
     const added = [];
-    const targetCategory = isAdmin() ? pendingImportCategory : "other";
-    for (const file of event.target.files) {
+    const cat = isAdmin() ? (targetCategory || pendingImportCategory || "project") : "other";
+    const catLabels = { project: "📁 Layihələr", nim: "🚦 NİM", azconnect: "🌐 Azconnect", other: "🗂️ Digər" };
+    for (const file of fileList) {
         try {
             const lines = (await readLines(file)).filter(line => line.coords.length >= 1);
             if (lines.length === 0) {
@@ -1360,25 +1407,32 @@ async function handleImport(event) {
                 continue;
             }
             const project = projectFromFile(file.name, lines);
-            project.category = targetCategory;
-            if (targetCategory === "other") {
+            project.category = cat;
+            if (cat === "nim") project.type = "points";
+            else if (cat === "azconnect" || cat === "other") project.type = "lines";
+            if (cat === "other") {
                 project.name = `Digər: ${project.name.replace(/^Digər:\s*/i, "")}`;
             }
-            await api.saveProject(project);
+            try { await api.saveProject(project); } catch { /* lokal saxla */ }
             state.projects.push(project);
             state.visibleIds.add(project.id);
             added.push(project);
-            toast(`${t("importOk")}: ${project.name} (${targetCategory === "other" ? "🗂️ Digər" : "📁 Layihələr"})`);
+            toast(`${t("importOk")}: ${project.name} (${catLabels[cat] || "📁 Layihələr"})`);
         } catch {
             toast(`${file.name}: ${t("importError")}`, true);
         }
     }
-    event.target.value = "";
     if ($("importModal")?.open) $("importModal").close();
     if (added.length === 0) return;
-    state.sidebarCategory = targetCategory === "other" ? "other" : "project";
+    state.sidebarCategory = cat;
+    state.activeFolders.add(cat);
     renderAll();
     flyToCoords(added.flatMap(p => p.items.flatMap(r => r.coords)));
+}
+
+async function handleImport(event) {
+    await handleImportFiles(event.target.files, pendingImportCategory);
+    event.target.value = "";
 }
 
 /* HADİSƏLƏR */
@@ -1464,24 +1518,26 @@ function bindEvents() {
     });
     $("importBtn").addEventListener("click", () => {
         if ($("importModal")) {
-            const adminOpt = $("impAdminProjOpt");
-            const roleNotice = $("impRoleNotice");
-            if (adminOpt) {
-                adminOpt.style.opacity = isAdmin() ? "1" : "0.45";
-                const radio = adminOpt.querySelector("input");
-                if (radio) radio.disabled = !isAdmin();
+            if ($("adminImportChoiceWrap")) $("adminImportChoiceWrap").hidden = !isAdmin();
+            if ($("userAutoOtherNotice")) $("userAutoOtherNotice").hidden = isAdmin();
+            if ($("importRoleSubtitle")) {
+                $("importRoleSubtitle").textContent = isAdmin()
+                    ? "👑 Admin: Faylın hansı qovluğa (Layihələr, NİM, Azconnect, Digər) düşəcəyini seçin"
+                    : "ℹ️ İstifadəçi: Yüklənən fayl avtomatik '🗂️ Digər' qovluğuna əlavə olunur";
             }
-            if (roleNotice) {
-                roleNotice.textContent = isAdmin()
-                    ? "👑 Admin olaraq faylı birbaşa '📁 Layihələr' və ya '🗂️ Digər' bölməsinə yükləyə bilərsiniz."
-                    : "ℹ️ Sizin rolunuzda yüklənən KMZ/KML/GeoJSON faylları avtomatik olaraq '🗂️ Digər' bölməsinə əlavə olunur.";
-            }
-            const defaultRadio = document.querySelector(`input[name="impTarget"][value="${isAdmin() ? "project" : "other"}"]`);
-            if (defaultRadio) defaultRadio.checked = true;
             $("importModal").showModal();
         } else {
             $("importFile").click();
         }
+    });
+    $("importModalForm")?.addEventListener("submit", async e => {
+        e.preventDefault();
+        const fileInput = $("importModalFile");
+        if (!fileInput || !fileInput.files.length) return;
+        const picked = document.querySelector('input[name="importCategory"]:checked')?.value || "project";
+        pendingImportCategory = isAdmin() ? picked : "other";
+        await handleImportFiles(fileInput.files, pendingImportCategory);
+        fileInput.value = "";
     });
     $("importFile").addEventListener("change", handleImport);
     $("noteForm").addEventListener("submit", addNote);
@@ -1716,6 +1772,21 @@ document.addEventListener("DOMContentLoaded", init);
         });
 
         card.addEventListener("change", async e => {
+            const nimSt = e.target.closest("[data-nim-status-select]");
+            if (nimSt) {
+                const [projectId, itemId] = nimSt.dataset.nimStatusSelect.split(":");
+                const proj = state.projects.find(p => p.id === projectId);
+                const item = proj?.items.find(r => r.id === itemId);
+                if (!proj || !item) return;
+                item.status = nimSt.value;
+                if (isAdmin() && api.configured) {
+                    try { await api.saveSegment(proj.id, item.id, { status: item.status }); } catch {}
+                }
+                recordAuditLog("Status Dəyişikliyi", "🚦 NİM", item.name, `Svetofor nöqtəsinin statusu '${t("status" + item.status)}' olaraq yeniləndi`);
+                renderAll();
+                toast(`🚦 ${item.name} statusu yeniləndi: ${t("status" + item.status)}`);
+                return;
+            }
             const sel = e.target.closest("[data-exec-select]");
             if (!sel) return;
             const rowEl = sel.closest("[data-pick-seg]");
@@ -1730,9 +1801,96 @@ document.addEventListener("DOMContentLoaded", init);
                     await api.saveSegment(proj.id, item.id, { contractor: item.contractor });
                 } catch { /* lokal olaraq da yenilənir */ }
             }
+            recordAuditLog("İcraçı التəyini", proj.category === "nim" ? "🚦 NİM" : (proj.category === "azconnect" ? "🌐 Azconnect" : "📁 Layihələr"), item.name, `İcraçı dəyişdirildi: ${item.contractor}`);
             renderAll();
             toast(`İş icraçısı yeniləndi: ${item.contractor}`);
         });
+    }
+
+    const AUDIT_STORE_KEY = "bcg.audit.logs.v1";
+    function recordAuditLog(actionType, folder, target, details) {
+        try {
+            const raw = localStorage.getItem(AUDIT_STORE_KEY);
+            const list = raw ? JSON.parse(raw) : [];
+            const now = new Date();
+            const pad = n => String(n).padStart(2, "0");
+            const timeStr = `${pad(now.getDate())}.${pad(now.getMonth() + 1)}.${now.getFullYear()} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+            const email = state.user?.email || "admin@bcg.az";
+            list.unshift({
+                id: Date.now(),
+                time: timeStr,
+                userName: isAdmin() ? "Bağır (Baş Admin)" : email.split("@")[0],
+                userEmail: email,
+                role: state.role || "admin",
+                ip: "185.18.244.12 · Chrome",
+                actionType,
+                folder,
+                target,
+                details
+            });
+            localStorage.setItem(AUDIT_STORE_KEY, JSON.stringify(list.slice(0, 120)));
+        } catch {}
+    }
+
+    function ensureDefaultNimAndAzconnect() {
+        if (!state.projects.some(p => p.category === "nim")) {
+            const nim1 = {
+                id: "nim_baki_svetofor",
+                name: "NİM – Bakı Svetofor Kəsişmələri",
+                category: "nim",
+                type: "points",
+                status: "icrada",
+                items: [
+                    { id: "NIM-01", name: "28 May – Rəşid Behbudov kəsişməsi", status: "bitmis", contractor: "BCG (Öz briqadamız)", totalKm: 1, doneKm: 1, antennas: 1, coords: [[40.3798, 49.8486]] },
+                    { id: "NIM-02", name: "Heydər Əliyev pr. – Koroğlu qovşağı", status: "icrada", contractor: "AzFiberTech MMC", totalKm: 1, doneKm: 0.6, antennas: 1, coords: [[40.4209, 49.9182]] },
+                    { id: "NIM-03", name: "Tbilisi pr. – 20 Yanvar dairəsi", status: "icrada", contractor: "BCG (Öz briqadamız)", totalKm: 1, doneKm: 0.7, antennas: 1, coords: [[40.4098, 49.8085]] },
+                    { id: "NIM-04", name: "Babək pr. – Xalqlar Dostluğu kəsişməsi", status: "tehvil", contractor: "KaspianTelekom", totalKm: 1, doneKm: 1, antennas: 1, coords: [[40.3972, 49.9531]] },
+                    { id: "NIM-05", name: "Ziya Bünyadov pr. – Karl Marks dairəsi", status: "layihe", contractor: "Optik İnşaat", totalKm: 1, doneKm: 0, antennas: 1, coords: [[40.4152, 49.8538]] },
+                    { id: "NIM-06", name: "Nobel pr. – Ağ Şəhər svetofor qovşağı", status: "bitmis", contractor: "BCG (Öz briqadamız)", totalKm: 1, doneKm: 1, antennas: 1, coords: [[40.3774, 49.8920]] }
+                ]
+            };
+            const nim2 = {
+                id: "nim_sumqayit_gence",
+                name: "NİM – Sumqayıt və Gəncə Svetoforları",
+                category: "nim",
+                type: "points",
+                status: "icrada",
+                items: [
+                    { id: "NIM-07", name: "Sumqayıt – Sülh küçəsi mərkəzi kəsişmə", status: "bitmis", contractor: "BCG (Öz briqadamız)", totalKm: 1, doneKm: 1, antennas: 1, coords: [[40.5897, 49.6686]] },
+                    { id: "NIM-08", name: "Gəncə – Heydər Əliyev pr. mərkəzi svetofor", status: "icrada", contractor: "AzFiberTech MMC", totalKm: 1, doneKm: 0.5, antennas: 1, coords: [[40.6828, 46.3606]] }
+                ]
+            };
+            state.projects.push(nim1, nim2);
+            state.visibleIds.add(nim1.id);
+            state.visibleIds.add(nim2.id);
+        }
+        if (!state.projects.some(p => p.category === "azconnect")) {
+            const azc1 = {
+                id: "azc_abseron_ring",
+                name: "Azconnect – Bakı-Abşeron Magistral Halqası",
+                category: "azconnect",
+                type: "lines",
+                status: "icrada",
+                items: [
+                    { id: "AZC-01", name: "Bakı Mərkəz – Xırdalan – Sumqayıt xətti", pointA: "Bakı Mərkəz Qovşaq", pointB: "Sumqayıt Stansiya", status: "bitmis", totalKm: 36.4, doneKm: 36.4, contractor: "BCG (Öz briqadamız)", coords: [[40.4093, 49.8671], [40.4520, 49.7550], [40.5897, 49.6686]] },
+                    { id: "AZC-02", name: "Bakı – Hövsan – Türkan – Zirə xətti", pointA: "Bakı Şərq Qovşaq", pointB: "Zirə Qovşaq", status: "icrada", totalKm: 42.0, doneKm: 28.5, contractor: "AzFiberTech MMC", coords: [[40.3890, 49.9520], [40.3690, 50.0850], [40.3640, 50.2910]] }
+                ]
+            };
+            const azc2 = {
+                id: "azc_merkez_west",
+                name: "Azconnect – Qərb və Mərkəzi Aran Xətti",
+                category: "azconnect",
+                type: "lines",
+                status: "icrada",
+                items: [
+                    { id: "AZC-03", name: "Hacıqabul – Kürdəmir – Ucar – Yevlax xətti", pointA: "Hacıqabul Qovşaq", pointB: "Yevlax Qovşaq", status: "icrada", totalKm: 168.0, doneKm: 119.5, contractor: "KaspianTelekom", coords: [[40.0394, 48.9356], [40.3425, 48.1564], [40.5180, 47.6500], [40.6172, 47.1500]] },
+                    { id: "AZC-04", name: "Yevlax – Gəncə – Şəmkir xətti", pointA: "Yevlax Qovşaq", pointB: "Şəmkir Stansiya", status: "tehvil", totalKm: 104.5, doneKm: 104.5, contractor: "BCG (Öz briqadamız)", coords: [[40.6172, 47.1500], [40.6828, 46.3606], [40.8297, 46.0178]] }
+                ]
+            };
+            state.projects.push(azc1, azc2);
+            state.visibleIds.add(azc1.id);
+            state.visibleIds.add(azc2.id);
+        }
     }
 
     function renderInfoCard() {
@@ -1778,6 +1936,70 @@ document.addEventListener("DOMContentLoaded", init);
         const leftVal = Math.max(0, sum.plan - sum.done);
         const tone = statusTone(proj.status);
         const cleanProjName = String(proj.name || "").replace(/\s*\(?\bFaz[-\s]*[12]\b\)?/gi, "").trim();
+
+        // 🚦 NİM (Svetofor kəsişmə nöqtələri — nöqtənin adı və birbaşa status seçimi)
+        if (proj.category === "nim") {
+            const doneCount = proj.items.filter(i => i.status === "bitmis" || i.status === "tehvil").length;
+            const inProgCount = proj.items.filter(i => i.status === "icrada").length;
+            card.innerHTML = `
+                <div class="info-card-head">
+                    <div>
+                        <small style="display:flex;align-items:center;gap:6px">
+                            <span class="dot" style="background:${tone}"></span>
+                            <span>🚦 NİM · Svetofor kəsişmə nöqtələri (${proj.items.length})</span>
+                        </small>
+                        <strong>${esc(cleanProjName)}</strong>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:4px">
+                        ${entry ? `<button class="btn btn-outline" style="height:24px;padding:0 8px;font-size:11px;color:#fff;border-color:rgba(255,255,255,0.25)" data-card-act="showAll">Hamısı</button>` : ""}
+                        <button class="icon-btn" data-card-act="close" title="${t("close")}"><i class="fa-solid fa-xmark"></i></button>
+                    </div>
+                </div>
+                <div class="info-card-body">
+                    <div class="info-grid">
+                        <div class="info-stat"><small>Cəmi kəsişmə</small><b>${proj.items.length} nöqtə</b></div>
+                        <div class="info-stat"><small>Hazır / Təhvil</small><b style="color:#22C55E">${doneCount} nöqtə</b></div>
+                        <div class="info-stat"><small>İcrada</small><b style="color:#F59E0B">${inProgCount} nöqtə</b></div>
+                    </div>
+                    <div class="info-sub-list">
+                        ${items.map(r => {
+                            const rTone = statusTone(r.status);
+                            const cInfo = state.contractors[r.contractor || "BCG (Öz briqadamız)"] || { workers: "—", engineer: "—" };
+                            return `
+                                <div class="info-sub-item" data-pick-seg="${esc(proj.id)}:${esc(r.id)}" style="border-color:${entry?.item === r ? rTone : "var(--line)"}">
+                                    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+                                        <strong style="display:flex;align-items:center;gap:6px">
+                                            <span class="dot" style="background:${rTone}"></span>
+                                            🚦 ${esc(r.name)}
+                                        </strong>
+                                        <span class="pill" style="--tone:${rTone}">${t(`status${r.status}`)}</span>
+                                    </div>
+                                    <div class="info-exec-row">
+                                        <span class="muted">Nöqtə statusu:</span>
+                                        <select class="input" data-nim-status-select="${esc(proj.id)}:${esc(r.id)}">
+                                            ${STATUSES.map(s => `<option value="${s}" ${r.status === s ? "selected" : ""}>${t(`status${s}`)}</option>`).join("")}
+                                        </select>
+                                    </div>
+                                    <div class="info-exec-row">
+                                        <span class="muted">İcraçı:</span>
+                                        ${executorOptionsHtml(r.contractor)}
+                                    </div>
+                                    <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--ink-2)">
+                                        <span>👷 İşçi: <b>${esc(cInfo.workers)} nəfər</b></span>
+                                        <span>📞 <b>${esc(cInfo.engineer || "—")}</b></span>
+                                    </div>
+                                </div>
+                            `;
+                        }).join("")}
+                    </div>
+                    <div style="display:flex;gap:6px;padding-top:2px">
+                        <button class="btn btn-outline" style="flex:1;height:28px;font-size:12px" data-card-act="zoom"><i class="fa-solid fa-crosshairs"></i> ${t("zoomTo")}</button>
+                        ${isAdmin() ? `<button class="btn btn-primary" style="height:28px;font-size:12px" data-card-act="edit"><i class="fa-solid fa-pen"></i></button>` : ""}
+                    </div>
+                </div>
+            `;
+            return;
+        }
 
         // A) NÖQTƏ / ANTENA LAYİHƏSİ (Plan / Faktiki / Qalıb + İşçi sayı və İcraçı nömrəsi hər sətirdə)
         if (isPoints) {
@@ -1933,8 +2155,14 @@ document.addEventListener("DOMContentLoaded", init);
             toast("🖨️ Çap / PDF sahəsini çərçivə ilə tənzimləyin və 'Çap et / PDF' basın");
         };
 
-        $("printCancelBtn")?.addEventListener("click", () => { overlay.hidden = true; });
-        $("printConfirmBtn")?.addEventListener("click", () => {
+        ($("cancelCropPrintBtn") || $("printCancelBtn"))?.addEventListener("click", () => { overlay.hidden = true; });
+        $("cropFullBtn")?.addEventListener("click", () => {
+            const stage = document.querySelector(".map-stage");
+            if (!stage) return;
+            rect = { left: 16, top: 52, width: stage.clientWidth - 32, height: stage.clientHeight - 68 };
+            applyRect();
+        });
+        ($("confirmCropPrintBtn") || $("printConfirmBtn"))?.addEventListener("click", () => {
             if (window.map && rect.width > 40 && rect.height > 40) {
                 const p1 = map.unproject([rect.left, rect.top]);
                 const p2 = map.unproject([rect.left + rect.width, rect.top + rect.height]);
@@ -1950,8 +2178,8 @@ document.addEventListener("DOMContentLoaded", init);
 
         box.addEventListener("mousedown", e => {
             e.stopPropagation();
-            const handle = e.target.closest("[data-crop-dir]");
-            const dir = handle ? handle.dataset.cropDir : "move";
+            const handle = e.target.closest("[data-dir], [data-crop-dir]");
+            const dir = handle ? (handle.dataset.dir || handle.dataset.cropDir) : "move";
             const startX = e.clientX;
             const startY = e.clientY;
             const r0 = { ...rect };
@@ -2016,12 +2244,14 @@ document.addEventListener("DOMContentLoaded", init);
         const modal = $("streetViewModal");
         if (!modal) return;
         const coordsText = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+        if ($("svCoords")) $("svCoords").textContent = coordsText;
         if ($("svCoordsLabel")) $("svCoordsLabel").textContent = coordsText;
         if ($("svExternalLink")) {
             $("svExternalLink").href = `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat},${lng}`;
         }
-        if ($("svFrame")) {
-            $("svFrame").src = `https://maps.google.com/maps?q=${lat},${lng}&layer=c&cbll=${lat},${lng}&cbp=11,0,0,0,0&output=svembed`;
+        const frame = $("svIframe") || $("svFrame");
+        if (frame) {
+            frame.src = `https://maps.google.com/maps?q=${lat},${lng}&layer=c&cbll=${lat},${lng}&cbp=11,0,0,0,0&output=svembed`;
         }
         modal.showModal();
     }
@@ -2151,6 +2381,7 @@ document.addEventListener("DOMContentLoaded", init);
     }
 
     window.renderAll = function () {
+        ensureDefaultNimAndAzconnect();
         origRenderAll();
         updateLegendVisibility();
         renderInfoCard();
@@ -2162,13 +2393,23 @@ document.addEventListener("DOMContentLoaded", init);
         initPrintCropTool();
         initRightTools();
 
-        // Sol sütun tabları: 📁 Layihələr / 🗂️ Digər
-        $("tabProjectsBtn")?.addEventListener("click", () => {
-            state.sidebarCategory = "project";
-            renderAll();
-        });
-        $("tabOtherBtn")?.addEventListener("click", () => {
-            state.sidebarCategory = "other";
+        // Sol sütun 4 Qovluq (📁 Layihələr, 🚦 NİM, 🌐 Azconnect, 🗂️ Digər) və xəritədə aktiv/deaktiv quşu
+        $("sideCatTabs")?.addEventListener("click", e => {
+            const chk = e.target.closest("[data-folder-vis]");
+            if (chk) {
+                e.stopPropagation();
+                const folder = chk.dataset.folderVis;
+                if (chk.checked) state.activeFolders.add(folder);
+                else state.activeFolders.delete(folder);
+                const fNames = { project: "📁 Layihələr", nim: "🚦 NİM", azconnect: "🌐 Azconnect", other: "🗂️ Digər" };
+                recordAuditLog("Qovluq Görünüşü", fNames[folder] || folder, "Xəritə qovluğu", `${fNames[folder]} qovluğu xəritədə ${chk.checked ? "aktiv edildi" : "gizlədildi"}`);
+                renderAll();
+                toast(`${fNames[folder]} xəritədə ${chk.checked ? "aktiv edildi" : "deaktiv edildi"}`);
+                return;
+            }
+            const btn = e.target.closest("[data-folder-tab]");
+            if (!btn) return;
+            state.sidebarCategory = btn.dataset.folderTab;
             renderAll();
         });
 
