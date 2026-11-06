@@ -160,13 +160,14 @@ const tools = (() => {
     function renderLabels() {
         labelMarkers.forEach(m => m.remove());
         labelMarkers = [];
-        const place = (at, text, className) => labelMarkers.push(new maplibregl.Marker({ element: labelEl(text, className), anchor: "center" }).setLngLat(at).addTo(map));
+        const place = (at, text, className = "measure-label", anchor = "center") => {
+            labelMarkers.push(new maplibregl.Marker({ element: labelEl(text, className), anchor }).setLngLat(at).addTo(map));
+        };
         const sides = coords => coords.forEach((c, i) => {
             if (!i) return;
-            const a = map.project(coords[i - 1]), b = map.project(c);
-            if (Math.hypot(a.x - b.x, a.y - b.y) >= SIDE_MIN_PX) {
-                place([(c[0] + coords[i - 1][0]) / 2, (c[1] + coords[i - 1][1]) / 2], fmtLen(dist(coords[i - 1], c)), "measure-label side");
-            }
+            const d = dist(coords[i - 1], c);
+            if (d < 0.05) return;
+            place([(c[0] + coords[i - 1][0]) / 2, (c[1] + coords[i - 1][1]) / 2], fmtLen(d), "measure-label side", "center");
         });
         if (!st.hidden) {
             st.shapes.forEach(s => {
@@ -177,14 +178,32 @@ const tools = (() => {
                     return;
                 }
                 if (s.tool === "coord") return place(s.coords[0], s.name || labelOf(s), "pin-label");
+                if (s.tool === "distance") {
+                    // Hər iki nöqtə arasındakı məsafə (tək-tək) xəttin üzərində qalsın
+                    sides(s.coords);
+                    // Xəttin bitdiyi yerdə ümumi məsafə (sadəcə rəqəm və ölçü vahidi)
+                    const endPt = s.coords[s.coords.length - 1];
+                    place(endPt, fmtLen(lineLength(s.coords)), "measure-label", "bottom-left");
+                    return;
+                }
                 if (!style.labels) return;
-                if (s.tool === "distance") sides(s.coords);
                 if (s.tool === "area") sides([...s.coords, s.coords[0]]);
                 const center = s.coords[s.coords.length - 1];
                 place(s.tool === "area" ? polygonCenter(s.coords) : center, s.name || labelOf(s));
             });
         }
-        if (st.draft.length > 1 && st.tool !== "draw") sides(st.draft);
+        if (st.draft.length >= 1 && st.tool !== "draw") {
+            const liveCoords = st.hover && (st.tool === "distance" || st.tool === "area")
+                ? [...st.draft, st.hover]
+                : st.draft;
+            if (liveCoords.length > 1) {
+                sides(liveCoords);
+                if (st.tool === "distance") {
+                    const lastPt = liveCoords[liveCoords.length - 1];
+                    place(lastPt, fmtLen(lineLength(liveCoords)), "measure-label", "bottom-left");
+                }
+            }
+        }
     }
 
     const polygonCenter = c => [c.reduce((n, p) => n + p[0], 0) / c.length, c.reduce((n, p) => n + p[1], 0) / c.length];
@@ -226,9 +245,30 @@ const tools = (() => {
         $("toolFinish").hidden = !(st.tool === "distance" && st.draft.length > 1 || st.tool === "area" && st.draft.length > 2);
     }
 
+    function layoutSemiFly(flyEl) {
+        if (!flyEl) return;
+        const btns = Array.from(flyEl.querySelectorAll(":scope > button")).filter(b => !b.hidden);
+        const n = btns.length;
+        if (!n) return;
+        // Yarım dairə qövsü üzərində bucaqlar (-68° .. +68° arası, mərkəz sağ kənarda)
+        const rx = 64, ry = 60, cy = 82;
+        btns.forEach((btn, idx) => {
+            const frac = n === 1 ? 0 : (idx / (n - 1)) * 2 - 1; // -1 .. +1
+            const angle = frac * (n <= 3 ? 54 : 68) * (Math.PI / 180);
+            const rightPx = Math.round(Math.cos(angle) * rx) - 4;
+            const topPx = Math.round(cy + Math.sin(angle) * ry - 17);
+            btn.style.right = `${rightPx}px`;
+            btn.style.top = `${topPx}px`;
+        });
+    }
+
     function setFly(id) {
         st.fly = id;
-        document.querySelectorAll(".fly-group").forEach(group => group.classList.toggle("open", group.dataset.fly === id));
+        document.querySelectorAll(".fly-group").forEach(group => {
+            const isOpen = group.dataset.fly === id;
+            group.classList.toggle("open", isOpen);
+            if (isOpen) layoutSemiFly(group.querySelector(".fly"));
+        });
     }
 
     function renderDock() {
@@ -514,7 +554,7 @@ const tools = (() => {
         $("toolFinish").addEventListener("click", finish);
         $("toolClose").addEventListener("click", () => setTool(null));
         $("saveKmz").addEventListener("click", () => { st.saving = false; render(); saveKmz(); });
-        $("savePdf").addEventListener("click", () => { st.saving = false; render(); if (window.openPrintCropMode) window.openPrintCropMode(); else window.print(); });
+        $("savePdf").addEventListener("click", () => { st.saving = false; render(); window.print(); });
     }
 
     function bindMap() {
@@ -523,6 +563,7 @@ const tools = (() => {
                 const s = st.shapes.find(x => x.id === moving.id);
                 s.coords[moving.vi] = e.lngLat.toArray();
                 renderSource();
+                renderLabels();
                 return;
             }
             if (!st.tool) {
@@ -536,6 +577,7 @@ const tools = (() => {
             }
             st.hover = st.draft.length ? constrain(e.lngLat.toArray(), e.originalEvent) : null;
             renderSource();
+            renderLabels();
             if (st.hover) {
                 const last = st.draft[st.draft.length - 1];
                 const total = st.tool === "circle" ? `R ${fmtLen(dist(st.draft[0], st.hover))}` :
@@ -588,6 +630,13 @@ const tools = (() => {
         document.addEventListener("keydown", e => {
             if (e.target.matches?.("input, textarea, select")) return;
             if (document.querySelector("dialog[open], #login:not([hidden])")) return;
+            if ((e.code === "Space" || e.key === " ") && st.tool) {
+                e.preventDefault();
+                if (st.draft.length >= (st.tool === "area" ? 3 : 2)) finish();
+                setTool(null);
+                toast("📏 Xətkeş / Ölçü aləti bağlandı");
+                return;
+            }
             if (e.key === "Escape" && st.tool) setTool(null);
             if (e.key === "Enter" && st.draft.length) finish();
             if (e.key === "F8") {

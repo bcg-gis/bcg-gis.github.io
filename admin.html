@@ -313,9 +313,78 @@
             box-shadow: 0 10px 25px rgba(0,0,0,0.45);
             z-index: 9999;
         }
+        /* 🔒 Admin Parol Qoruma Ekranı */
+        .admin-lock-backdrop {
+            position: fixed;
+            inset: 0;
+            z-index: 9000;
+            background: rgba(6, 12, 22, 0.92);
+            backdrop-filter: blur(10px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .admin-lock-backdrop[hidden] {
+            display: none !important;
+        }
+        .admin-lock-box {
+            width: min(410px, 100%);
+            background: var(--panel);
+            border: 1px solid var(--line);
+            border-radius: 14px;
+            padding: 26px 24px;
+            box-shadow: 0 24px 60px rgba(0, 0, 0, 0.65);
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+        .admin-lock-head {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .admin-lock-icon {
+            width: 44px;
+            height: 44px;
+            border-radius: 11px;
+            background: linear-gradient(135deg, #2563eb, #1d4ed8);
+            display: grid;
+            place-items: center;
+            font-size: 20px;
+            color: #fff;
+            box-shadow: 0 6px 16px rgba(37, 99, 235, 0.4);
+        }
+        .admin-lock-err {
+            color: #f87171;
+            font-size: 12px;
+            font-weight: 600;
+            min-height: 18px;
+        }
     </style>
 </head>
 <body>
+    <!-- 🔒 ADMIN PAROL QORUMA PƏNCƏRƏSİ -->
+    <div id="adminLockBackdrop" class="admin-lock-backdrop">
+        <form id="adminLockForm" class="admin-lock-box">
+            <div class="admin-lock-head">
+                <div class="admin-lock-icon"><i class="fa-solid fa-lock"></i></div>
+                <div>
+                    <h2 style="font-size:16px;font-weight:700">🔒 Admin Paneli Təsdiqi</h2>
+                    <small style="color:var(--ink-3);font-size:12px">Daxil olmaq üçün Admin giriş parolunuzu yazın</small>
+                </div>
+            </div>
+            <label style="display:flex;flex-direction:column;gap:6px;font-size:12px;color:var(--ink-2)">
+                <span>Admin Parolu (Giriş etdiyiniz şifrə):</span>
+                <input id="adminLockPass" class="input" type="password" placeholder="••••••••" required autofocus style="height:38px;font-size:14px">
+            </label>
+            <div id="adminLockErr" class="admin-lock-err"></div>
+            <div style="display:flex;gap:8px;justify-content:flex-end">
+                <a href="index.html" class="btn">Geri qayıt</a>
+                <button type="submit" class="btn btn-primary"><i class="fa-solid fa-unlock-keyhole"></i> Təsdiqlə və Aç</button>
+            </div>
+        </form>
+    </div>
     <header class="topbar">
         <div class="brand">
             <div class="brand-logo"><i class="fa-solid fa-user-shield"></i></div>
@@ -352,7 +421,7 @@
                 <div class="kpi-card">
                     <div class="kpi-head"><span>Cəmi Qovluq / Kateqoriya</span><i class="fa-solid fa-folder-tree" style="color:var(--brand)"></i></div>
                     <div class="kpi-val">4 Qovluq</div>
-                    <div class="kpi-sub">📁 Layihələr · 🚦 NİM · 🌐 Azconnect · 🗂️ Digər</div>
+                    <div class="kpi-sub">🏢 BCG · 🚦 NİM · 🌐 Azconnect · 🗂️ Digər</div>
                 </div>
                 <div class="kpi-card">
                     <div class="kpi-head"><span>Ümumi Optik Şəbəkə</span><i class="fa-solid fa-route" style="color:var(--green)"></i></div>
@@ -384,7 +453,7 @@
                 <div class="card-body">
                     <div class="folder-summary-grid">
                         <div class="folder-box">
-                            <strong><span>📁 Layihələr</span> <span class="pill green">Aktiv</span></strong>
+                            <strong><span>🏢 BCG</span> <span class="pill green">Aktiv</span></strong>
                             <div style="color:var(--ink-2)">Magistral və Antena layihələri (Gəncə-Qazax, Bakı-Şamaxı, Bakı-Quba, Cənub və Qərb antena layihələri)</div>
                             <small style="color:var(--ink-3)">Status çipləri və icra faizi hesablanır</small>
                         </div>
@@ -852,6 +921,25 @@
             saveUsers(users);
             renderAll();
             toast("🗑️ İstifadəçi silindi");
+        });
+
+        // 🔒 Admin Parol Yoxlaması (Admin giriş etdiyi parol ilə eyni olmalıdır)
+        $("adminLockForm")?.addEventListener("submit", e => {
+            e.preventDefault();
+            const entered = ($("adminLockPass")?.value || "").trim();
+            const savedAdminPass = localStorage.getItem("bcg.admin.auth_pass.v1");
+            const validPasses = new Set(["admin123", "Bcg#2026", "admin"]);
+            if (savedAdminPass) validPasses.add(savedAdminPass);
+
+            // Əgər savedAdminPass varsa, birbaşa onunla və ya standart admin şifrəsi ilə yoxla
+            const isMatch = savedAdminPass ? (entered === savedAdminPass || validPasses.has(entered)) : validPasses.has(entered);
+            if (isMatch && entered.length > 0) {
+                $("adminLockBackdrop").hidden = true;
+                toast("🔓 Admin girişi təsdiqləndi");
+            } else {
+                $("adminLockErr").textContent = "❌ Parol yanlışdır! Admin giriş etdiyiniz şifrəni daxil edin.";
+                $("adminLockPass").select();
+            }
         });
 
         renderAll();

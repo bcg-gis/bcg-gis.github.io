@@ -82,35 +82,122 @@
             max-width: 290px;
         }
 
-        /* Sürüşdürülən Küçə Görünüşü Adam İkonu (Pegman) */
-        #pegmanDragGhost {
-            position: fixed; z-index: 100; pointer-events: none;
-            width: 38px; height: 38px; border-radius: 999px;
-            background: #f59e0b; color: #fff; font-size: 22px;
-            display: grid; place-items: center;
-            box-shadow: 0 8px 20px rgba(245,158,11,0.6);
-            transform: translate(-50%, -80%);
+        /* Sol dibdə Yarım Dairə (Semi-Circle) üzərində Qovluqlar */
+        .semi-folder-stage {
+            position: relative;
+            height: 158px;
+            background: radial-gradient(circle at 0% 50%, rgba(37, 99, 235, 0.16), transparent 68%), var(--canvas);
+            border-bottom: 1px solid var(--line);
+            overflow: hidden;
+            user-select: none;
         }
-
-        /* Çap / PDF Çərçivə Seçimi (Crop Box) */
-        #printCropOverlay {
-            position: absolute; inset: 0; z-index: 45;
-            cursor: crosshair;
-        }
-        #cropBox {
+        .semi-arc-svg {
             position: absolute;
-            border: 2.5px dashed #38bdf8;
-            box-shadow: 0 0 0 9999px rgba(4, 12, 24, 0.68);
-            cursor: move;
+            left: 0;
+            top: 0;
+            width: 150px;
+            height: 158px;
+            pointer-events: none;
         }
-        .crop-handle {
-            position: absolute; width: 12px; height: 12px;
-            background: #38bdf8; border: 2px solid #ffffff; border-radius: 3px;
+        .semi-core-badge {
+            position: absolute;
+            left: -24px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 58px;
+            height: 76px;
+            border-radius: 0 999px 999px 0;
+            background: linear-gradient(135deg, #1e3a8a, #0f172a);
+            border: 1.5px solid rgba(56, 189, 248, 0.45);
+            border-left: none;
+            box-shadow: 0 0 22px rgba(37, 99, 235, 0.35);
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            padding-right: 9px;
+            font-size: 9.5px;
+            font-weight: 800;
+            letter-spacing: 0.05em;
+            color: #e0f2fe;
+            pointer-events: none;
         }
-        .crop-handle.nw { top: -6px; left: -6px; cursor: nwse-resize; }
-        .crop-handle.ne { top: -6px; right: -6px; cursor: nesw-resize; }
-        .crop-handle.sw { bottom: -6px; left: -6px; cursor: nesw-resize; }
-        .crop-handle.se { bottom: -6px; right: -6px; cursor: nwse-resize; }
+        .semi-folder-node {
+            position: absolute;
+            height: 30px;
+            padding: 0 11px;
+            border-radius: 999px;
+            border: 1.5px solid var(--line-strong);
+            background: var(--panel);
+            color: var(--ink-2);
+            font-size: 11.5px;
+            font-weight: 700;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            cursor: pointer;
+            transition: all 0.18s ease;
+            box-shadow: 0 3px 10px rgba(0, 0, 0, 0.25);
+            white-space: nowrap;
+        }
+        .semi-folder-node:hover {
+            transform: translateX(3px);
+            color: var(--ink);
+            border-color: var(--brand);
+        }
+        .semi-folder-node.pos-1 { left: 26px; top: 8px; }
+        .semi-folder-node.pos-2 { left: 72px; top: 44px; }
+        .semi-folder-node.pos-3 { left: 72px; top: 84px; }
+        .semi-folder-node.pos-4 { left: 26px; top: 120px; }
+        .semi-folder-node .f-cnt {
+            padding: 1px 6px;
+            border-radius: 999px;
+            font-size: 10px;
+            font-weight: 800;
+            background: rgba(255, 255, 255, 0.08);
+            color: currentColor;
+        }
+        .semi-folder-node.active[data-folder-tab="project"] {
+            background: linear-gradient(135deg, #2563eb, #1d4ed8);
+            color: #ffffff;
+            border-color: #60a5fa;
+            box-shadow: 0 0 16px rgba(37, 99, 235, 0.65);
+        }
+        .semi-folder-node.active[data-folder-tab="nim"] {
+            background: linear-gradient(135deg, #d97706, #b45309);
+            color: #ffffff;
+            border-color: #fbbf24;
+            box-shadow: 0 0 16px rgba(245, 158, 11, 0.65);
+        }
+        .semi-folder-node.active[data-folder-tab="azconnect"] {
+            background: linear-gradient(135deg, #0891b2, #0e7490);
+            color: #ffffff;
+            border-color: #22d3ee;
+            box-shadow: 0 0 16px rgba(6, 182, 212, 0.65);
+        }
+        .semi-folder-node.active[data-folder-tab="other"] {
+            background: linear-gradient(135deg, #7c3aed, #6d28d9);
+            color: #ffffff;
+            border-color: #c084fc;
+            box-shadow: 0 0 16px rgba(168, 85, 247, 0.65);
+        }
+        .semi-folder-node.active .f-cnt {
+            background: rgba(0, 0, 0, 0.28);
+            color: #ffffff;
+        }
+        .folder-group-head {
+            padding: 6px 10px;
+            font-size: 11px;
+            font-weight: 800;
+            letter-spacing: 0.03em;
+            text-transform: uppercase;
+            background: var(--canvas);
+            border-top: 1px solid var(--line);
+            border-bottom: 1px solid var(--line);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            color: var(--ink);
+        }
 
         @keyframes pulseRing {
             0% { r: 6px; opacity: 0.9; }
@@ -120,7 +207,7 @@
 
         @media print {
             @page { size: landscape; margin: 6mm; }
-            header, #sidebar, nav, #reopenSidebarBtn, #infoCard, #printCropOverlay, #toolBarHint, #layersPopover, #coordPopover, #toastBox, #hoverTip {
+            header, #sidebar, nav, #reopenSidebarBtn, #infoCard, #toolBarHint, #layersPopover, #coordPopover, #toastBox, #hoverTip {
                 display: none !important;
             }
             body, #workspace, #mapStage {
@@ -133,8 +220,6 @@
 
     <!-- MAUS ÜZƏRİNƏ GƏLDİKDƏ ÇIXAN QISA MƏLUMAT -->
     <div id="hoverTip" hidden></div>
-    <!-- KÜÇƏ GÖRÜNÜŞÜ SÜRÜŞDÜRÜLƏN ADAM İKONU -->
-    <div id="pegmanDragGhost" hidden>🧍</div>
 
     <!-- ÜST PANEL (APPBAR) -->
     <header style="background:var(--bar);color:var(--bar-ink);border-bottom:1px solid rgba(255,255,255,0.08)" class="h-12 px-3 flex items-center gap-2 shrink-0 z-50">
@@ -190,42 +275,29 @@
         <!-- SOL PANEL -->
         <aside id="sidebar" style="background:var(--panel);border-right:1px solid var(--line)" class="w-84 flex flex-col min-h-0 shrink-0 z-30">
             
-            <!-- SOL SÜTUNDA 4 SƏLİQƏLİ QOVLUQ (FOLDER): 1) LAYİHƏLƏR  2) NİM (Svetofor/Nöqtə)  3) AZCONNECT (Xətlər)  4) DİGƏR -->
-            <div class="p-2 border-b space-y-1.5" style="border-color:var(--line);background:var(--canvas)">
-                <div class="flex items-center justify-between px-1 text-[10.5px] font-semibold uppercase tracking-wider" style="color:var(--ink-3)">
-                    <span>Qovluqlar (Seç / Xəritədə Aktiv et)</span>
-                    <span>☑ Aktiv</span>
-                </div>
-                <div id="folderTabsGrid" class="grid grid-cols-2 gap-1.5">
-                    <div data-folder-tab="project" class="h-8 px-2 rounded-lg font-semibold text-xs flex items-center justify-between gap-1 cursor-pointer transition">
-                        <div class="flex items-center gap-1.5 min-w-0">
-                            <input type="checkbox" data-folder-vis="project" checked title="Bütün Layihələr qovluğunu xəritədə aktiv/deaktiv et" class="w-3.5 h-3.5 cursor-pointer accent-sky-400">
-                            <span class="truncate">📁 Layihələr</span>
-                        </div>
-                        <span id="tabProjectsCount" class="px-1.5 py-0.2 rounded-full text-[10.5px] bg-black/20"></span>
-                    </div>
-                    <div data-folder-tab="nim" class="h-8 px-2 rounded-lg font-semibold text-xs flex items-center justify-between gap-1 cursor-pointer transition">
-                        <div class="flex items-center gap-1.5 min-w-0">
-                            <input type="checkbox" data-folder-vis="nim" checked title="Bütün NİM (Svetofor) qovluğunu xəritədə aktiv/deaktiv et" class="w-3.5 h-3.5 cursor-pointer accent-amber-400">
-                            <span class="truncate">🚦 NİM</span>
-                        </div>
-                        <span id="tabNimCount" class="px-1.5 py-0.2 rounded-full text-[10.5px] bg-black/20"></span>
-                    </div>
-                    <div data-folder-tab="azconnect" class="h-8 px-2 rounded-lg font-semibold text-xs flex items-center justify-between gap-1 cursor-pointer transition">
-                        <div class="flex items-center gap-1.5 min-w-0">
-                            <input type="checkbox" data-folder-vis="azconnect" checked title="Bütün Azconnect qovluğunu xəritədə aktiv/deaktiv et" class="w-3.5 h-3.5 cursor-pointer accent-cyan-400">
-                            <span class="truncate">🌐 Azconnect</span>
-                        </div>
-                        <span id="tabAzconnectCount" class="px-1.5 py-0.2 rounded-full text-[10.5px] bg-black/20"></span>
-                    </div>
-                    <div data-folder-tab="other" class="h-8 px-2 rounded-lg font-semibold text-xs flex items-center justify-between gap-1 cursor-pointer transition">
-                        <div class="flex items-center gap-1.5 min-w-0">
-                            <input type="checkbox" data-folder-vis="other" checked title="Bütün Digər qovluğunu xəritədə aktiv/deaktiv et" class="w-3.5 h-3.5 cursor-pointer accent-sky-400">
-                            <span class="truncate">🗂️ Digər</span>
-                        </div>
-                        <span id="tabOtherCount" class="px-1.5 py-0.2 rounded-full text-[10.5px] bg-black/20"></span>
-                    </div>
-                </div>
+            <!-- SOL DİBDƏ YARIM DAİRƏ (SEMI-CIRCLE) ÜZƏRİNDƏ 4 QOVLUQ: 1) BCG  2) NİM  3) AZCONNECT  4) DİGƏR -->
+            <div class="semi-folder-stage" id="folderTabsGrid">
+                <svg class="semi-arc-svg" viewBox="0 0 150 158" fill="none" aria-hidden="true">
+                    <path d="M 0,10 A 70,70 0 0,1 0,148" stroke="rgba(56,189,248,0.45)" stroke-width="2.5" stroke-dasharray="4 3"/>
+                    <path d="M 0,28 A 50,50 0 0,1 0,130" stroke="rgba(59,130,246,0.22)" stroke-width="1.5"/>
+                </svg>
+                <div class="semi-core-badge">QOVLUQ</div>
+                <button type="button" class="semi-folder-node pos-1 active" data-folder-tab="project" title="BCG layihələri (kliklə aktiv/deaktiv et)">
+                    <span>🏢 BCG</span>
+                    <span class="f-cnt" id="tabProjectsCount">0</span>
+                </button>
+                <button type="button" class="semi-folder-node pos-2" data-folder-tab="nim" title="NİM — Svetofor və Kəsişmə nöqtələri (kliklə aktiv/deaktiv et)">
+                    <span>🚦 NİM</span>
+                    <span class="f-cnt" id="tabNimCount">0</span>
+                </button>
+                <button type="button" class="semi-folder-node pos-3" data-folder-tab="azconnect" title="Azconnect magistral xətləri (kliklə aktiv/deaktiv et)">
+                    <span>🌐 Azconnect</span>
+                    <span class="f-cnt" id="tabAzconnectCount">0</span>
+                </button>
+                <button type="button" class="semi-folder-node pos-4" data-folder-tab="other" title="Digər köməkçi qatlar (kliklə aktiv/deaktiv et)">
+                    <span>🗂️ Digər</span>
+                    <span class="f-cnt" id="tabOtherCount">0</span>
+                </button>
             </div>
 
             <!-- Axtarış + Status Filtrləri -->
@@ -235,7 +307,7 @@
             </div>
 
             <div class="px-3 py-1.5 flex items-center justify-between text-[11px] border-b" style="border-color:var(--line);color:var(--ink-2)">
-                <span id="listSectionTitle" class="font-semibold uppercase tracking-wider">Layihələr</span>
+                <span id="listSectionTitle" class="font-semibold uppercase tracking-wider">🏢 BCG</span>
                 <div class="flex gap-2.5">
                     <button id="showAllBtn" style="color:var(--brand)" class="hover:underline font-medium">Hamısını göstər</button>
                     <button id="hideAllBtn" style="color:var(--ink-3)" class="hover:underline font-medium">Gizlət</button>
@@ -253,29 +325,6 @@
                 <button id="reopenSidebarBtn" class="hidden absolute top-3 left-3 z-30 h-8 px-3 rounded-lg items-center gap-2 text-xs font-semibold shadow-lg" style="background:var(--panel);color:var(--ink);border:1px solid var(--line-strong)">
                     <span>☰ Siyahını aç</span>
                 </button>
-
-                <!-- Küçə Görünüşü (Pegman) sürükləmə ipucu -->
-                <div id="pegmanDropHint" hidden class="absolute top-3 left-1/2 -translate-x-1/2 z-40 px-4 py-2 rounded-full text-xs font-semibold shadow-xl flex items-center gap-2" style="background:#f59e0b;color:#1c1100">
-                    <span>🧍 Adam ikonunu xəritədə baxmaq istədiyiniz nöqtəyə buraxın (və ya klikləyin)</span>
-                    <button id="cancelPegmanBtn" class="ml-2 px-1.5 py-0.5 rounded bg-black/20 text-white">✕</button>
-                </div>
-
-                <!-- ÇAP VƏ PDF ÜÇÜN SAHƏ (ÇƏRÇİVƏ) SEÇİMİ -->
-                <div id="printCropOverlay" hidden>
-                    <div class="absolute top-3 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl shadow-2xl flex items-center gap-2.5 text-xs font-semibold" style="background:var(--bar);color:var(--bar-ink);border:1px solid #38bdf8">
-                        <span>📐 Haranı çap / PDF edək? (Çərçivəni sürüşdürün, künclərindən böyüdüb-kiçildin və ya xəritədə yeni çərçivə çəkin)</span>
-                        <button id="cropFullBtn" class="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-sky-300">⛶ Tam ekran</button>
-                        <button id="confirmCropPrintBtn" class="px-3 py-1 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold">🖨️ Seçilmiş hissəni Çap / PDF et</button>
-                        <button id="cancelCropPrintBtn" class="px-2 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-500/40 text-rose-300">✕ Ləğv et</button>
-                    </div>
-                    <div id="cropBox" style="left:160px;top:80px;width:620px;height:390px">
-                        <div class="crop-handle nw" data-dir="nw"></div>
-                        <div class="crop-handle ne" data-dir="ne"></div>
-                        <div class="crop-handle sw" data-dir="sw"></div>
-                        <div class="crop-handle se" data-dir="se"></div>
-                        <div class="absolute -bottom-7 left-0 px-2 py-0.5 rounded text-[11px] font-mono bg-sky-500 text-slate-950 font-bold shadow" id="cropDimLabel">Seçilmiş Çap / PDF sahəsi</div>
-                    </div>
-                </div>
 
                 <!-- ÖLÇÜSÜ DƏYİŞDİRİLƏ BİLƏN STATUS PƏNCƏRƏSİ -->
                 <div id="infoCard" class="info-card" hidden></div>
@@ -339,17 +388,13 @@
                     </g>
                 </svg>
 
-                <!-- SAĞ ALƏT PANELİ (Fokus işıqlandırma, Konumum və Küçə görünüşü adam ikonu əlavə edildi!) -->
+                <!-- SAĞ ALƏT PANELİ -->
                 <nav class="absolute top-3 right-3 z-30 flex flex-col rounded-xl shadow-lg overflow-hidden" style="background:var(--panel);border:1px solid var(--line)">
                     <button id="zoomInBtn" class="tool-btn" title="Yaxınlaşdır">＋</button>
                     <button id="zoomOutBtn" class="tool-btn border-b" style="border-color:var(--line)" title="Uzaqlaşdır">－</button>
                     <button id="homeBtn" class="tool-btn" title="Bütün Azərbaycan">⛶</button>
-                    <!-- 1 kliklə Fokus İşıqlandırma (Sağ paneldə!) -->
-                    <button id="focusToggleBtn" class="tool-btn active" title="Fokus işıqlandırma (Seçilmiş layihəni ön plana çıxarır)">💡</button>
-                    <!-- İstifadəçinin Konumu (GPS) -->
-                    <button id="myLocationBtn" class="tool-btn" title="Mənim konumum (Harada olduğumu göstər)">🧭</button>
-                    <!-- Google Maps tərzi Küçə Görünüşü Adam İkonu (Sürüşdürüb xəritəyə atmaq və ya klikləmək üçün) -->
-                    <button id="pegmanBtn" draggable="true" class="tool-btn border-b text-amber-400 hover:text-amber-300" style="border-color:var(--line)" title="Küçə Görünüşü (Adam ikonunu tutub xəritəyə atın)">🧍</button>
+                    <button id="focusToggleBtn" class="tool-btn" title="Fokus işıqlandırma (Seçilmiş layihəni ön plana çıxarır)">💡</button>
+                    <button id="myLocationBtn" class="tool-btn border-b" style="border-color:var(--line)" title="Mənim konumum (Harada olduğumu göstər)">🧭</button>
 
                     <button id="layersBtn" class="tool-btn" title="Xəritə qatı">🗺️</button>
                     <button id="namesBtn" class="tool-btn active" title="Şəhər adlarını göstər / gizlət">🏷️</button>
@@ -361,7 +406,7 @@
                     <button data-tool="note" class="tool-btn border-b" style="border-color:var(--line)" title="Xəritə üzərinə mətn qeydi yaz">✏️</button>
                     <button id="undoDrawBtn" class="tool-btn" title="Geri al">↩️</button>
                     <button id="clearDrawBtn" class="tool-btn border-b" style="border-color:var(--line)" title="Təmizlə">🗑️</button>
-                    <button id="printSideBtn" class="tool-btn text-emerald-400 hover:text-emerald-300" title="Çap / PDF (İstədiyiniz yeri çərçivəyə alın)">🖨️</button>
+                    <button id="printSideBtn" class="tool-btn text-emerald-400 hover:text-emerald-300" title="Çap / PDF">🖨️</button>
                 </nav>
 
                 <!-- XƏRİTƏ QATI POPOVER -->
@@ -403,31 +448,10 @@
                     <div class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-[#F59E0B]"></span><span>İcrada</span></div>
                     <div class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-[#3B82F6]"></span><span>Təhvil</span></div>
                     <div class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-[#EF4444]"></span><span>Layihədə</span></div>
+                    <div class="flex items-center gap-1.5 pl-2 border-l border-white/15"><span class="w-4 h-1 rounded bg-[#94A3B8]"></span><span>Lif götürülən kabel</span></div>
                     <div class="flex items-center gap-1.5 pl-2 border-l border-white/15"><span class="text-sky-400 text-xs">📍</span><span>Magistral qovşaq</span></div>
                     <div class="flex items-center gap-1.5 pl-2 border-l border-white/15"><span class="w-3.5 h-0.5 border-b-2 border-dashed border-[#38BDF8]"></span><span class="text-sky-300">Digər</span></div>
                 </section>
-            </div>
-        </div>
-    </div>
-
-    <!-- MODAL 1: KÜÇƏ GÖRÜNÜŞÜ (GOOGLE STREET VIEW PƏNCƏRƏSİ — X və ya kənara vurmaqla bağlanır) -->
-    <div id="streetViewModal" hidden class="modal-backdrop fixed inset-0 z-50 bg-black/70 grid place-items-center p-4">
-        <div style="background:var(--panel);color:var(--ink);border:1px solid var(--line-strong)" class="w-full max-w-4xl rounded-2xl overflow-hidden shadow-2xl flex flex-col h-[82vh]">
-            <div style="background:var(--bar);color:var(--bar-ink)" class="px-4 py-2.5 flex items-center justify-between">
-                <div class="flex items-center gap-2.5">
-                    <span class="w-7 h-7 rounded-full bg-amber-500 text-black grid place-items-center text-base font-bold">🧍</span>
-                    <div>
-                        <div id="svTitle" class="font-semibold text-sm">Küçə Görünüşü (Street View)</div>
-                        <div id="svCoords" class="text-[11px] text-slate-400 font-mono">40.40930, 49.86710</div>
-                    </div>
-                </div>
-                <div class="flex items-center gap-2">
-                    <a id="svExternalLink" href="#" target="_blank" rel="noopener" class="px-3 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-xs font-medium text-sky-300">↗ Google Maps-də tam aç</a>
-                    <button data-close-modal="streetViewModal" class="w-8 h-8 rounded-lg bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 grid place-items-center text-sm font-bold" title="Bağla (✕)">✕</button>
-                </div>
-            </div>
-            <div class="flex-1 relative bg-slate-950">
-                <iframe id="svIframe" class="w-full h-full border-0" allowfullscreen loading="lazy"></iframe>
             </div>
         </div>
     </div>
@@ -505,7 +529,7 @@
                     <label id="impOptProjectCard" class="flex items-start gap-2 p-2 rounded-lg border cursor-pointer" style="background:var(--brand-soft);border-color:var(--brand)">
                         <input type="radio" name="importCategory" value="project" checked class="mt-0.5">
                         <div>
-                            <div class="font-semibold">📁 Layihələr</div>
+                            <div class="font-semibold">🏢 BCG</div>
                             <div class="text-[10.5px]" style="color:var(--ink-2)">Magistral / Antena</div>
                         </div>
                     </label>
@@ -936,8 +960,9 @@
 
         const state = {
             role: "admin", // "admin" | "edit" | "view"
-            focusMode: true,
+            focusMode: false,
             sidebarCategory: "project",
+            activeFolders: new Set(["project"]),
             visibleIds: new Set(PROJECTS.map(p => p.id)),
             expandedIds: new Set(["proj_rayon_antena", "proj_magistral", "other_rm_ler"]),
             activeProjectId: null,
@@ -946,7 +971,6 @@
             query: "",
             namesOn: true,
             myLocation: null, // { x, y, lat, lng }
-            pegmanActive: false,
             tool: null,
             drawColor: DRAW_COLORS[0],
             draftPts: [],
@@ -1026,7 +1050,8 @@
         }
 
         function renderLegend() {
-            $("legendBox").hidden = state.visibleIds.size === 0;
+            const hasStatusFolder = ["project", "nim", "azconnect"].some(f => state.activeFolders.has(f));
+            $("legendBox").hidden = !hasStatusFolder || state.visibleIds.size === 0;
         }
 
         function executorSelectHtml(projId, itemId, currentExec) {
@@ -1326,10 +1351,31 @@
         })();
 
         function renderChips() {
-            const cat = state.sidebarCategory;
-            const showChips = cat !== "other";
-            $("statusChips").hidden = !showChips;
-            const all = projectsByCat(cat).flatMap(p => p.items);
+            const hasStatusFolder = ["project", "nim", "azconnect"].some(f => state.activeFolders.has(f));
+            $("statusChips").hidden = false;
+
+            const selProjId = state.selectedSeg ? state.selectedSeg.projectId : state.activeProjectId;
+            let scopeProjects = [];
+            if (selProjId) {
+                const sp = PROJECTS.find(p => p.id === selProjId && p.category !== "other");
+                if (sp) scopeProjects = [sp];
+            } else if (hasStatusFolder) {
+                scopeProjects = PROJECTS.filter(p => p.category !== "other" && state.activeFolders.has(p.category || "project"));
+            }
+
+            if (scopeProjects.length === 0) {
+                const emptyChips = [{ key: "all", label: "Hamısı", count: "-" }, ...Object.keys(STATUS_COLORS).map(k => ({
+                    key: k, label: STATUS_LABELS[k], color: STATUS_COLORS[k], count: "-"
+                }))];
+                $("statusChips").innerHTML = emptyChips.map(c => `
+                    <button data-chip="${c.key}" class="h-6 px-2 rounded-md border text-[11px] flex items-center gap-1 opacity-60 cursor-default" style="border-color:var(--line);color:var(--ink-2)">
+                        ${c.color ? `<span class="w-2 h-2 rounded-full" style="background:${c.color}"></span>` : ""}${c.label} <b>-</b>
+                    </button>
+                `).join("");
+                return;
+            }
+
+            const all = scopeProjects.flatMap(p => p.items);
             const chips = [{ key: "all", label: "Hamısı", count: all.length }, ...Object.keys(STATUS_COLORS).map(k => ({
                 key: k, label: STATUS_LABELS[k], color: STATUS_COLORS[k], count: all.filter(i => i.status === k).length
             }))];
@@ -1341,7 +1387,6 @@
         }
 
         function renderProjects() {
-            const cat = state.sidebarCategory || "project";
             const projs = realProjects();
             const nims = nimProjects();
             const azcs = azconnectProjects();
@@ -1352,146 +1397,145 @@
             $("tabAzconnectCount").textContent = azcs.length;
             $("tabOtherCount").textContent = others.length;
 
-            // Hər qovluq üçün aktivlik checkbox-unu və seçilmiş qovluq rəngini yenilə
-            const folderStyles = {
-                project: "background:var(--brand);color:var(--brand-ink);border:1px solid var(--brand)",
-                nim: "background:#d97706;color:#ffffff;border:1px solid #f59e0b",
-                azconnect: "background:#0891b2;color:#ffffff;border:1px solid #06b6d4",
-                other: "background:#0284c7;color:#ffffff;border:1px solid #38bdf8"
-            };
+            // Yarım dairə üzərindəki qovluqların aktiv rəngini yenilə
             ["project", "nim", "azconnect", "other"].forEach(c => {
-                const listForCat = projectsByCat(c);
-                const anyVis = listForCat.some(p => state.visibleIds.has(p.id));
-                const cb = document.querySelector(`[data-folder-vis="${c}"]`);
-                if (cb) cb.checked = anyVis;
                 const tabEl = document.querySelector(`[data-folder-tab="${c}"]`);
-                if (tabEl) {
-                    tabEl.style.cssText = c === cat
-                        ? folderStyles[c]
-                        : "background:var(--panel);color:var(--ink-2);border:1px solid var(--line)";
-                }
+                if (tabEl) tabEl.classList.toggle("active", state.activeFolders.has(c));
             });
 
-            const activeList = projectsByCat(cat);
+            const folderOrder = ["project", "nim", "azconnect", "other"];
+            const activeCats = folderOrder.filter(f => state.activeFolders.has(f));
             const titles = {
-                project: `📁 Layihələr (${projs.length})`,
+                project: `🏢 BCG (${projs.length})`,
                 nim: `🚦 NİM — Svetofor / Kəsişmə (${nims.length})`,
                 azconnect: `🌐 Azconnect Xətləri (${azcs.length})`,
                 other: `🗂️ Digər (${others.length})`
             };
-            $("listSectionTitle").textContent = titles[cat] || titles.project;
 
-            // A) "DİGƏR" SEÇİLƏNDƏ: Maksimum qısa və konkret
-            if (cat === "other") {
-                $("projectList").innerHTML = activeList.map(p => {
-                    const vis = state.visibleIds.has(p.id);
-                    const exp = state.expandedIds.has(p.id);
-                    const items = filteredItems(p);
-                    return `
-                        <div class="px-2.5 py-1.5 ${vis ? "" : "opacity-50"}">
-                            <div class="flex items-center gap-2">
-                                <input type="checkbox" data-toggle="${p.id}" ${vis ? "checked" : ""} class="w-3.5 h-3.5 cursor-pointer">
-                                <button data-proj="${p.id}" class="flex-1 text-left font-semibold text-xs truncate">${p.name}</button>
-                                <button data-proj="${p.id}" class="w-5 h-5 grid place-items-center text-xs" style="color:var(--ink-3)">${exp ? "▾" : "▸"}</button>
-                            </div>
-                            ${exp ? `<div class="pl-5 pt-1 space-y-0.5">${items.map(r => `
-                                <button data-seg="${p.id}:${r.id}" class="w-full flex items-center gap-1.5 px-2 py-1 rounded text-xs text-left truncate" style="${state.selectedSeg?.itemId === r.id ? "background:var(--brand-soft);color:var(--brand);font-weight:600" : "color:var(--ink-2)"}">
-                                    <span class="w-2 h-0.5 bg-[#38BDF8] shrink-0"></span>
-                                    <span class="truncate">${r.name}</span>
-                                </button>
-                            `).join("")}</div>` : ""}
-                        </div>
-                    `;
-                }).join("");
+            if (activeCats.length === 0) {
+                $("listSectionTitle").textContent = "Qovluq seçilməyib (-)";
+                $("projectList").innerHTML = `<div class="p-4 text-center text-xs" style="color:var(--ink-3)">Yuxarıdakı yarım dairədən istədiyiniz qovluğa (<b>🏢 BCG</b>, <b>🚦 NİM</b>, <b>🌐 Azconnect</b>, <b>🗂️ Digər</b>) klikləyin.</div>`;
                 return;
             }
 
-            // B) "NİM" SEÇİLƏNDƏ (Svetofor / Kəsişmə nöqtələri: Adı və Statusu!)
-            if (cat === "nim") {
-                $("projectList").innerHTML = activeList.map(p => {
+            $("listSectionTitle").textContent = activeCats.length === 1 ? titles[activeCats[0]] : `${activeCats.length} Qovluq Aktivdir`;
+
+            const renderFolderItems = cat => {
+                const activeList = projectsByCat(cat);
+                if (cat === "other") {
+                    return activeList.map(p => {
+                        const vis = state.visibleIds.has(p.id);
+                        const exp = state.expandedIds.has(p.id);
+                        const items = filteredItems(p);
+                        return `
+                            <div class="px-2.5 py-1.5 ${vis ? "" : "opacity-50"}">
+                                <div class="flex items-center gap-2">
+                                    <input type="checkbox" data-toggle="${p.id}" ${vis ? "checked" : ""} class="w-3.5 h-3.5 cursor-pointer">
+                                    <button data-proj="${p.id}" class="flex-1 text-left font-semibold text-xs truncate">${p.name}</button>
+                                    <button data-proj="${p.id}" class="w-5 h-5 grid place-items-center text-xs" style="color:var(--ink-3)">${exp ? "▾" : "▸"}</button>
+                                </div>
+                                ${exp ? `<div class="pl-5 pt-1 space-y-0.5">${items.map(r => `
+                                    <button data-seg="${p.id}:${r.id}" class="w-full flex items-center gap-1.5 px-2 py-1 rounded text-xs text-left truncate" style="${state.selectedSeg?.itemId === r.id ? "background:var(--brand-soft);color:var(--brand);font-weight:600" : "color:var(--ink-2)"}">
+                                        <span class="w-2 h-0.5 bg-[#38BDF8] shrink-0"></span>
+                                        <span class="truncate">${r.name}</span>
+                                    </button>
+                                `).join("")}</div>` : ""}
+                            </div>
+                        `;
+                    }).join("");
+                }
+
+                if (cat === "nim") {
+                    return activeList.map(p => {
+                        const vis = state.visibleIds.has(p.id);
+                        const exp = state.expandedIds.has(p.id);
+                        const items = filteredItems(p);
+                        const isActiveProj = state.activeProjectId === p.id;
+                        const doneCnt = p.items.filter(i => i.status === "bitmis" || i.status === "tehvil").length;
+                        const pct = p.items.length ? Math.round(doneCnt / p.items.length * 100) : 0;
+                        const pColor = STATUS_COLORS[p.status];
+                        return `
+                            <div class="px-2.5 py-2 transition ${vis ? "" : "opacity-45"}" style="${isActiveProj ? "background:var(--hover)" : ""}">
+                                <div class="flex items-center gap-2">
+                                    <input type="checkbox" data-toggle="${p.id}" ${vis ? "checked" : ""} class="w-3.5 h-3.5 cursor-pointer">
+                                    <button data-proj="${p.id}" class="flex-1 text-left min-w-0">
+                                        <div class="font-semibold text-xs truncate">🚦 ${p.name}</div>
+                                        <div class="text-[11px] truncate" style="color:var(--ink-2)">${p.items.length} kəsişmə · ${doneCnt} hazır</div>
+                                    </button>
+                                    <span class="px-1.5 py-0.5 rounded text-[11px] font-bold" style="background:${pColor}20;color:${pColor}">${pct}%</span>
+                                    <button data-proj="${p.id}" class="w-5 h-5 grid place-items-center text-xs" style="color:var(--ink-3)">${exp ? "▾" : "▸"}</button>
+                                </div>
+                                ${exp ? `<div class="pl-5 pt-1.5 space-y-0.5">${items.map(r => `
+                                    <button data-seg="${p.id}:${r.id}" class="w-full flex items-center gap-1.5 px-2 py-1 rounded-md text-[11.5px] text-left" style="${state.selectedSeg?.itemId === r.id ? "background:var(--brand-soft);color:var(--brand);font-weight:600" : "color:var(--ink-2)"}">
+                                        <span class="w-2 h-2 rounded-full shrink-0" style="background:${STATUS_COLORS[r.status]}"></span>
+                                        <span class="font-medium truncate">${r.name}</span>
+                                        <span class="ml-auto px-1.5 py-0.2 rounded text-[10.5px] font-semibold whitespace-nowrap" style="background:${STATUS_COLORS[r.status]}22;color:${STATUS_COLORS[r.status]}">${STATUS_LABELS[r.status]}</span>
+                                    </button>
+                                `).join("")}</div>` : ""}
+                            </div>
+                        `;
+                    }).join("");
+                }
+
+                return activeList.map(p => {
                     const vis = state.visibleIds.has(p.id);
                     const exp = state.expandedIds.has(p.id);
                     const items = filteredItems(p);
                     const isActiveProj = state.activeProjectId === p.id;
-                    const doneCnt = p.items.filter(i => i.status === "bitmis" || i.status === "tehvil").length;
-                    const pct = p.items.length ? Math.round(doneCnt / p.items.length * 100) : 0;
+
+                    let subText = "";
+                    let pct = 0;
+                    if (p.type === "points") {
+                        const ant = p.items.reduce((s, i) => s + i.antennas, 0);
+                        const planM = p.items.reduce((s, i) => s + i.planM, 0);
+                        const doneM = p.items.reduce((s, i) => s + i.doneM, 0);
+                        pct = planM ? Math.round(doneM / planM * 100) : 0;
+                        subText = `📡 ${ant} ant · ${fmtKmFromM(planM)} / ${fmtKmFromM(doneM)}`;
+                    } else {
+                        const totalKm = p.items.reduce((s, i) => s + i.totalKm, 0);
+                        const doneKm = p.items.reduce((s, i) => s + i.doneKm, 0);
+                        pct = totalKm ? Math.round(doneKm / totalKm * 100) : 0;
+                        subText = `〰️ ${totalKm} / ${doneKm} km · Qalıb: ${Math.max(0, totalKm - doneKm)} km`;
+                    }
                     const pColor = STATUS_COLORS[p.status];
+
                     return `
                         <div class="px-2.5 py-2 transition ${vis ? "" : "opacity-45"}" style="${isActiveProj ? "background:var(--hover)" : ""}">
                             <div class="flex items-center gap-2">
                                 <input type="checkbox" data-toggle="${p.id}" ${vis ? "checked" : ""} class="w-3.5 h-3.5 cursor-pointer">
                                 <button data-proj="${p.id}" class="flex-1 text-left min-w-0">
-                                    <div class="font-semibold text-xs truncate">🚦 ${p.name}</div>
-                                    <div class="text-[11px] truncate" style="color:var(--ink-2)">${p.items.length} kəsişmə · ${doneCnt} hazır</div>
+                                    <div class="font-semibold text-xs truncate">${p.name}</div>
+                                    <div class="text-[11px] truncate" style="color:var(--ink-2)">${subText}</div>
                                 </button>
                                 <span class="px-1.5 py-0.5 rounded text-[11px] font-bold" style="background:${pColor}20;color:${pColor}">${pct}%</span>
                                 <button data-proj="${p.id}" class="w-5 h-5 grid place-items-center text-xs" style="color:var(--ink-3)">${exp ? "▾" : "▸"}</button>
                             </div>
-                            ${exp ? `<div class="pl-5 pt-1.5 space-y-0.5">${items.map(r => `
-                                <button data-seg="${p.id}:${r.id}" class="w-full flex items-center gap-1.5 px-2 py-1 rounded-md text-[11.5px] text-left" style="${state.selectedSeg?.itemId === r.id ? "background:var(--brand-soft);color:var(--brand);font-weight:600" : "color:var(--ink-2)"}">
-                                    <span class="w-2 h-2 rounded-full shrink-0" style="background:${STATUS_COLORS[r.status]}"></span>
-                                    <span class="font-medium truncate">${r.name}</span>
-                                    <span class="ml-auto px-1.5 py-0.2 rounded text-[10.5px] font-semibold whitespace-nowrap" style="background:${STATUS_COLORS[r.status]}22;color:${STATUS_COLORS[r.status]}">${STATUS_LABELS[r.status]}</span>
-                                </button>
-                            `).join("")}</div>` : ""}
+                            <div class="mt-1.5 ml-5 h-1 rounded-full overflow-hidden" style="background:var(--line)">
+                                <div class="h-full rounded-full transition-all" style="width:${pct}%;background:${pColor}"></div>
+                            </div>
+                            ${exp ? `<div class="pl-5 pt-1.5 space-y-0.5">${items.map(r => {
+                                const itemRight = p.type === "points"
+                                    ? `${r.antennas} ant · ${fmtKmFromM(r.planM)} / ${fmtKmFromM(r.doneM)}`
+                                    : `${r.totalKm} / ${r.doneKm} km`;
+                                return `
+                                    <button data-seg="${p.id}:${r.id}" class="w-full flex items-center gap-1.5 px-2 py-1 rounded-md text-[11.5px] text-left" style="${state.selectedSeg?.itemId === r.id ? "background:var(--brand-soft);color:var(--brand);font-weight:600" : "color:var(--ink-2)"}">
+                                        <span class="w-2 h-2 rounded-full shrink-0" style="background:${STATUS_COLORS[r.status]}"></span>
+                                        <span class="font-medium truncate">${r.name}</span>
+                                        <span class="ml-auto text-[11px] font-semibold whitespace-nowrap" style="color:${STATUS_COLORS[r.status]}">${itemRight}</span>
+                                    </button>
+                                `;
+                            }).join("")}</div>` : ""}
                         </div>
                     `;
                 }).join("");
-                return;
-            }
+            };
 
-            // C) "LAYİHƏLƏR" VƏ YA "AZCONNECT (YALNIZ XƏTLƏR)" SEÇİLƏNDƏ
-            $("projectList").innerHTML = activeList.map(p => {
-                const vis = state.visibleIds.has(p.id);
-                const exp = state.expandedIds.has(p.id);
-                const items = filteredItems(p);
-                const isActiveProj = state.activeProjectId === p.id;
-
-                let subText = "";
-                let pct = 0;
-                if (p.type === "points") {
-                    const ant = p.items.reduce((s, i) => s + i.antennas, 0);
-                    const planM = p.items.reduce((s, i) => s + i.planM, 0);
-                    const doneM = p.items.reduce((s, i) => s + i.doneM, 0);
-                    pct = planM ? Math.round(doneM / planM * 100) : 0;
-                    subText = `📡 ${ant} ant · ${fmtKmFromM(planM)} / ${fmtKmFromM(doneM)}`;
-                } else {
-                    const totalKm = p.items.reduce((s, i) => s + i.totalKm, 0);
-                    const doneKm = p.items.reduce((s, i) => s + i.doneKm, 0);
-                    pct = totalKm ? Math.round(doneKm / totalKm * 100) : 0;
-                    subText = `〰️ ${totalKm} / ${doneKm} km · Qalıb: ${Math.max(0, totalKm - doneKm)} km`;
-                }
-                const pColor = STATUS_COLORS[p.status];
-
-                return `
-                    <div class="px-2.5 py-2 transition ${vis ? "" : "opacity-45"}" style="${isActiveProj ? "background:var(--hover)" : ""}">
-                        <div class="flex items-center gap-2">
-                            <input type="checkbox" data-toggle="${p.id}" ${vis ? "checked" : ""} class="w-3.5 h-3.5 cursor-pointer">
-                            <button data-proj="${p.id}" class="flex-1 text-left min-w-0">
-                                <div class="font-semibold text-xs truncate">${p.name}</div>
-                                <div class="text-[11px] truncate" style="color:var(--ink-2)">${subText}</div>
-                            </button>
-                            <span class="px-1.5 py-0.5 rounded text-[11px] font-bold" style="background:${pColor}20;color:${pColor}">${pct}%</span>
-                            <button data-proj="${p.id}" class="w-5 h-5 grid place-items-center text-xs" style="color:var(--ink-3)">${exp ? "▾" : "▸"}</button>
-                        </div>
-                        <div class="mt-1.5 ml-5 h-1 rounded-full overflow-hidden" style="background:var(--line)">
-                            <div class="h-full rounded-full transition-all" style="width:${pct}%;background:${pColor}"></div>
-                        </div>
-                        ${exp ? `<div class="pl-5 pt-1.5 space-y-0.5">${items.map(r => {
-                            const itemRight = p.type === "points"
-                                ? `${r.antennas} ant · ${fmtKmFromM(r.planM)} / ${fmtKmFromM(r.doneM)}`
-                                : `${r.totalKm} / ${r.doneKm} km`;
-                            return `
-                                <button data-seg="${p.id}:${r.id}" class="w-full flex items-center gap-1.5 px-2 py-1 rounded-md text-[11.5px] text-left" style="${state.selectedSeg?.itemId === r.id ? "background:var(--brand-soft);color:var(--brand);font-weight:600" : "color:var(--ink-2)"}">
-                                    <span class="w-2 h-2 rounded-full shrink-0" style="background:${STATUS_COLORS[r.status]}"></span>
-                                    <span class="font-medium truncate">${r.name}</span>
-                                    <span class="ml-auto text-[11px] font-semibold whitespace-nowrap" style="color:${STATUS_COLORS[r.status]}">${itemRight}</span>
-                                </button>
-                            `;
-                        }).join("")}</div>` : ""}
-                    </div>
-                `;
-            }).join("");
+            $("projectList").innerHTML = activeCats.map(cat => `
+                <div class="folder-group-head">
+                    <span>${titles[cat]}</span>
+                </div>
+                ${renderFolderItems(cat)}
+            `).join("");
         }
 
         /* XƏRİTƏ:
@@ -1516,21 +1560,22 @@
             const hasActiveFocus = state.focusMode && Boolean(state.activeProjectId || state.selectedSeg);
             const focusProjId = state.selectedSeg ? state.selectedSeg.projectId : state.activeProjectId;
 
-            PROJECTS.filter(p => state.visibleIds.has(p.id)).forEach(p => {
+            PROJECTS.filter(p => state.visibleIds.has(p.id) && state.activeFolders.has(p.category || "project")).forEach(p => {
                 const dimOpacity = hasActiveFocus && p.id !== focusProjId ? 0.22 : 1;
 
-                // 0) DİGƏR QOVLUĞU: Maus üzərinə gələndə YALNIZ name-də nə yazılıbsa o çıxır!
+                // 0) DİGƏR QOVLUĞU: Name hissəsində olan adlar həm xəritə üzərinə çıxır, həm də üzərinə gələndə göstərilir!
                 if (p.category === "other") {
                     filteredItems(p).forEach(r => {
                         const d = r.pts.map((pt, idx) => `${idx ? "L" : "M"} ${pt[0]} ${pt[1]}`).join(" ");
                         const isSel = state.selectedSeg?.itemId === r.id;
-                        // Yalnız r.name!
+                        const midPt = r.pts[Math.floor(r.pts.length / 2)] || r.pts[0];
                         const tipHtml = encodeURIComponent(`<div class="font-semibold text-white">${r.name}</div>`);
                         otherRoutes.push(`
                             <g data-route="${p.id}:${r.id}" data-tip="${tipHtml}" class="route-svg" opacity="${dimOpacity}">
                                 <path d="${d}" fill="none" stroke="transparent" stroke-width="${(14 * invScale).toFixed(2)}"/>
                                 <path d="${d}" fill="none" stroke="#04101c" stroke-width="${((isSel ? 5.5 : 3.5) * invScale).toFixed(2)}" stroke-linecap="round"/>
                                 <path d="${d}" fill="none" stroke="${isSel ? "#ffffff" : "#38BDF8"}" stroke-width="${((isSel ? 3.2 : 1.9) * invScale).toFixed(2)}" stroke-dasharray="${(5 * invScale).toFixed(1)},${(3.5 * invScale).toFixed(1)}" stroke-linecap="round"/>
+                                ${midPt ? `<text x="${midPt[0]}" y="${(midPt[1] - 8 * invScale).toFixed(2)}" text-anchor="middle" fill="#e0f2fe" font-size="${(9.6 * invScale).toFixed(2)}" font-weight="700" style="paint-order:stroke;stroke:#08111d;stroke-width:${(2.8 * invScale).toFixed(2)}px">${r.name}</text>` : ""}
                             </g>
                         `);
                     });
@@ -1721,9 +1766,22 @@
                     draws.push(`<circle cx="${x1}" cy="${y1}" r="${r}" fill="${s.color}33" stroke="${s.color}" stroke-width="${2.5 * invScale}"/><text x="${x1}" y="${y1}" fill="#fff" font-size="${11 * invScale}" font-weight="600">R ${(r*0.85).toFixed(1)} km</text>`);
                 } else if (s.pts.length >= 2) {
                     const d = s.pts.map((pt, i) => `${i ? "L" : "M"} ${pt[0]} ${pt[1]}`).join(" ") + (s.tool === "area" ? " Z" : "");
-                    const lenKm = s.pts.reduce((sum, pt, i) => i ? sum + Math.hypot(pt[0]-s.pts[i-1][0], pt[1]-s.pts[i-1][1])*0.85 : 0, 0);
+                    const fmtMeas = km => km >= 1 ? `${km.toFixed(2)} km` : `${Math.round(km * 1000)} m`;
+                    let segLabels = "";
+                    let totalKm = 0;
+                    for (let i = 1; i < s.pts.length; i++) {
+                        const segKm = Math.hypot(s.pts[i][0] - s.pts[i - 1][0], s.pts[i][1] - s.pts[i - 1][1]) * 0.85;
+                        totalKm += segKm;
+                        if (s.tool === "distance") {
+                            const mx = (s.pts[i][0] + s.pts[i - 1][0]) / 2;
+                            const my = (s.pts[i][1] + s.pts[i - 1][1]) / 2;
+                            segLabels += `<circle cx="${s.pts[i - 1][0]}" cy="${s.pts[i - 1][1]}" r="${3.5 * invScale}" fill="#fff" stroke="${s.color}" stroke-width="${1.5 * invScale}"/>`;
+                            segLabels += `<text x="${mx}" y="${my - 6 * invScale}" text-anchor="middle" fill="#ffffff" font-size="${10 * invScale}" font-weight="700" style="paint-order:stroke;stroke:#08111d;stroke-width:${3 * invScale}px">${fmtMeas(segKm)}</text>`;
+                        }
+                    }
                     const last = s.pts[s.pts.length - 1];
-                    draws.push(`<path d="${d}" fill="${s.tool === "area" ? s.color + "33" : "none"}" stroke="${s.color}" stroke-width="${2.5 * invScale}"/><text x="${last[0] + 8 * invScale}" y="${last[1] - 6 * invScale}" fill="#fff" font-size="${11 * invScale}" font-weight="600">${lenKm.toFixed(1)} km</text>`);
+                    segLabels += `<circle cx="${last[0]}" cy="${last[1]}" r="${4 * invScale}" fill="${s.color}" stroke="#fff" stroke-width="${1.5 * invScale}"/>`;
+                    draws.push(`<path d="${d}" fill="${s.tool === "area" ? s.color + "33" : "none"}" stroke="${s.color}" stroke-width="${2.5 * invScale}"/>${segLabels}<text x="${last[0] + 9 * invScale}" y="${last[1] + 4 * invScale}" fill="#fde047" font-size="${11.2 * invScale}" font-weight="800" style="paint-order:stroke;stroke:#08111d;stroke-width:${3.2 * invScale}px">${fmtMeas(totalKm)}</text>`);
                 }
             });
             $("drawingsGroup").innerHTML = draws.join("");
@@ -1740,14 +1798,9 @@
 
         /* MAUS XƏTT VƏ YA NÖQTƏ ÜZƏRİNƏ GƏLDİKDƏ QISA MƏLUMAT */
         $("mapSvg").addEventListener("mousemove", e => {
-            if (state.pegmanActive) {
-                $("pegmanDragGhost").hidden = false;
-                $("pegmanDragGhost").style.left = `${e.clientX}px`;
-                $("pegmanDragGhost").style.top = `${e.clientY}px`;
-            }
             const target = e.target.closest("[data-tip]");
             const tip = $("hoverTip");
-            if (!target || state.tool || state.pegmanActive) {
+            if (!target || state.tool) {
                 tip.hidden = true;
                 return;
             }
@@ -1758,10 +1811,6 @@
         });
         $("mapSvg").addEventListener("mouseleave", () => { $("hoverTip").hidden = true; });
 
-        /* SAĞ ALƏTLƏR PANELİNDƏ:
-           1) 💡 Fokus işıqlandırma (1 kliklə aktiv/deaktiv)
-           2) 🧭 Mənim Konumum (İstifadəçinin harada olduğunu göstərir)
-           3) 🧍 Küçə Görünüşü (Google Maps kimi adam ikonu — tutub xəritəyə atanda həmin yerin görüntüsü açılır, ✕ ilə bağlanır) */
         $("focusToggleBtn").onclick = () => {
             state.focusMode = !state.focusMode;
             $("focusToggleBtn").classList.toggle("active", state.focusMode);
@@ -1799,49 +1848,6 @@
                 showGpsAt(40.4093, 49.8671, 735, 298);
             }
         };
-
-        // Küçə Görünüşü (Pegman — həm sürüşdürüb atmaqla, həm kliklə)
-        function openStreetViewAtClientPoint(clientX, clientY) {
-            const rect = $("mapSvg").getBoundingClientRect();
-            const x = Math.round(((clientX - rect.left) / rect.width * 1000 - state.panX) / state.zoom);
-            const y = Math.round(((clientY - rect.top) / rect.height * 600 - state.panY) / state.zoom);
-            const lat = (41.9 - y / 600 * 3.5).toFixed(5);
-            const lng = (44.8 + x / 1000 * 5.8).toFixed(5);
-
-            state.pegmanActive = false;
-            $("pegmanBtn").classList.remove("active");
-            $("pegmanDropHint").hidden = true;
-            $("pegmanDragGhost").hidden = true;
-
-            $("svTitle").textContent = `🧍 Küçə Görünüşü (Street View)`;
-            $("svCoords").textContent = `Koordinat: ${lat}, ${lng}`;
-            $("svExternalLink").href = `https://www.google.com/maps?q=&layer=c&cbll=${lat},${lng}&cbp=11,0,0,0,0`;
-            $("svIframe").src = `https://maps.google.com/maps?q=${lat},${lng}&hl=az&z=17&layer=c&cbll=${lat},${lng}&cbp=12,0,0,0,0&output=svembed`;
-            $("streetViewModal").hidden = false;
-        }
-
-        $("pegmanBtn").onclick = () => {
-            state.pegmanActive = !state.pegmanActive;
-            $("pegmanBtn").classList.toggle("active", state.pegmanActive);
-            $("pegmanDropHint").hidden = !state.pegmanActive;
-            $("pegmanDragGhost").hidden = !state.pegmanActive;
-            if (state.pegmanActive) toast("🧍 Xəritədə baxmaq istədiyiniz nöqtəyə klikləyin və ya adam ikonunu ora sürüşdürün");
-        };
-        $("cancelPegmanBtn").onclick = () => {
-            state.pegmanActive = false;
-            $("pegmanBtn").classList.remove("active");
-            $("pegmanDropHint").hidden = true;
-            $("pegmanDragGhost").hidden = true;
-        };
-        $("pegmanBtn").addEventListener("dragstart", e => {
-            e.dataTransfer.setData("text/plain", "pegman");
-            $("pegmanDropHint").hidden = false;
-        });
-        $("mapStage").addEventListener("dragover", e => e.preventDefault());
-        $("mapStage").addEventListener("drop", e => {
-            e.preventDefault();
-            openStreetViewAtClientPoint(e.clientX, e.clientY);
-        });
 
         $("roleSelect").onchange = e => {
             state.role = e.target.value;
@@ -1893,25 +1899,27 @@
             $("newUserPass").value = rand;
         };
 
-        // 4 Qovluq (Folder) seçimi və hər qovluğun xəritədə aktiv/deaktiv edilməsi
+        // Yarım dairə üzərində 4 Qovluq (🏢 BCG, 🚦 NİM, 🌐 Azconnect, 🗂️ Digər) — quş işarəsiz, kliklə aktiv/deaktiv
         $("folderTabsGrid").addEventListener("click", e => {
-            const visCb = e.target.closest("[data-folder-vis]");
-            if (visCb) {
-                e.stopPropagation();
-                const cat = visCb.dataset.folderVis;
-                const list = projectsByCat(cat);
-                if (visCb.checked) list.forEach(p => state.visibleIds.add(p.id));
-                else list.forEach(p => state.visibleIds.delete(p.id));
-                renderAll();
-                toast(`${visCb.checked ? "✅ Qovluq aktiv edildi" : "👁️‍🗨️ Qovluq gizlədildi"}: ${cat.toUpperCase()}`);
-                return;
-            }
             const tabEl = e.target.closest("[data-folder-tab]");
             if (!tabEl) return;
             const cat = tabEl.dataset.folderTab;
-            state.sidebarCategory = cat;
-            state.selectedSeg = null;
-            if (cat === "other") state.activeProjectId = null;
+            const fNames = { project: "🏢 BCG", nim: "🚦 NİM", azconnect: "🌐 Azconnect", other: "🗂️ Digər" };
+            if (state.activeFolders.has(cat)) {
+                state.activeFolders.delete(cat);
+                const curProjId = state.selectedSeg ? state.selectedSeg.projectId : state.activeProjectId;
+                const curProj = PROJECTS.find(p => p.id === curProjId);
+                if (curProj && (curProj.category || "project") === cat) {
+                    state.selectedSeg = null;
+                    state.activeProjectId = null;
+                }
+                toast(`${fNames[cat]} söndürüldü`);
+            } else {
+                state.activeFolders.add(cat);
+                state.sidebarCategory = cat;
+                projectsByCat(cat).forEach(p => state.visibleIds.add(p.id));
+                toast(`${fNames[cat]} aktiv edildi`);
+            }
             renderAll();
         });
 
@@ -2085,10 +2093,6 @@
         });
 
         $("mapSvg").addEventListener("click", e => {
-            if (state.pegmanActive) {
-                openStreetViewAtClientPoint(e.clientX, e.clientY);
-                return;
-            }
             const rect = $("mapSvg").getBoundingClientRect();
             const x = Math.round(((e.clientX - rect.left) / rect.width * 1000 - state.panX) / state.zoom);
             const y = Math.round(((e.clientY - rect.top) / rect.height * 600 - state.panY) / state.zoom);
@@ -2107,133 +2111,27 @@
                 state.draftPts.push([x, y]);
                 if (state.draftPts.length === 2) { state.drawings.push({ tool: "circle", color: state.drawColor, pts: [...state.draftPts] }); state.draftPts = []; }
             } else {
-                state.draftPts.push([x, y]);
+                const prev = state.draftPts[state.draftPts.length - 1];
+                if (!prev || prev[0] !== x || prev[1] !== y) {
+                    state.draftPts.push([x, y]);
+                }
             }
             renderMap();
         });
 
-        /* ÇAP VƏ PDF ÇƏRÇİVƏ SEÇİMİ (Haranı çap / PDF edək?) */
-        function openPrintCropMode() {
-            const stage = $("mapStage").getBoundingClientRect();
-            const box = $("cropBox");
-            const w = Math.round(stage.width * 0.68);
-            const h = Math.round(stage.height * 0.68);
-            box.style.left = `${Math.round((stage.width - w) / 2)}px`;
-            box.style.top = `${Math.round((stage.height - h) / 2 + 16)}px`;
-            box.style.width = `${w}px`;
-            box.style.height = `${h}px`;
-            $("printCropOverlay").hidden = false;
-            toast("📐 Çap / PDF üçün çərçivəni istədiyiniz sahəyə gətirin və ya künclərindən ölçüsünü dəyişin");
-        }
-        $("printTopBtn").onclick = openPrintCropMode;
-        $("printSideBtn").onclick = openPrintCropMode;
-        $("cancelCropPrintBtn").onclick = () => { $("printCropOverlay").hidden = true; };
-        $("cropFullBtn").onclick = () => {
-            const stage = $("mapStage").getBoundingClientRect();
-            const box = $("cropBox");
-            box.style.left = "18px";
-            box.style.top = "56px";
-            box.style.width = `${Math.max(200, stage.width - 36)}px`;
-            box.style.height = `${Math.max(160, stage.height - 74)}px`;
-        };
-        $("confirmCropPrintBtn").onclick = () => {
-            const svg = $("mapSvg");
-            const stageRect = svg.getBoundingClientRect();
-            const boxRect = $("cropBox").getBoundingClientRect();
-            const prevViewBox = svg.getAttribute("viewBox") || "0 0 1000 600";
+        $("mapSvg").addEventListener("dblclick", e => {
+            if (!state.tool || (state.tool !== "distance" && state.tool !== "area")) return;
+            e.preventDefault();
+            if (state.draftPts.length >= 2) {
+                state.drawings.push({ tool: state.tool, color: state.drawColor, pts: [...state.draftPts] });
+            }
+            state.draftPts = [];
+            renderMap();
+        });
 
-            const vx = Math.max(0, ((boxRect.left - stageRect.left) / stageRect.width) * 1000);
-            const vy = Math.max(0, ((boxRect.top - stageRect.top) / stageRect.height) * 600);
-            const vw = Math.max(80, (boxRect.width / stageRect.width) * 1000);
-            const vh = Math.max(60, (boxRect.height / stageRect.height) * 600);
-
-            $("printCropOverlay").hidden = true;
-            svg.setAttribute("viewBox", `${vx.toFixed(1)} ${vy.toFixed(1)} ${vw.toFixed(1)} ${vh.toFixed(1)}`);
-            setTimeout(() => {
-                window.print();
-                setTimeout(() => {
-                    svg.setAttribute("viewBox", prevViewBox);
-                }, 300);
-            }, 120);
-        };
-
-        (() => {
-            let cropDrag = null;
-            $("printCropOverlay").addEventListener("mousedown", e => {
-                if (e.target.closest("button")) return;
-                const stageRect = $("mapStage").getBoundingClientRect();
-                const box = $("cropBox");
-                const handle = e.target.closest(".crop-handle");
-                if (handle) {
-                    e.preventDefault();
-                    cropDrag = {
-                        mode: handle.dataset.dir,
-                        startX: e.clientX, startY: e.clientY,
-                        left: box.offsetLeft, top: box.offsetTop,
-                        width: box.offsetWidth, height: box.offsetHeight
-                    };
-                } else if (e.target.closest("#cropBox")) {
-                    e.preventDefault();
-                    cropDrag = {
-                        mode: "move",
-                        startX: e.clientX, startY: e.clientY,
-                        left: box.offsetLeft, top: box.offsetTop,
-                        width: box.offsetWidth, height: box.offsetHeight,
-                        maxW: stageRect.width, maxH: stageRect.height
-                    };
-                } else {
-                    e.preventDefault();
-                    const x0 = e.clientX - stageRect.left;
-                    const y0 = e.clientY - stageRect.top;
-                    box.style.left = `${x0}px`;
-                    box.style.top = `${y0}px`;
-                    box.style.width = `40px`;
-                    box.style.height = `40px`;
-                    cropDrag = { mode: "draw", x0, y0 };
-                }
-                const onMove = ev => {
-                    if (!cropDrag) return;
-                    const dx = ev.clientX - cropDrag.startX;
-                    const dy = ev.clientY - cropDrag.startY;
-                    if (cropDrag.mode === "move") {
-                        box.style.left = `${Math.max(4, Math.min(cropDrag.maxW - cropDrag.width - 4, cropDrag.left + dx))}px`;
-                        box.style.top = `${Math.max(4, Math.min(cropDrag.maxH - cropDrag.height - 4, cropDrag.top + dy))}px`;
-                    } else if (cropDrag.mode === "draw") {
-                        const curX = ev.clientX - stageRect.left;
-                        const curY = ev.clientY - stageRect.top;
-                        box.style.left = `${Math.min(cropDrag.x0, curX)}px`;
-                        box.style.top = `${Math.min(cropDrag.y0, curY)}px`;
-                        box.style.width = `${Math.max(60, Math.abs(curX - cropDrag.x0))}px`;
-                        box.style.height = `${Math.max(50, Math.abs(curY - cropDrag.y0))}px`;
-                    } else {
-                        let { left, top, width, height } = cropDrag;
-                        if (cropDrag.mode.includes("e")) width = Math.max(80, width + dx);
-                        if (cropDrag.mode.includes("s")) height = Math.max(60, height + dy);
-                        if (cropDrag.mode.includes("w")) {
-                            const nW = Math.max(80, width - dx);
-                            left += width - nW;
-                            width = nW;
-                        }
-                        if (cropDrag.mode.includes("n")) {
-                            const nH = Math.max(60, height - dy);
-                            top += height - nH;
-                            height = nH;
-                        }
-                        box.style.left = `${left}px`;
-                        box.style.top = `${top}px`;
-                        box.style.width = `${width}px`;
-                        box.style.height = `${height}px`;
-                    }
-                };
-                const onUp = () => {
-                    cropDrag = null;
-                    window.removeEventListener("mousemove", onMove);
-                    window.removeEventListener("mouseup", onUp);
-                };
-                window.addEventListener("mousemove", onMove);
-                window.addEventListener("mouseup", onUp);
-            });
-        })();
+        /* BİRBAŞA ÇAP VƏ PDF (Əvvəlki sadə üsul) */
+        $("printTopBtn").onclick = () => window.print();
+        $("printSideBtn").onclick = () => window.print();
 
         $("finishToolBtn").onclick = () => {
             if (state.draftPts.length >= 2) state.drawings.push({ tool: state.tool, color: state.drawColor, pts: [...state.draftPts] });

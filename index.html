@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>BCG – Fiber Optik GIS Paneli</title>
-    <meta name="description" content="Baku Communications Group fiber optik şəbəkəsinin GIS idarəetmə paneli.">
+    <title>BCG � Fiber Optik GIS Paneli</title>
+    <meta name="description" content="Baku Communications Group fiber optik s?b?k?sinin GIS idar?etm? paneli.">
     <meta name="robots" content="noindex, nofollow">
     <meta name="theme-color" content="#0e1a2b">
     <link rel="icon" href="favicon.svg" type="image/svg+xml">
@@ -14,11 +14,11 @@
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap">
     <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" integrity="sha384-MinO0mNliZ3vwppuPOUnGa+iq619pfMhLVUXfC4LHwSCvF9H+6P/KO4Q7qBOYV5V" crossorigin="anonymous">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" integrity="sha384-iw3OoTErCYJJB9mCa8LNS2hbsQ7M3C0EpIsO/H5+EGAkPGc6rk+V8i04oW/K5xq0" crossorigin="anonymous">
-    <link rel="stylesheet" href="css/styles.css?v=20261104b">
+    <link rel="stylesheet" href="css/styles.css?v=20261106b">
 </head>
 <body>
 
-    <!-- GİRİŞ -->
+    <!-- GIRIS -->
     <div class="login" id="login" hidden>
         <section class="login-aside">
             <div class="login-mark"><img src="favicon.svg" alt=""> <span>Baku Communications Group</span></div>
@@ -64,7 +64,7 @@
         </section>
     </div>
 
-    <!-- ÜST PANEL -->
+    <!-- �ST PANEL -->
     <header class="appbar">
         <button class="bar-btn" id="sidebarToggle" data-i18n-title="togglePanel"><i class="fa-solid fa-bars-staggered"></i></button>
         <div class="brand">
@@ -81,7 +81,7 @@
                 <span class="count" id="notesCount" hidden></span>
             </button>
             <button class="bar-item" id="materialsBtn"><i class="fa-solid fa-boxes-stacked"></i> <span data-i18n="materials"></span></button>
-            <a class="bar-item" id="usersBtn" href="admin.html" target="_blank" rel="noopener" style="text-decoration:none;color:inherit" hidden><i class="fa-solid fa-user-shield"></i> <span>🛡️ Admin Paneli ↗</span></a>
+            <a class="bar-item" id="usersBtn" href="admin.html" target="_blank" rel="noopener" style="text-decoration:none;color:inherit" hidden><i class="fa-solid fa-user-shield"></i> <span>??? Admin Paneli ?</span></a>
             <button class="bar-item" id="importBtn"><i class="fa-solid fa-arrow-up-from-bracket"></i> <span data-i18n="import"></span></button>
             <input type="file" id="importFile" accept=".kmz,.kml,.geojson,.json" multiple hidden>
             <button class="bar-item" id="printBtn"><i class="fa-solid fa-print"></i> <span data-i18n="print"></span></button>
@@ -110,28 +110,131 @@
         <!-- SOL PANEL -->
         <aside class="sidebar" id="sidebar">
             <div class="side-view" id="listView">
-                <!-- 4 Səliqəli Qovluq (Başlıq): 📁 Layihələr, 🚦 NİM, 🌐 Azconnect, 🗂️ Digər -->
-                <div class="side-cat-tabs" id="sideCatTabs">
-                    <div class="side-cat-btn active" data-folder-tab="project" id="tabProjectsBtn">
-                        <input type="checkbox" class="folder-vis-chk" data-folder-vis="project" checked title="Layihələri xəritədə aktiv/deaktiv et">
-                        <span class="folder-btn-label">📁 Layihələr</span>
+                <!-- Sol yuxarida Yarim Dair?: Fiber Optik Kabelin En K?siyi. H?r qovluga �z r?ngind? 1 lif gedir, kabelin qalan hiss?si asagi (status panelin?) uzanir -->
+                <div class="semi-folder-stage" id="sideCatTabs" title="1x Sol klik: Aktiv/Deaktiv et � 2x Sol klik: B�t�n layih?l?ri s�nd�r">
+                    <svg class="semi-arc-svg" viewBox="0 0 220 250" preserveAspectRatio="none" aria-hidden="true">
+                        <defs>
+                            <linearGradient id="semiArcGrad" x1="0" y1="0" x2="1" y2="1">
+                                <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.7"/>
+                                <stop offset="35%" stop-color="#f59e0b" stop-opacity="0.7"/>
+                                <stop offset="70%" stop-color="#06b6d4" stop-opacity="0.7"/>
+                                <stop offset="100%" stop-color="#a855f7" stop-opacity="0.7"/>
+                            </linearGradient>
+                            <linearGradient id="cableJacketGrad" x1="0" y1="0" x2="1" y2="0">
+                                <stop offset="0%" stop-color="#070d19"/>
+                                <stop offset="50%" stop-color="#22304a"/>
+                                <stop offset="100%" stop-color="#070d19"/>
+                            </linearGradient>
+                            <filter id="foGlow" x="-40%" y="-40%" width="180%" height="180%">
+                                <feGaussianBlur stdDeviation="2.2" result="blur"/>
+                                <feMerge>
+                                    <feMergeNode in="blur"/>
+                                    <feMergeNode in="SourceGraphic"/>
+                                </feMerge>
+                            </filter>
+                        </defs>
+
+                        <!-- Yarim dair? q�vs� (qovluqlar bu x?ttin �z?rind?) -->
+                        <path d="M 0,8 A 108,98 0 0,1 0,196" fill="rgba(56,189,248,0.04)" stroke="url(#semiArcGrad)" stroke-width="2" stroke-dasharray="5 4"/>
+
+                        <!-- Kabelin uzun g�vd?si: en k?siyind?n asagiya, status panelin? dogru uzanir -->
+                        <g class="fo-trunk-sheath">
+                            <path d="M 24,112 L 24,250" fill="none" stroke="url(#cableJacketGrad)" stroke-width="22"/>
+                            <path d="M 24,112 L 24,250" fill="none" stroke="#060c17" stroke-width="16"/>
+                            <rect x="11" y="140" width="26" height="5" rx="2" fill="#334155" stroke="#64748b" stroke-width="0.8"/>
+                            <rect x="11" y="200" width="26" height="5" rx="2" fill="#334155" stroke="#64748b" stroke-width="0.8"/>
+                        </g>
+
+                        <!-- 1) BCG lifi: bir ucu BCG qovluguna, qalan hiss?si kabel daxilind? asagiya -->
+                        <g class="fo-system-group" data-fo-group="project" style="--fo-color:#38bdf8">
+                            <path class="fo-trunk-base"   d="M 18,108 L 18,250"/>
+                            <path class="fo-trunk-active" d="M 18,108 L 18,250"/>
+                            <path class="fo-trunk-pulse"  d="M 18,250 L 18,108"/>
+                            <path class="fo-branch-base"   d="M 34,80 C 38,52 40,29 58,29"/>
+                            <path class="fo-branch-active" d="M 34,80 C 38,52 40,29 58,29"/>
+                            <path class="fo-branch-pulse"  d="M 34,80 C 38,52 40,29 58,29"/>
+                            <circle class="fo-port-dot" cx="58" cy="29" r="3.6"/>
+                        </g>
+
+                        <!-- 2) NIM lifi -->
+                        <g class="fo-system-group" data-fo-group="nim" style="--fo-color:#f59e0b">
+                            <path class="fo-trunk-base"   d="M 22,108 L 22,250"/>
+                            <path class="fo-trunk-active" d="M 22,108 L 22,250"/>
+                            <path class="fo-trunk-pulse"  d="M 22,250 L 22,108"/>
+                            <path class="fo-branch-base"   d="M 44,90 C 62,82 78,75 104,75"/>
+                            <path class="fo-branch-active" d="M 44,90 C 62,82 78,75 104,75"/>
+                            <path class="fo-branch-pulse"  d="M 44,90 C 62,82 78,75 104,75"/>
+                            <circle class="fo-port-dot" cx="104" cy="75" r="3.6"/>
+                        </g>
+
+                        <!-- 3) Azconnect lifi -->
+                        <g class="fo-system-group" data-fo-group="azconnect" style="--fo-color:#06b6d4">
+                            <path class="fo-trunk-base"   d="M 26,108 L 26,250"/>
+                            <path class="fo-trunk-active" d="M 26,108 L 26,250"/>
+                            <path class="fo-trunk-pulse"  d="M 26,250 L 26,108"/>
+                            <path class="fo-branch-base"   d="M 44,102 C 62,110 78,125 104,125"/>
+                            <path class="fo-branch-active" d="M 44,102 C 62,110 78,125 104,125"/>
+                            <path class="fo-branch-pulse"  d="M 44,102 C 62,110 78,125 104,125"/>
+                            <circle class="fo-port-dot" cx="104" cy="125" r="3.6"/>
+                        </g>
+
+                        <!-- 4) Dig?r lifi -->
+                        <g class="fo-system-group" data-fo-group="other" style="--fo-color:#a855f7">
+                            <path class="fo-trunk-base"   d="M 30,108 L 30,250"/>
+                            <path class="fo-trunk-active" d="M 30,108 L 30,250"/>
+                            <path class="fo-trunk-pulse"  d="M 30,250 L 30,108"/>
+                            <path class="fo-branch-base"   d="M 40,110 C 46,138 42,171 58,171"/>
+                            <path class="fo-branch-active" d="M 40,110 C 46,138 42,171 58,171"/>
+                            <path class="fo-branch-pulse"  d="M 40,110 C 46,138 42,171 58,171"/>
+                            <circle class="fo-port-dot" cx="58" cy="171" r="3.6"/>
+                        </g>
+
+                        <!-- Fiber optik kabelin en k?siyi: qabiq + zireh + kevlar + 4 r?ngli lif borusu + m?rk?zi FRP -->
+                        <g class="fo-cross-section" transform="translate(24, 94)">
+                            <circle cx="0" cy="0" r="22" fill="#070d19" stroke="#475569" stroke-width="2.4"/>
+                            <circle cx="0" cy="0" r="18.8" fill="none" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="2.5 2" stroke-opacity="0.65"/>
+                            <circle cx="0" cy="0" r="16.2" fill="#0c1628" stroke="#eab308" stroke-width="1.3" stroke-dasharray="4 1.5" stroke-opacity="0.7"/>
+                            <g class="fo-core-tube" data-fo-core="project" style="--fo-color:#38bdf8">
+                                <circle class="fo-tube-ring" cx="-4.5" cy="-8.2" r="4.6"/>
+                                <circle class="fo-tube-glass" cx="-4.5" cy="-8.2" r="2.2"/>
+                            </g>
+                            <g class="fo-core-tube" data-fo-core="nim" style="--fo-color:#f59e0b">
+                                <circle class="fo-tube-ring" cx="7.2" cy="-5.2" r="4.6"/>
+                                <circle class="fo-tube-glass" cx="7.2" cy="-5.2" r="2.2"/>
+                            </g>
+                            <g class="fo-core-tube" data-fo-core="azconnect" style="--fo-color:#06b6d4">
+                                <circle class="fo-tube-ring" cx="7.2" cy="5.2" r="4.6"/>
+                                <circle class="fo-tube-glass" cx="7.2" cy="5.2" r="2.2"/>
+                            </g>
+                            <g class="fo-core-tube" data-fo-core="other" style="--fo-color:#a855f7">
+                                <circle class="fo-tube-ring" cx="-4.5" cy="8.2" r="4.6"/>
+                                <circle class="fo-tube-glass" cx="-4.5" cy="8.2" r="2.2"/>
+                            </g>
+                            <circle cx="0" cy="0" r="3.4" fill="#e2e8f0" stroke="#475569" stroke-width="1"/>
+                            <circle cx="0" cy="0" r="1.3" fill="#64748b"/>
+                        </g>
+                    </svg>
+
+                    <button type="button" class="semi-folder-node pos-1 active" data-folder-tab="project" id="tabProjectsBtn">
+                        <span class="semi-dot"></span>
+                        <span class="folder-btn-label">?? BCG</span>
                         <span class="side-cat-badge" id="tabProjectsCount">0</span>
-                    </div>
-                    <div class="side-cat-btn" data-folder-tab="nim" id="tabNimBtn">
-                        <input type="checkbox" class="folder-vis-chk" data-folder-vis="nim" checked title="NİM (Svetofor nöqtələrini) xəritədə aktiv/deaktiv et">
-                        <span class="folder-btn-label">🚦 NİM</span>
+                    </button>
+                    <button type="button" class="semi-folder-node pos-2" data-folder-tab="nim" id="tabNimBtn">
+                        <span class="semi-dot"></span>
+                        <span class="folder-btn-label">?? NIM</span>
                         <span class="side-cat-badge" id="tabNimCount">0</span>
-                    </div>
-                    <div class="side-cat-btn" data-folder-tab="azconnect" id="tabAzconnectBtn">
-                        <input type="checkbox" class="folder-vis-chk" data-folder-vis="azconnect" checked title="Azconnect xətlərini xəritədə aktiv/deaktiv et">
-                        <span class="folder-btn-label">🌐 Azconnect</span>
+                    </button>
+                    <button type="button" class="semi-folder-node pos-3" data-folder-tab="azconnect" id="tabAzconnectBtn">
+                        <span class="semi-dot"></span>
+                        <span class="folder-btn-label">?? Azconnect</span>
                         <span class="side-cat-badge" id="tabAzconnectCount">0</span>
-                    </div>
-                    <div class="side-cat-btn" data-folder-tab="other" id="tabOtherBtn">
-                        <input type="checkbox" class="folder-vis-chk" data-folder-vis="other" checked title="Digər qovluğunu xəritədə aktiv/deaktiv et">
-                        <span class="folder-btn-label">🗂️ Digər</span>
+                    </button>
+                    <button type="button" class="semi-folder-node pos-4" data-folder-tab="other" id="tabOtherBtn">
+                        <span class="semi-dot"></span>
+                        <span class="folder-btn-label">??? Dig?r</span>
                         <span class="side-cat-badge" id="tabOtherCount">0</span>
-                    </div>
+                    </button>
                 </div>
                 <div class="summary">
                     <div class="kpis" id="kpis"></div>
@@ -161,37 +264,13 @@
             <div class="map-stage">
                 <main id="map" data-i18n-aria="mapLabel"></main>
 
-                <!-- Küçə Görünüşü (Pegman) sürükləmə ipucu -->
-                <div class="pegman-drop-hint" id="pegmanDropHint" hidden>
-                    <span>🧍 Adam ikonunu xəritədə baxmaq istədiyiniz nöqtəyə buraxın (və ya klikləyin)</span>
-                    <button class="icon-btn" type="button" id="cancelPegmanBtn" style="width:22px;height:22px;color:#fff">✕</button>
-                </div>
-
-                <!-- ÇAP / PDF ÜÇÜN SAHƏ (ÇƏRÇİVƏ) SEÇİMİ -->
-                <div class="print-crop-overlay" id="printCropOverlay" hidden>
-                    <div class="print-crop-bar">
-                        <span>📐 Haranı çap / PDF edək? (Çərçivəni sürüşdürün və ya künclərindən ölçüsünü dəyişin)</span>
-                        <button class="btn btn-outline" type="button" id="cropFullBtn" style="height:28px;padding:0 10px;font-size:12px">⛶ Tam ekran</button>
-                        <button class="btn btn-primary" type="button" id="confirmCropPrintBtn" style="height:28px;padding:0 12px;font-size:12px">🖨️ Seçilmiş hissəni Çap / PDF et</button>
-                        <button class="btn btn-danger" type="button" id="cancelCropPrintBtn" style="height:28px;padding:0 10px;font-size:12px">✕ Ləğv et</button>
-                    </div>
-                    <div class="crop-box" id="cropBox" style="left:160px;top:70px;width:620px;height:380px">
-                        <div class="crop-handle nw" data-dir="nw"></div>
-                        <div class="crop-handle ne" data-dir="ne"></div>
-                        <div class="crop-handle sw" data-dir="sw"></div>
-                        <div class="crop-handle se" data-dir="se"></div>
-                        <div class="crop-label">Seçilmiş Çap / PDF sahəsi</div>
-                    </div>
-                </div>
-
                 <nav class="toolbar" data-i18n-aria="toolsLabel">
                     <div class="toolbar-main">
                         <div class="tool-group">
                             <button class="tool" id="zoomInBtn" data-i18n-title="zoomIn"><i class="fa-solid fa-plus"></i></button>
                             <button class="tool" id="zoomOutBtn" data-i18n-title="zoomOut"><i class="fa-solid fa-minus"></i></button>
-                            <button class="tool active" id="focusToggleBtn" title="Fokus işıqlandırma (Seçilmiş layihəni ön plana çıxarır)">💡</button>
-                            <button class="tool" id="myLocationBtn" title="Mənim konumum (Harada olduğumu göstər)">🧭</button>
-                            <button class="tool" id="pegmanBtn" draggable="true" title="Küçə Görünüşü (Adam ikonunu tutub xəritəyə atın və ya klikləyin)">🧍</button>
+                            <button class="tool" id="focusToggleBtn" title="Fokus isiqlandirma (Se�ilmis layih?ni �n plana �ixarir)">??</button>
+                            <button class="tool" id="myLocationBtn" title="M?nim konumum (Harada oldugumu g�st?r)">??</button>
                         </div>
                         <div class="fly-group" data-fly="view">
                             <button class="tool" data-group="view" data-i18n-title="groupView"><i class="fa-solid fa-compass"></i></button>
@@ -253,7 +332,7 @@
                 <section class="legend" id="legend" data-i18n-aria="legendTitle"></section>
             </div>
 
-            <!-- CƏDVƏL -->
+            <!-- C?DV?L -->
             <section class="dock" id="drawer">
                 <div class="dock-head">
                     <div class="tabs" role="tablist">
@@ -286,7 +365,7 @@
 
     <div class="measure-tip" id="measureTip" hidden></div>
 
-    <!-- MATERİAL REYESTRİ -->
+    <!-- MATERIAL REYESTRI -->
     <dialog class="modal" id="materialsModal">
         <div class="modal-head">
             <div>
@@ -303,7 +382,7 @@
         </div>
     </dialog>
 
-    <!-- QEYDLƏR -->
+    <!-- QEYDL?R -->
     <dialog class="modal modal-sm" id="notesModal">
         <div class="modal-head">
             <h2 data-i18n="notesTitle"></h2>
@@ -316,7 +395,7 @@
         <div class="notes" id="notesList"></div>
     </dialog>
 
-    <!-- REDAKTƏ -->
+    <!-- REDAKT? -->
     <dialog class="modal modal-sm" id="editModal">
         <div class="modal-head">
             <h2 id="editTitle"></h2>
@@ -334,7 +413,7 @@
         </form>
     </dialog>
 
-    <!-- PAYLAŞMA -->
+    <!-- PAYLASMA -->
     <dialog class="modal modal-sm" id="shareModal">
         <div class="modal-head">
             <div>
@@ -357,68 +436,50 @@
         <div class="notes" id="shareList"></div>
     </dialog>
 
-    <!-- KÜÇƏ GÖRÜNÜŞÜ (GOOGLE STREET VIEW) -->
-    <dialog class="modal" id="streetViewModal" style="width:min(960px,95vw);height:82dvh;padding:0;overflow:hidden">
-        <div class="modal-head" style="padding:12px 16px;background:var(--bar);color:var(--bar-ink);align-items:center">
-            <div style="display:flex;align-items:center;gap:10px">
-                <span style="font-size:20px">🧍</span>
-                <div>
-                    <h2 id="svTitle" style="font-size:14px">Küçə Görünüşü (Street View)</h2>
-                    <small id="svCoords" class="mono" style="color:var(--bar-muted)">40.40930, 49.86710</small>
-                </div>
-            </div>
-            <div style="display:flex;align-items:center;gap:8px">
-                <a id="svExternalLink" href="#" target="_blank" rel="noopener" class="btn btn-outline" style="height:28px;font-size:12px;color:#fff;border-color:rgba(255,255,255,0.25)">↗ Google Maps-də aç</a>
-                <button class="icon-btn" data-close title="Bağla" style="color:#fff"><i class="fa-solid fa-xmark"></i></button>
-            </div>
-        </div>
-        <iframe id="svIframe" style="flex:1;width:100%;height:100%;border:0;background:#050b14" allowfullscreen loading="lazy"></iframe>
-    </dialog>
-
-    <!-- ADMİN — İSTİFADƏÇİLƏRİN İDARƏ EDİLMƏSİ (User əlavə et + Şifrə / Email kodu + Edit / Baxış icazəsi) -->
+    <!-- ADMIN � ISTIFAD?�IL?RIN IDAR? EDILM?SI (User ?lav? et + Sifr? / Email kodu + Edit / Baxis icaz?si) -->
     <dialog class="modal" id="usersModal" style="width:min(880px,95vw)">
         <div class="modal-head">
             <div>
-                <h2>👥 İstifadəçilərin İdarə Edilməsi (Admin Panel)</h2>
-                <p class="muted">Yeni istifadəçiyə <b>şifrə təyin edin</b> və ya şifrəni boş buraxın ki, <b>öz e-poçt kodu (OTP)</b> ilə daxil olsun</p>
+                <h2>?? Istifad?�il?rin Idar? Edilm?si (Admin Panel)</h2>
+                <p class="muted">Yeni istifad?�iy? <b>sifr? t?yin edin</b> v? ya sifr?ni bos buraxin ki, <b>�z e-po�t kodu (OTP)</b> il? daxil olsun</p>
             </div>
-            <button class="icon-btn" data-close title="Bağla"><i class="fa-solid fa-xmark"></i></button>
+            <button class="icon-btn" data-close title="Bagla"><i class="fa-solid fa-xmark"></i></button>
         </div>
         <form id="addUserForm" class="mat-filters" style="grid-template-columns:1.1fr 1.2fr 1.2fr 1fr auto">
             <label>
-                <span>Ad və Soyad:</span>
-                <input class="input" type="text" id="newUserName" placeholder="Məs: Orxan Həsənov" required>
+                <span>Ad v? Soyad:</span>
+                <input class="input" type="text" id="newUserName" placeholder="M?s: Orxan H?s?nov" required>
             </label>
             <label>
-                <span>E-poçt (Login):</span>
+                <span>E-po�t (Login):</span>
                 <input class="input" type="email" id="newUserEmail" placeholder="orxan@bcg.az" required>
             </label>
             <label>
-                <span>🔑 Şifrə (boş = Email kodu):</span>
+                <span>?? Sifr? (bos = Email kodu):</span>
                 <span style="display:flex;gap:4px">
-                    <input class="input mono" type="text" id="newUserPass" placeholder="Boş = OTP kod">
-                    <button class="btn btn-outline" type="button" id="genPassBtn" title="Avtomatik şifrə yarat" style="padding:0 9px">🎲</button>
+                    <input class="input mono" type="text" id="newUserPass" placeholder="Bos = OTP kod">
+                    <button class="btn btn-outline" type="button" id="genPassBtn" title="Avtomatik sifr? yarat" style="padding:0 9px">??</button>
                 </span>
             </label>
             <label>
-                <span>Səlahiyyət (İcazə):</span>
+                <span>S?lahiyy?t (Icaz?):</span>
                 <select class="input" id="newUserPerm">
-                    <option value="view">👁️ Yalnız Baxış (View)</option>
-                    <option value="edit">✏️ Redaktə (Edit)</option>
-                    <option value="admin">👑 Admin (Tam)</option>
+                    <option value="view">??? Yalniz Baxis (View)</option>
+                    <option value="edit">?? Redakt? (Edit)</option>
+                    <option value="admin">?? Admin (Tam)</option>
                 </select>
             </label>
-            <button class="btn btn-primary" type="submit">+ Əlavə et</button>
+            <button class="btn btn-primary" type="submit">+ ?lav? et</button>
         </form>
         <div class="table-wrap">
             <table>
                 <thead>
                     <tr>
-                        <th>İstifadəçi</th>
-                        <th>E-poçt</th>
-                        <th>Giriş üsulu / Şifrə</th>
-                        <th>Səlahiyyət (Edit / Baxış)</th>
-                        <th class="num">Əməliyyat</th>
+                        <th>Istifad?�i</th>
+                        <th>E-po�t</th>
+                        <th>Giris �sulu / Sifr?</th>
+                        <th>S?lahiyy?t (Edit / Baxis)</th>
+                        <th class="num">?m?liyyat</th>
                     </tr>
                 </thead>
                 <tbody id="usersTableBody"></tbody>
@@ -426,80 +487,78 @@
         </div>
     </dialog>
 
-    <!-- İMPORT PƏNCƏRƏSİ (Admin: Layihə və ya Digər; İstifadəçi: Avtomatik Digər) -->
+    <!-- IMPORT P?NC?R?SI (Admin: Layih? v? ya Dig?r; Istifad?�i: Avtomatik Dig?r) -->
     <dialog class="modal modal-sm" id="importModal">
         <div class="modal-head">
             <div>
-                <h2>⬆️ KMZ / KML / GeoJSON Əlavə Et</h2>
+                <h2>?? KMZ / KML / GeoJSON ?lav? Et</h2>
                 <p class="muted" id="importRoleSubtitle"></p>
             </div>
-            <button class="icon-btn" data-close title="Bağla"><i class="fa-solid fa-xmark"></i></button>
+            <button class="icon-btn" data-close title="Bagla"><i class="fa-solid fa-xmark"></i></button>
         </div>
         <form id="importModalForm" class="edit-form">
             <div id="adminImportChoiceWrap" style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
                 <label class="imp-choice-card on" id="impOptProjectCard">
                     <input type="radio" name="importCategory" value="project" checked>
                     <div>
-                        <strong>📁 Layihələr</strong>
-                        <small>Magistral və Antena</small>
+                        <strong>?? BCG</strong>
+                        <small>Magistral v? Antena</small>
                     </div>
                 </label>
                 <label class="imp-choice-card" id="impOptNimCard">
                     <input type="radio" name="importCategory" value="nim">
                     <div>
-                        <strong>🚦 NİM (Svetofor)</strong>
-                        <small>Kəsişmə nöqtələri və status</small>
+                        <strong>?? NIM (Svetofor)</strong>
+                        <small>K?sism? n�qt?l?ri v? status</small>
                     </div>
                 </label>
                 <label class="imp-choice-card" id="impOptAzcCard">
                     <input type="radio" name="importCategory" value="azconnect">
                     <div>
-                        <strong>🌐 Azconnect</strong>
-                        <small>Yalnız xətlər (marşrutlar)</small>
+                        <strong>?? Azconnect</strong>
+                        <small>Yalniz x?tl?r (marsrutlar)</small>
                     </div>
                 </label>
                 <label class="imp-choice-card" id="impOptOtherCard">
                     <input type="radio" name="importCategory" value="other">
                     <div>
-                        <strong>🗂️ Digər (Köməkçi)</strong>
-                        <small>Yalnız name (adı) çıxır</small>
+                        <strong>??? Dig?r (K�m?k�i)</strong>
+                        <small>Yalniz name (adi) �ixir</small>
                     </div>
                 </label>
             </div>
             <div id="userAutoOtherNotice" class="mat-summary" hidden>
-                <span>ℹ️ Layihəyə import yalnız <b>Admin</b> tərəfindən edilir. Sizin yüklədiyiniz fayl avtomatik <b>🗂️ Digər</b> bölməsinə düşür.</span>
+                <span>?? Layih?y? import yalniz <b>Admin</b> t?r?find?n edilir. Sizin y�kl?diyiniz fayl avtomatik <b>??? Dig?r</b> b�lm?sin? d�s�r.</span>
             </div>
             <div id="importProjTypeWrap" class="edit-fields" style="grid-template-columns:1fr 1fr">
                 <label class="wide">
-                    <span>Layihə növü:</span>
+                    <span>Layih? n�v�:</span>
                     <select class="input" id="importGeomType">
-                        <option value="auto">✨ Fayldan avtomatik təyin et</option>
-                        <option value="lines">〰️ Magistral Xətt layihəsi</option>
-                        <option value="points">📍 Nöqtə / Antena layihəsi</option>
+                        <option value="auto">? Fayldan avtomatik t?yin et</option>
+                        <option value="lines">?? Magistral X?tt layih?si</option>
+                        <option value="points">?? N�qt? / Antena layih?si</option>
                     </select>
                 </label>
                 <label>
-                    <span>📍 Başlanğıc qovşaq adı (varsa):</span>
+                    <span>?? Baslangic qovsaq adi (varsa):</span>
                     <input class="input" type="text" id="impPointAName" placeholder="Avtomatik (atributdan)">
                 </label>
                 <label>
-                    <span>📍 Son qovşaq adı (varsa):</span>
+                    <span>?? Son qovsaq adi (varsa):</span>
                     <input class="input" type="text" id="impPointBName" placeholder="Avtomatik (atributdan)">
                 </label>
             </div>
             <label style="display:flex;flex-direction:column;gap:5px;font-size:12px;font-weight:500;color:var(--ink-2)">
-                <span>Fayl seçin (.kmz, .kml, .geojson, .json):</span>
+                <span>Fayl se�in (.kmz, .kml, .geojson, .json):</span>
                 <input class="input" type="file" id="importModalFile" accept=".kmz,.kml,.geojson,.json" multiple required style="padding-top:5px">
             </label>
             <div class="edit-actions">
                 <span></span>
-                <button class="btn btn-outline" type="button" data-close>Ləğv et</button>
-                <button class="btn btn-primary" type="submit">⬆️ Əlavə et</button>
+                <button class="btn btn-outline" type="button" data-close>L?gv et</button>
+                <button class="btn btn-primary" type="submit">?? ?lav? et</button>
             </div>
         </form>
     </dialog>
-
-    <div id="pegmanDragGhost" class="pegman-drag-ghost" hidden>🧍</div>
 
     <div class="link-error" id="linkError" hidden>
         <img src="favicon.svg" alt="">
@@ -512,10 +571,10 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" integrity="sha384-+mbV2IY1Zk/X1p/nWllGySJSUN8uMs+gUAN10Or95UBH0fpj6GfKgPmgC5EXieXG" crossorigin="anonymous"></script>
     <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js" integrity="sha384-SYKAG6cglRMN0RVvhNeBY0r3FYKNOJtznwA0v7B5Vp9tr31xAHsZC0DqkQ/pZDmj" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js" integrity="sha384-0w2KAL2YHP6wKOkUDzkCDGgVvfmHnj02DHeQ6XcHOgTfFsGyonKOpShMH1x6nk9o" crossorigin="anonymous"></script>
-    <script src="js/config.js?v=20261104b"></script>
-    <script src="js/api.js?v=20261104b"></script>
-    <script src="js/i18n.js?v=20261104b"></script>
-    <script src="js/app.js?v=20261104b"></script>
-    <script src="js/tools.js?v=20261104b"></script>
+    <script src="js/config.js?v=20261106b"></script>
+    <script src="js/api.js?v=20261106b"></script>
+    <script src="js/i18n.js?v=20261106b"></script>
+    <script src="js/app.js?v=20261106b"></script>
+    <script src="js/tools.js?v=20261106b"></script>
 </body>
 </html>

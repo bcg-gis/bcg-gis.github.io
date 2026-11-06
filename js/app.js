@@ -3,7 +3,7 @@
 const AZERBAIJAN_BOUNDS = [[38.39, 44.77], [41.91, 50.63]];
 
 const STATUS_COLORS = { bitmis: "#22C55E", icrada: "#F59E0B", tehvil: "#3B82F6", layihe: "#EF4444" };
-const ENDPOINT_MIN_ZOOM = 9;
+const ENDPOINT_MIN_ZOOM = 0;
 const STATUSES = Object.keys(STATUS_COLORS);
 
 const STORAGE = { lang: "bcg.lang", theme: "bcg.theme" };
@@ -32,8 +32,8 @@ const state = {
     dockTab: "segments",
     notes: [],
     sidebarCategory: "project",
-    activeFolders: new Set(["project", "nim", "azconnect", "other"]),
-    focusMode: true
+    activeFolders: new Set(["project"]),
+    focusMode: false
 };
 
 let map, routePopup, currentBase, goToMarker;
@@ -177,6 +177,7 @@ async function handleLogin(event) {
         $("loginError").textContent = t(result.error === "credentials" ? "loginFailed" : "loginNetwork");
         return;
     }
+    try { localStorage.setItem("bcg.admin.auth_pass.v1", password); } catch {}
     $("loginError").textContent = "";
     $("loginPass").value = "";
     await enterApp(result.user);
@@ -509,6 +510,108 @@ const BASE_MAPS = {
 };
 const NAME_LAYERS = ["esri-transport", "esri-places"];
 
+/* Hər nöqtə layihəsi üçün fərqli həndəsi işarə (şərti işarə və xəritə üzərində fərqləndirmə) */
+const POINT_SHAPES = [
+    { id: "circle", symbol: "●", name: "Dairə" },
+    { id: "diamond", symbol: "◆", name: "Romb" },
+    { id: "square", symbol: "■", name: "Kvadrat" },
+    { id: "triangle", symbol: "▲", name: "Üçbucaq" },
+    { id: "hexagon", symbol: "⬢", name: "Altıbucaqlı" },
+    { id: "star", symbol: "★", name: "Ulduz" }
+];
+
+function isPointProject(p) {
+    if (!p) return false;
+    if (p.type === "points" || p.category === "nim") return true;
+    return Array.isArray(p.items) && p.items.length > 0 && p.items.every(r => (r.coords?.length === 1) || (r.antennas || 0) > 0);
+}
+
+function getProjectShape(project) {
+    if (!project) return POINT_SHAPES[0];
+    const ptProjects = state.projects.filter(isPointProject);
+    const idx = ptProjects.findIndex(p => p.id === project.id);
+    if (idx >= 0) return POINT_SHAPES[idx % POINT_SHAPES.length];
+    let hash = 0;
+    const str = String(project.id || project.name || "");
+    for (let i = 0; i < str.length; i++) hash = (hash * 31 + str.charCodeAt(i)) >>> 0;
+    return POINT_SHAPES[hash % POINT_SHAPES.length];
+}
+
+function registerPointShapeImages() {
+    if (!map) return;
+    const colors = [...Object.values(STATUS_COLORS), "#38BDF8"];
+    const size = 44;
+    const half = size / 2;
+    const r = 13;
+
+    POINT_SHAPES.forEach(shape => {
+        colors.forEach(color => {
+            const id = `pt-${shape.id}-${color.replace("#", "").toLowerCase()}`;
+            if (map.hasImage(id)) return;
+            const canvas = document.createElement("canvas");
+            canvas.width = size;
+            canvas.height = size;
+            const ctx = canvas.getContext("2d");
+
+            ctx.save();
+            ctx.beginPath();
+            if (shape.id === "circle") {
+                ctx.arc(half, half, r, 0, Math.PI * 2);
+            } else if (shape.id === "diamond") {
+                ctx.moveTo(half, half - r - 2);
+                ctx.lineTo(half + r + 2, half);
+                ctx.lineTo(half, half + r + 2);
+                ctx.lineTo(half - r - 2, half);
+                ctx.closePath();
+            } else if (shape.id === "square") {
+                const s = r * 1.65;
+                ctx.rect(half - s / 2, half - s / 2, s, s);
+            } else if (shape.id === "triangle") {
+                const tr = r + 3;
+                ctx.moveTo(half, half - tr);
+                ctx.lineTo(half + tr * 0.92, half + tr * 0.78);
+                ctx.lineTo(half - tr * 0.92, half + tr * 0.78);
+                ctx.closePath();
+            } else if (shape.id === "hexagon") {
+                const hr = r + 1.5;
+                for (let i = 0; i < 6; i++) {
+                    const ang = (Math.PI / 3) * i - Math.PI / 6;
+                    const x = half + hr * Math.cos(ang);
+                    const y = half + hr * Math.sin(ang);
+                    if (i === 0) ctx.moveTo(x, y);
+                    else ctx.lineTo(x, y);
+                }
+                ctx.closePath();
+            } else if (shape.id === "star") {
+                const outer = r + 3.5;
+                const inner = r * 0.5;
+                for (let i = 0; i < 10; i++) {
+                    const rad = i % 2 === 0 ? outer : inner;
+                    const ang = (Math.PI / 5) * i - Math.PI / 2;
+                    const x = half + rad * Math.cos(ang);
+                    const y = half + rad * Math.sin(ang);
+                    if (i === 0) ctx.moveTo(x, y);
+                    else ctx.lineTo(x, y);
+                }
+                ctx.closePath();
+            }
+
+            ctx.shadowColor = "rgba(0, 0, 0, 0.45)";
+            ctx.shadowBlur = 4;
+            ctx.fillStyle = color;
+            ctx.fill();
+
+            ctx.shadowBlur = 0;
+            ctx.lineWidth = 3.2;
+            ctx.strokeStyle = "#ffffff";
+            ctx.stroke();
+            ctx.restore();
+
+            map.addImage(id, ctx.getImageData(0, 0, size, size), { pixelRatio: 2 });
+        });
+    });
+}
+
 function mapStyle() {
     const raster = (tiles, tileSize, maxzoom, attribution = "") => ({ type: "raster", tiles, tileSize, maxzoom, attribution });
     const empty = { type: "geojson", data: { type: "FeatureCollection", features: [] } };
@@ -520,72 +623,109 @@ function mapStyle() {
             esri: raster(esriTiles("World_Imagery"), 256, 19, "Imagery &copy; Esri, Maxar, Earthstar Geographics"),
             "esri-transport": raster(esriTiles("Reference/World_Transportation"), 256, 19),
             "esri-places": raster(esriTiles("Reference/World_Boundaries_and_Places"), 256, 19),
-            osm: raster(["https://tile.openstreetmap.org/{z}/{x}/{y}.png"], 256, 19, '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'),
-            carto: raster(["a", "b", "c", "d"].map(s => `https://${s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png`), 256, 20, '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'),
+            osm: raster(["0", "1", "2", "3"].map(s => `https://mt${s}.google.com/vt/lyrs=m&hl=az&x={x}&y={y}&z={z}`), 256, 20, "Xəritə məlumatları &copy; Google"),
+            carto: raster(esriTiles("Canvas/World_Dark_Gray_Base"), 256, 19, "Xəritə &copy; Esri"),
             routes: empty,
+            "route-labels": empty,
             draw: empty
         },
         layers: [
             { id: "bg", type: "background", paint: { "background-color": "#1c2a30" } },
             rasterLayer("esri"), rasterLayer("esri-transport"), rasterLayer("esri-places"), rasterLayer("osm"), rasterLayer("carto"),
             { id: "routes-casing", type: "line", source: "routes", filter: ["==", ["geometry-type"], "LineString"], layout: { "line-cap": "round", "line-join": "round" },
-                paint: { "line-color": ["case", ["get", "sel"], "#ffffff", "#04101c"], "line-width": ["case", ["get", "sel"], 10, 7], "line-opacity": ["case", ["get", "dim"], 0.14, ["case", ["get", "sel"], 1, .5]] } },
+                paint: { "line-color": ["case", ["get", "sel"], "#ffffff", "#04101c"], "line-width": ["case", ["get", "sel"], 10, 7], "line-opacity": ["case", ["get", "dim"], 0.22, ["case", ["get", "sel"], 1, .75]] } },
             { id: "routes-line", type: "line", source: "routes", filter: ["all", ["==", ["geometry-type"], "LineString"], ["!", ["has", "isOther"]]], layout: { "line-cap": "round", "line-join": "round" },
-                paint: { "line-color": ["get", "color"], "line-width": ["case", ["get", "sel"], 6, 4], "line-opacity": ["case", ["get", "dim"], 0.16, 1] } },
+                paint: { "line-color": ["get", "color"], "line-width": ["case", ["get", "sel"], 6.5, 4.5], "line-opacity": ["case", ["get", "dim"], 0.25, 1] } },
             { id: "routes-other", type: "line", source: "routes", filter: ["all", ["==", ["geometry-type"], "LineString"], ["has", "isOther"]], layout: { "line-cap": "round", "line-join": "round" },
-                paint: { "line-color": ["get", "color"], "line-width": ["case", ["get", "sel"], 5, 3.2], "line-dasharray": [2, 1.5], "line-opacity": ["case", ["get", "dim"], 0.16, 0.9] } },
+                paint: { "line-color": ["get", "color"], "line-width": ["case", ["get", "sel"], 5.5, 3.6], "line-dasharray": [2, 1.5], "line-opacity": ["case", ["get", "dim"], 0.25, 0.95] } },
             { id: "routes-hit", type: "line", source: "routes", filter: ["==", ["geometry-type"], "LineString"], paint: { "line-color": "#000", "line-width": 16, "line-opacity": 0 } },
-            { id: "routes-ends", type: "symbol", source: "routes", minzoom: ENDPOINT_MIN_ZOOM, filter: ["all", ["==", ["geometry-type"], "Point"], ["!", ["has", "isRayonPoint"]]],
-                layout: {
-                    "text-field": ["case", ["has", "endName"], ["concat", "📍 ", ["get", "endName"]], "📍"],
-                    "text-font": ["Open Sans Semibold", "Arial Unicode MS Bold"],
-                    "text-size": ["interpolate", ["linear"], ["zoom"], 8, 11.5, 13, 10.5],
-                    "text-anchor": "bottom",
-                    "text-offset": [0, -0.15],
-                    "text-allow-overlap": false
-                },
+            { id: "routes-ends", type: "circle", source: "routes", filter: ["all", ["==", ["geometry-type"], "Point"], ["!", ["has", "isRayonPoint"]]],
                 paint: {
-                    "text-color": "#ffffff",
-                    "text-halo-color": "#0b1524",
-                    "text-halo-width": 2,
-                    "text-opacity": ["case", ["get", "dim"], 0.18, 1]
-                } },
-            { id: "routes-point-halo", type: "circle", source: "routes", filter: ["all", ["==", ["geometry-type"], "Point"], ["has", "isRayonPoint"]],
-                paint: {
-                    "circle-radius": ["interpolate", ["linear"], ["zoom"], 6, ["case", ["get", "sel"], 15, 11], 14, ["case", ["get", "sel"], 10, 7.5]],
-                    "circle-color": ["get", "color"],
-                    "circle-opacity": ["case", ["get", "dim"], 0.08, 0.28],
-                    "circle-stroke-color": ["case", ["get", "sel"], "#ffffff", ["get", "color"]],
-                    "circle-stroke-width": ["case", ["get", "sel"], 2.8, 1.8],
-                    "circle-stroke-opacity": ["case", ["get", "dim"], 0.18, 1]
-                } },
-            { id: "routes-point-core", type: "circle", source: "routes", filter: ["all", ["==", ["geometry-type"], "Point"], ["has", "isRayonPoint"]],
-                paint: {
-                    "circle-radius": ["interpolate", ["linear"], ["zoom"], 6, 5.5, 14, 4],
+                    "circle-radius": ["interpolate", ["linear"], ["zoom"], 6, 4.2, 14, 5.5],
                     "circle-color": ["get", "color"],
                     "circle-stroke-color": "#ffffff",
                     "circle-stroke-width": 1.8,
-                    "circle-opacity": ["case", ["get", "dim"], 0.18, 1],
-                    "circle-stroke-opacity": ["case", ["get", "dim"], 0.18, 1]
+                    "circle-opacity": ["case", ["get", "dim"], 0.28, 1],
+                    "circle-stroke-opacity": ["case", ["get", "dim"], 0.28, 1]
                 } },
-            { id: "routes-point-label", type: "symbol", source: "routes", filter: ["all", ["==", ["geometry-type"], "Point"], ["has", "isRayonPoint"]],
+            /* Mərhələ 1 (Azərbaycan ümumi baxış: zoom < 7.8): yalnız təmiz rəng statusu nöqtəsi */
+            { id: "routes-point-overview", type: "circle", source: "routes", maxzoom: 7.8, filter: ["all", ["==", ["geometry-type"], "Point"], ["has", "isRayonPoint"]],
+                paint: {
+                    "circle-radius": ["interpolate", ["linear"], ["zoom"], 4, 3.8, 7.8, 5.4],
+                    "circle-color": ["get", "color"],
+                    "circle-stroke-width": ["case", ["get", "sel"], 1.5, 0],
+                    "circle-stroke-color": "#ffffff",
+                    "circle-opacity": ["case", ["get", "dim"], 0.28, 0.96]
+                } },
+            /* Mərhələ 2 (Orta miqyas: zoom >= 7.8): hər layihənin öz fərqli nöqtə işarəsi (adlar hələ çıxmır) */
+            { id: "routes-point-halo", type: "circle", source: "routes", minzoom: 7.8, filter: ["all", ["==", ["geometry-type"], "Point"], ["has", "isRayonPoint"]],
+                paint: {
+                    "circle-radius": ["case", ["get", "sel"], 13, 9.5],
+                    "circle-color": ["get", "color"],
+                    "circle-opacity": ["case", ["get", "dim"], 0.12, ["case", ["get", "sel"], 0.38, 0.22]],
+                    "circle-stroke-color": ["case", ["get", "sel"], "#ffffff", ["get", "color"]],
+                    "circle-stroke-width": ["case", ["get", "sel"], 2.2, 1.2],
+                    "circle-stroke-opacity": ["case", ["get", "dim"], 0.25, 0.85]
+                } },
+            { id: "routes-point-shape", type: "symbol", source: "routes", minzoom: 7.8, filter: ["all", ["==", ["geometry-type"], "Point"], ["has", "isRayonPoint"]],
                 layout: {
-                    "text-field": ["get", "label"],
-                    "text-font": ["Open Sans Semibold", "Arial Unicode MS Bold"],
-                    "text-size": ["interpolate", ["linear"], ["zoom"], 6, 11.8, 10, 10.4, 14, 9.0, 18, 7.8],
-                    "text-variable-anchor": ["top", "bottom", "left", "right", "top-left", "top-right", "bottom-left", "bottom-right"],
-                    "text-radial-offset": ["interpolate", ["linear"], ["zoom"], 6, 1.05, 14, 0.75],
-                    "text-padding": 4,
+                    "icon-image": ["get", "shapeIcon"],
+                    "icon-size": ["interpolate", ["linear"], ["zoom"], 7.8, ["case", ["get", "sel"], 0.96, 0.76], 13, ["case", ["get", "sel"], 1.15, 0.95]],
+                    "icon-allow-overlap": true,
+                    "icon-ignore-placement": true
+                },
+                paint: {
+                    "icon-opacity": ["case", ["get", "dim"], 0.28, 1]
+                } },
+            /* Mərhələ 3 (Yaxın miqyas: zoom >= 9.6): sadə, qalın olmayan, bir-birinə qarışmayan oxunaqlı adlar */
+            { id: "routes-ends-label", type: "symbol", source: "route-labels", minzoom: 9.6, filter: ["has", "endName"],
+                layout: {
+                    "text-field": ["get", "endName"],
+                    "text-font": ["Noto Sans Regular"],
+                    "text-size": ["interpolate", ["linear"], ["zoom"], 9.6, 10.8, 14, 11.8],
+                    "text-anchor": "bottom",
+                    "text-offset": [0, -0.6],
+                    "text-padding": 3,
                     "text-allow-overlap": false,
                     "text-ignore-placement": false
                 },
                 paint: {
-                    "text-color": "#ffffff",
-                    "text-halo-color": "#0b1524",
-                    "text-halo-width": 2.2,
-                    "text-halo-blur": 0.4,
-                    "text-opacity": ["case", ["get", "dim"], 0.18, 1]
+                    "text-color": "#f1f5f9",
+                    "text-halo-color": "rgba(15, 23, 42, 0.88)",
+                    "text-halo-width": 1.25,
+                    "text-halo-blur": 0.2,
+                    "text-opacity": ["case", ["get", "dim"], 0.28, 1]
                 } },
+            /* Nöqtə adları brauzer şrifti ilə şəkil kimi çəkilir: Azərbaycan hərfləri (ə, ş, ç, ğ, ı, ö, ü) düzgün görünür */
+            { id: "routes-point-name", type: "symbol", source: "route-labels", minzoom: 8, maxzoom: 9.6, filter: ["has", "nameImg"],
+                layout: {
+                    "icon-image": ["get", "nameImg"],
+                    "icon-anchor": "top",
+                    "icon-offset": [0, 11],
+                    "icon-padding": 3,
+                    "icon-allow-overlap": false,
+                    "icon-ignore-placement": false
+                },
+                paint: { "icon-opacity": ["case", ["get", "dim"], 0.28, 1] } },
+            { id: "routes-point-label", type: "symbol", source: "route-labels", minzoom: 9.6, maxzoom: 11, filter: ["has", "labelImg"],
+                layout: {
+                    "icon-image": ["get", "labelImg"],
+                    "icon-anchor": "top",
+                    "icon-offset": [0, 12],
+                    "icon-padding": 1,
+                    "icon-allow-overlap": false,
+                    "icon-ignore-placement": false
+                },
+                paint: { "icon-opacity": ["case", ["get", "dim"], 0.28, 1] } },
+            { id: "routes-point-label-near", type: "symbol", source: "route-labels", minzoom: 11, filter: ["has", "labelImg"],
+                layout: {
+                    "icon-image": ["get", "labelImg"],
+                    "icon-anchor": "top",
+                    "icon-offset": [0, 12],
+                    "icon-allow-overlap": true,
+                    "icon-ignore-placement": true
+                },
+                paint: { "icon-opacity": ["case", ["get", "dim"], 0.28, 1] } },
             ...tools.layers()
         ]
     };
@@ -609,6 +749,7 @@ function initMap() {
     routePopup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, className: "map-tip", offset: 12, maxWidth: "300px" });
 
     map.on("load", () => {
+        registerPointShapeImages();
         switchBaseLayer("satellite");
         tools.init();
         drawRoutes();
@@ -620,7 +761,7 @@ function initMap() {
     map.on("rotate", () => {
         $("northIcon").style.transform = `rotate(${-45 - map.getBearing()}deg)`;
     });
-    ["routes-hit", "routes-ends", "routes-point-halo", "routes-point-core", "routes-point-label"].forEach(layer => {
+    ["routes-hit", "routes-ends", "routes-ends-label", "routes-point-overview", "routes-point-halo", "routes-point-shape", "routes-point-name", "routes-point-label", "routes-point-label-near"].forEach(layer => {
         map.on("mousemove", layer, e => {
             if (tools.isActive()) return;
             window.routeHover = true;
@@ -662,8 +803,21 @@ function switchBaseLayer(name) {
     currentBase = name;
     ["esri", "osm", "carto"].forEach(id => map.setLayoutProperty(id, "visibility", id === base.raster ? "visible" : "none"));
     map.setPaintProperty("bg", "background-color", base.bg);
+
+    // Xəritə qatına uyğun (küçə/ağ fonda tünd sadə mətn, peyk/tünd fonda açıq sadə mətn) rəng tonu
+    const isLightLayer = name === "street" || name === "blank";
+    const textColor = isLightLayer ? "#0f172a" : "#f8fafc";
+    const haloColor = isLightLayer ? "rgba(255, 255, 255, 0.96)" : "rgba(15, 23, 42, 0.92)";
+    ["routes-ends-label"].forEach(layerId => {
+        if (map.getLayer(layerId)) {
+            map.setPaintProperty(layerId, "text-color", textColor);
+            map.setPaintProperty(layerId, "text-halo-color", haloColor);
+        }
+    });
+
     applyNames();
     renderLayerOptions();
+    drawRoutes();
 }
 
 function applyNames() {
@@ -721,43 +875,111 @@ function initMouseGestures() {
     box.addEventListener("auxclick", e => { if (e.button === 1) e.preventDefault(); });
 }
 
+/* WebGL PBF şriftlər yalnız BMP (<= 0xFFFF) simvolları dəstəkləyir; emojiləri silirik ki 404 PBF xətası olmasın */
+const cleanGlText = str => String(str || "").replace(/[\uD800-\uDFFF]/g, "").trim();
+
+/* Nöqtə yazıları brauzer şrifti ilə canvas-da çəkilib xəritəyə şəkil kimi verilir.
+   Beləliklə ə, ş, ç, ğ, ı, ö, ü hərfləri itmir və yazı xəritə qatına uyğun rəngdə olur. */
+const LABEL_FONT = '"Inter", "Segoe UI", Arial, sans-serif';
+function ensureLabelImage(text) {
+    if (!map || !text) return null;
+    const light = currentBase === "street" || currentBase === "blank";
+    const key = `lbl:${light ? "l" : "d"}:${text}`;
+    if (map.hasImage(key)) return key;
+
+    const lines = String(text).split("\n");
+    const sizes = lines.map((_, i) => (i === 0 ? 13.5 : 12));
+    const weights = lines.map((_, i) => (i === 0 ? 600 : 500));
+    const lineH = s => Math.round(s * 1.32);
+    const ratio = 2;
+    const pad = 4;
+    const measure = document.createElement("canvas").getContext("2d");
+    let textW = 0;
+    lines.forEach((ln, i) => {
+        measure.font = `${weights[i]} ${sizes[i]}px ${LABEL_FONT}`;
+        textW = Math.max(textW, measure.measureText(ln).width);
+    });
+    const W = Math.ceil(textW + pad * 2);
+    const H = Math.ceil(lines.reduce((s, _, i) => s + lineH(sizes[i]), 0) + pad * 2);
+
+    const canvas = document.createElement("canvas");
+    canvas.width = W * ratio;
+    canvas.height = H * ratio;
+    const ctx = canvas.getContext("2d");
+    ctx.scale(ratio, ratio);
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    ctx.lineJoin = "round";
+
+    const mainColor = light ? "#0f172a" : "#f8fafc";
+    const subColor = light ? "#334155" : "#cbd5e1";
+    const haloColor = light ? "rgba(255, 255, 255, 0.96)" : "rgba(15, 23, 42, 0.94)";
+    let y = pad;
+    lines.forEach((ln, i) => {
+        ctx.font = `${weights[i]} ${sizes[i]}px ${LABEL_FONT}`;
+        ctx.lineWidth = 3.4;
+        ctx.strokeStyle = haloColor;
+        ctx.strokeText(ln, W / 2, y);
+        ctx.fillStyle = i === 0 ? mainColor : subColor;
+        ctx.fillText(ln, W / 2, y);
+        y += lineH(sizes[i]);
+    });
+    map.addImage(key, ctx.getImageData(0, 0, canvas.width, canvas.height), { pixelRatio: ratio });
+    return key;
+}
+
 function drawRoutes() {
+    if (!map) return;
     const source = map.getSource("routes");
-    if (!source) return;
+    const labelSource = map.getSource("route-labels");
+    if (!source) {
+        map.once("load", drawRoutes);
+        return;
+    }
+    registerPointShapeImages();
     const selected = selectedEntry();
     const activeProjId = selected ? selected.project.id : window.__activeProjectId || null;
     const features = [];
+    const labelFeatures = [];
     const pointSlots = {};
 
     visibleEntries().forEach(({ project, item: r }) => {
-        if (!r.coords || r.coords.length === 0) return;
+        const rawCoords = Array.isArray(r.coords) ? r.coords : [];
+        const coords = rawCoords
+            .map(c => Array.isArray(c) && c.length >= 2 ? [Number(c[0]), Number(c[1])] : null)
+            .filter(c => c && !isNaN(c[0]) && !isNaN(c[1]));
+        if (coords.length === 0) return;
+
         const isOther = project.category === "other";
         const color = isOther ? "#38BDF8" : statusTone(r.status);
+        const shape = getProjectShape(project);
+        const shapeIcon = `pt-${shape.id}-${color.replace("#", "").toLowerCase()}`;
         const dim = Boolean(state.focusMode && activeProjId && project.id !== activeProjId);
-        const isPointItem = project.type === "points" || r.coords.length === 1 || (r.antennas || 0) > 0;
+        const isSingleCoord = coords.length === 1 || (coords.length === 2 && coords[0][0] === coords[1][0] && coords[0][1] === coords[1][1]);
+        const isPointItem = project.type === "points" || isSingleCoord || (r.antennas || 0) > 0;
 
         if (isOther) {
-            // 🗂️ Digər bölməsi: üzərinə gələndə yalnız name-də nə yazılıbsa o çıxır
+            // 🗂️ Digər bölməsi: Name hissəsində olan adlar həm xəritə üzərinə çıxır, həm də üzərinə gələndə göstərilir
+            const cleanOtherName = cleanGlText(r.name);
             const onlyNameTip = `<b>${esc(r.name)}</b>`;
             if (isPointItem) {
-                const [lat, lng] = r.coords[0];
-                features.push({
-                    type: "Feature",
-                    geometry: { type: "Point", coordinates: [lng, lat] },
-                    properties: {
-                        isRayonPoint: true,
-                        isOther: true,
-                        color,
-                        dim,
-                        sel: selected?.item === r,
-                        projectId: project.id,
-                        itemId: r.id,
-                        label: String(r.name || "").trim(),
-                        tip: onlyNameTip
-                    }
-                });
+                const [lat, lng] = coords[0];
+                const ptProps = {
+                    isRayonPoint: true,
+                    isOther: true,
+                    color,
+                    shapeIcon,
+                    dim,
+                    sel: Boolean(selected?.item === r),
+                    projectId: project.id,
+                    itemId: r.id,
+                    label: cleanOtherName,
+                    tip: onlyNameTip
+                };
+                features.push({ type: "Feature", geometry: { type: "Point", coordinates: [lng, lat] }, properties: ptProps });
+                if (cleanOtherName) labelFeatures.push({ type: "Feature", geometry: { type: "Point", coordinates: [lng, lat] }, properties: ptProps });
             } else {
-                const line = r.coords.map(([lat, lng]) => [lng, lat]);
+                const line = coords.map(([lat, lng]) => [lng, lat]);
                 features.push({
                     type: "Feature",
                     geometry: { type: "LineString", coordinates: line },
@@ -765,12 +987,30 @@ function drawRoutes() {
                         isOther: true,
                         color,
                         dim,
-                        sel: selected?.item === r,
+                        sel: Boolean(selected?.item === r),
                         projectId: project.id,
                         itemId: r.id,
                         tip: onlyNameTip
                     }
                 });
+                // Xəttin orta nöqtəsində Name-də olan adını birbaşa xəritə üzərinə çıxar
+                const midCoords = line[Math.floor(line.length / 2)];
+                if (midCoords && cleanOtherName) {
+                    const lblProps = {
+                        isRayonPoint: true,
+                        isOther: true,
+                        color,
+                        shapeIcon,
+                        dim,
+                        sel: Boolean(selected?.item === r),
+                        projectId: project.id,
+                        itemId: r.id,
+                        label: cleanOtherName,
+                        tip: onlyNameTip
+                    };
+                    features.push({ type: "Feature", geometry: { type: "Point", coordinates: midCoords }, properties: lblProps });
+                    labelFeatures.push({ type: "Feature", geometry: { type: "Point", coordinates: midCoords }, properties: lblProps });
+                }
             }
             return;
         }
@@ -779,84 +1019,110 @@ function drawRoutes() {
         const cInfo = state.contractors[cName] || { workers: "—", engineer: "—" };
 
         if (project.category === "nim") {
-            const [lat, lng] = r.coords[0];
+            const [lat, lng] = coords[0];
             const cleanName = String(r.name || "").trim();
             const stText = t(`status${r.status}`);
-            const label = `🚦 ${cleanName} · ${stText}`;
-            const tip = `<b>🚦 ${esc(cleanName)}</b><small>Status: <b style="color:${color}">${esc(stText)}</b><br>👷 İcraçı: ${esc(cName)} · 👥 İşçi: <b>${esc(cInfo.workers)} nəfər</b><br>📞 <b>${esc(cInfo.engineer || "—")}</b></small>`;
-            features.push({
-                type: "Feature",
-                geometry: { type: "Point", coordinates: [lng, lat] },
-                properties: {
-                    isRayonPoint: true,
-                    isNim: true,
-                    color,
-                    dim,
-                    sel: selected?.item === r,
-                    projectId: project.id,
-                    itemId: r.id,
-                    label,
-                    tip
-                }
-            });
+            const label = `${cleanName}\n${stText}`;
+            const tip = `<b>${shape.symbol} 🚦 ${esc(r.name)}</b><small>Layihə: <b>${esc(project.name)}</b><br>Status: <b style="color:${color}">${esc(stText)}</b><br>👷 İcraçı: ${esc(cName)} · 👥 İşçi: <b>${esc(cInfo.workers)} nəfər</b><br>📞 <b>${esc(cInfo.engineer || "—")}</b></small>`;
+            const nimProps = {
+                isRayonPoint: true,
+                isNim: true,
+                color,
+                shapeIcon,
+                dim,
+                sel: Boolean(selected?.item === r),
+                projectId: project.id,
+                itemId: r.id,
+                label,
+                shortLabel: cleanName,
+                tip
+            };
+            features.push({ type: "Feature", geometry: { type: "Point", coordinates: [lng, lat] }, properties: nimProps });
+            labelFeatures.push({ type: "Feature", geometry: { type: "Point", coordinates: [lng, lat] }, properties: nimProps });
             return;
         }
 
         if (isPointItem) {
-            const [lat, lng] = r.coords[0];
+            const [lat, lng] = coords[0];
             const slotKey = `${lat.toFixed(2)}_${lng.toFixed(2)}`;
             const slot = pointSlots[slotKey] || 0;
             pointSlots[slotKey] = slot + 1;
             const adjLng = lng + slot * 0.022;
             const adjLat = lat + (slot % 2 ? 0.008 : 0);
 
-            const cleanName = String(r.name || "").replace(/\s*\(?\bFaz[-\s]*[12]\b\)?/gi, "").replace(/\s*rayon(u)?\b/gi, "").trim();
-            const antPart = r.antennas ? `${r.antennas} ant · ` : "";
-            const label = `${cleanName}: ${antPart}${formatKm(r.totalKm)} / ${formatKm(r.doneKm)} m`;
-            const tip = `<b>${esc(cleanName)}</b><small>📡 ${r.antennas || 0} antena · Plan: ${formatKm(r.totalKm)} m / Faktiki: ${formatKm(r.doneKm)} m (${percent(r.doneKm, r.totalKm)}%)<br>👷 İcraçı: ${esc(cName)}<br>👥 İşçi sayı: <b>${esc(cInfo.workers)} nəfər</b> · 📞 İcraçı: <b>${esc(cInfo.engineer || "—")}</b></small>`;
+            const cleanName = String(r.name || "").replace(/\s*\(?\bFaz[-\s]*[12]\b\)?/gi, "").replace(/\s*rayon(u)?(?![a-zəçşğıöü])/gi, "").trim();
+            const antCount = Number(r.antennas || 0);
+            const antPart = antCount ? `${antCount} antena · ` : "";
+            const label = `${cleanName}\n${antPart}Kabel: ${formatKm(r.totalKm)} / ${formatKm(r.doneKm)} m`;
+            const shortLabel = `${cleanName}\n${antCount ? `${antCount} ant · ` : ""}${formatKm((Number(r.totalKm) || 0) / 1000)} km`;
+            const tip = `<b>${shape.symbol} ${esc(cleanName)}</b><small>Layihə: <b>${esc(project.name)}</b><br>📡 ${r.antennas || 0} antena · Plan: ${formatKm(r.totalKm)} m / Faktiki: ${formatKm(r.doneKm)} m (${percent(r.doneKm, r.totalKm)}%)<br>👷 İcraçı: ${esc(cName)}<br>👥 İşçi sayı: <b>${esc(cInfo.workers)} nəfər</b> · 📞 İcraçı: <b>${esc(cInfo.engineer || "—")}</b></small>`;
 
-            features.push({
-                type: "Feature",
-                geometry: { type: "Point", coordinates: [adjLng, adjLat] },
-                properties: {
-                    isRayonPoint: true,
-                    color,
-                    dim,
-                    sel: selected?.item === r,
-                    projectId: project.id,
-                    itemId: r.id,
-                    label,
-                    tip
-                }
-            });
-        } else if (r.coords.length >= 2) {
-            const line = r.coords.map(([lat, lng]) => [lng, lat]);
+            const ptProps = {
+                isRayonPoint: true,
+                color,
+                shapeIcon,
+                dim,
+                sel: Boolean(selected?.item === r),
+                projectId: project.id,
+                itemId: r.id,
+                label,
+                shortLabel,
+                tip
+            };
+            features.push({ type: "Feature", geometry: { type: "Point", coordinates: [adjLng, adjLat] }, properties: ptProps });
+            labelFeatures.push({ type: "Feature", geometry: { type: "Point", coordinates: [adjLng, adjLat] }, properties: ptProps });
+        } else if (coords.length >= 2) {
+            const line = coords.map(([lat, lng]) => [lng, lat]);
             features.push({
                 type: "Feature", geometry: { type: "LineString", coordinates: line },
                 properties: {
                     color,
                     dim,
-                    sel: selected?.item === r,
+                    sel: Boolean(selected?.item === r),
                     projectId: project.id,
                     itemId: r.id,
                     tip: `<b>${esc(r.name)}</b><small>📏 Plan: ${formatKm(r.totalKm)} km / Faktiki: ${formatKm(r.doneKm)} km (${percent(r.doneKm, r.totalKm)}%)<br>👷 İcraçı: ${esc(cName)}<br>👥 İşçi sayı: <b>${esc(cInfo.workers)} nəfər</b> · 📞 İcraçı: <b>${esc(cInfo.engineer || "—")}</b></small>`
                 }
             });
-            // Magistral uclarında "A" və "B" yazılmır, yalnız məkan işarəsi (📍) və varsa nöqtənin öz adı göstərilir
+            // Magistral uclarında nöqtə dairəsi və varsa nöqtənin öz adı göstərilir
             [[line[0], r.pointA], [line[line.length - 1], r.pointB]].forEach(([coordinates, rawPtName]) => {
-                const ptName = String(rawPtName || "").replace(/^[AB]\s*:\s*/i, "").trim();
+                const ptName = cleanGlText(String(rawPtName || "").replace(/^[AB]\s*:\s*/i, ""));
                 const hasRealName = ptName && !/^[AB]$/i.test(ptName);
-                const props = { color, dim, tip: hasRealName ? `📍 <b>${esc(ptName)}</b>` : `📍 Məntəqə` };
+                const props = {
+                    color,
+                    dim,
+                    projectId: project.id,
+                    itemId: r.id,
+                    tip: hasRealName ? `📍 <b>${esc(ptName)}</b>` : `📍 Məntəqə`
+                };
                 if (hasRealName) props.endName = ptName;
-                features.push({
-                    type: "Feature",
-                    geometry: { type: "Point", coordinates },
-                    properties: props
-                });
+                features.push({ type: "Feature", geometry: { type: "Point", coordinates }, properties: props });
+                if (hasRealName) labelFeatures.push({ type: "Feature", geometry: { type: "Point", coordinates }, properties: props });
             });
         }
     });
+    if (Array.isArray(window.__mmDraftCoords) && window.__mmDraftCoords.length >= 2) {
+        features.push({
+            type: "Feature",
+            geometry: {
+                type: "LineString",
+                coordinates: window.__mmDraftCoords.map(([lat, lng]) => [lng, lat])
+            },
+            properties: {
+                color: "#3B82F6",
+                dim: false,
+                sel: true,
+                tip: "<b>Yeni çəkilən xətt</b>"
+            }
+        });
+    }
     source.setData({ type: "FeatureCollection", features });
+    labelFeatures.forEach(f => {
+        const p = f.properties;
+        if (p.label) p.labelImg = ensureLabelImage(p.label);
+        if (p.shortLabel) p.nameImg = ensureLabelImage(p.shortLabel);
+    });
+    if (labelSource) labelSource.setData({ type: "FeatureCollection", features: labelFeatures });
 }
 
 function routePaths() {
@@ -885,13 +1151,14 @@ function clearSelection() {
 
 function onMapClick(e) {
     $("coordClicked").value = `${e.lngLat.lat.toFixed(6)}, ${e.lngLat.lng.toFixed(6)}`;
+    if (window.handleMapMarkerClick?.(e)) return;
     if (tools.handleClick(e)) return;
     if (isPhone()) {
         setSidebar(false);
         setDrawer(false);
     }
     const box = [[e.point.x - 5, e.point.y - 5], [e.point.x + 5, e.point.y + 5]];
-    const hit = map.queryRenderedFeatures(box, { layers: ["routes-point-halo", "routes-point-core", "routes-point-label", "routes-hit"] })[0];
+    const hit = map.queryRenderedFeatures(box, { layers: ["routes-point-overview", "routes-point-halo", "routes-point-shape", "routes-point-label", "routes-point-label-near", "routes-point-name", "routes-ends", "routes-ends-label", "routes-hit"] })[0];
     if (!hit) return;
     const project = state.projects.find(p => p.id === hit.properties.projectId);
     if (project) selectSegment(project, project.items.find(r => r.id === hit.properties.itemId));
@@ -998,7 +1265,24 @@ function renderLayerOptions() {
 }
 
 function renderLegend() {
-    $("legend").innerHTML = STATUSES.map(s => `<div class="legend-row"><span class="legend-line" style="background:${STATUS_COLORS[s]}"></span>${t(`status${s}`)}</div>`).join("");
+    const activePointProjects = state.projects.filter(p =>
+        state.activeFolders.has(p.category || "project") &&
+        state.visibleIds.has(p.id) &&
+        isPointProject(p)
+    );
+    const pointProjectsHtml = activePointProjects.length > 0
+        ? `<div class="legend-divider"></div><div class="legend-sec-title">Nöqtə layihələri</div>` +
+          activePointProjects.map(p => {
+              const shape = getProjectShape(p);
+              const cleanProjName = String(p.name || "").replace(/\s*\(?\bFaz[-\s]*[12]\b\)?/gi, "").trim();
+              const tone = p.category === "other" ? "#38BDF8" : statusTone(p.status);
+              return `<div class="legend-row" title="${esc(cleanProjName)}"><span class="legend-shape-badge" style="color:${tone}">${shape.symbol}</span><span class="legend-proj-name">${esc(cleanProjName)}</span></div>`;
+          }).join("")
+        : "";
+
+    $("legend").innerHTML = STATUSES.map(s => `<div class="legend-row"><span class="legend-line" style="background:${STATUS_COLORS[s]}"></span>${t(`status${s}`)}</div>`).join("")
+        + `<div class="legend-row"><span class="legend-line" style="background:#94A3B8"></span>Lif götürülən kabel</div>`
+        + pointProjectsHtml;
 }
 
 function statusTone(status) {
@@ -1006,9 +1290,25 @@ function statusTone(status) {
 }
 
 function renderChips() {
-    const trackedProjects = state.projects.filter(p => p.category !== "other");
-    const items = trackedProjects.flatMap(p => p.items);
-    const count = key => key === "all" ? items.length : items.filter(r => r.status === key).length;
+    const noFolderActive = state.activeFolders.size === 0;
+    const focusedProjId = state.selected?.projectId || window.__activeProjectId || null;
+    const focusedProj = focusedProjId ? state.projects.find(p => p.id === focusedProjId && state.activeFolders.has(p.category || "project")) : null;
+
+    let poolProjects = [];
+    let showDashes = false;
+
+    if (noFolderActive) {
+        showDashes = true;
+    } else if (focusedProj) {
+        if (focusedProj.category === "other") showDashes = true;
+        else poolProjects = [focusedProj];
+    } else {
+        poolProjects = state.projects.filter(p => state.activeFolders.has(p.category || "project") && p.category !== "other" && state.visibleIds.has(p.id));
+        if (poolProjects.length === 0) showDashes = true;
+    }
+
+    const items = poolProjects.flatMap(p => p.items);
+    const count = key => showDashes ? "-" : (key === "all" ? items.length : items.filter(r => r.status === key).length);
     const chips = [{ key: "all", label: t("filterAll") }, ...STATUSES.map(s => ({ key: s, label: t(`status${s}`), color: STATUS_COLORS[s] }))];
     $("statusChips").innerHTML = chips.map(c => `
         <button class="chip ${state.statusFilter === c.key ? "active" : ""}" data-status="${c.key}">
@@ -1030,7 +1330,6 @@ function renderKpis() {
 }
 
 function renderProjects() {
-    const cat = state.sidebarCategory || "project";
     const projectsOnly = state.projects.filter(p => (p.category || "project") === "project");
     const nimOnly = state.projects.filter(p => p.category === "nim");
     const azcOnly = state.projects.filter(p => p.category === "azconnect");
@@ -1043,95 +1342,144 @@ function renderProjects() {
 
     document.querySelectorAll("[data-folder-tab]").forEach(btn => {
         const f = btn.dataset.folderTab;
-        btn.classList.toggle("active", f === cat);
-        btn.classList.toggle("folder-off", !state.activeFolders.has(f));
-        const chk = btn.querySelector("[data-folder-vis]");
-        if (chk) chk.checked = state.activeFolders.has(f);
+        btn.classList.toggle("active", state.activeFolders.has(f));
     });
+    // Fiber optik kabel: hər qovluğun lifi qovluqla birlikdə aktiv/passiv olur
+    document.querySelectorAll("[data-fo-group], [data-fo-core], [data-fo-led]").forEach(el => {
+        const f = el.dataset.foGroup || el.dataset.foCore || el.dataset.foLed;
+        el.classList.toggle("active", state.activeFolders.has(f));
+    });
+    $("foStatusCoupler")?.classList.toggle("active", state.activeFolders.size > 0);
+    document.querySelector("#listView .filters")?.classList.toggle("fo-fed", state.activeFolders.size > 0);
 
-    if ($("statusChips")) $("statusChips").hidden = cat === "other";
-    if ($("addProjectBtn")) $("addProjectBtn").hidden = !isAdmin() || cat === "other";
-    const headTitles = { project: t("projects"), nim: "🚦 NİM (Svetofor Kəsişmələri)", azconnect: "🌐 Azconnect Xətləri", other: "🗂️ Digər" };
-    if ($("listHeadTitle")) $("listHeadTitle").textContent = headTitles[cat] || t("projects");
+    if ($("statusChips")) $("statusChips").hidden = false;
+    if ($("addProjectBtn")) $("addProjectBtn").hidden = !isAdmin() || state.activeFolders.size === 0;
 
-    if (cat === "other") {
-        const shownOther = otherOnly.filter(p => !state.query || p.name.toLocaleLowerCase("az").includes(state.query) || p.items.some(i => String(i.name || "").toLocaleLowerCase("az").includes(state.query)));
-        $("projectCount").textContent = shownOther.length;
-        $("projectList").innerHTML = shownOther.length === 0 ? `<div class="empty">${t("noResults")}</div>` : shownOther.map(p => {
-            const visible = state.visibleIds.has(p.id);
-            const expanded = state.expandedIds.has(p.id);
-            return `
-                <div class="project ${visible ? "" : "hidden-on-map"}" data-id="${esc(p.id)}">
-                    <div class="project-row" style="padding:6px 10px">
-                        <label class="check" title="${t("toggleVisibility")}"><input type="checkbox" data-action="toggle" ${visible ? "checked" : ""}></label>
-                        <button class="project-main" data-action="expand" aria-expanded="${expanded}">
-                            <strong title="${esc(p.name)}">🗂️ ${esc(p.name)}</strong>
-                        </button>
-                        <span class="project-pct" style="color:#38BDF8">${p.items.length}</span>
-                        ${isAdmin() ? `<button class="icon-btn" data-action="edit" title="${t("editProject")}"><i class="fa-solid fa-pen"></i></button>` : ""}
-                        <button class="icon-btn" data-action="expand" aria-label="${esc(p.name)}"><i class="fa-solid fa-chevron-right chevron ${expanded ? "open" : ""}"></i></button>
-                    </div>
-                    ${expanded ? `<div class="segments">${p.items.map(r => `
-                        <button class="segment ${state.selected?.itemId === r.id && state.selected?.projectId === p.id ? "selected" : ""}" data-action="focus" data-item="${esc(r.id)}">
-                            <span class="dot" style="background:#38BDF8"></span>
-                            <span class="segment-name" title="${esc(r.name)}">${esc(r.name)}</span>
-                        </button>
-                    `).join("")}</div>` : ""}
-                </div>`;
-        }).join("");
+    const folderMeta = {
+        project: { title: "🏢 BCG", list: projectsOnly },
+        nim: { title: "🚦 NİM (Svetofor Kəsişmələri)", list: nimOnly },
+        azconnect: { title: "🌐 Azconnect Xətləri", list: azcOnly },
+        other: { title: "🗂️ Digər", list: otherOnly }
+    };
+
+    const activeOrder = ["project", "nim", "azconnect", "other"].filter(f => state.activeFolders.has(f));
+    if (activeOrder.length === 0) {
+        if ($("listHeadTitle")) $("listHeadTitle").textContent = "Qovluq seçilməyib";
+        $("projectCount").textContent = "-";
+        $("projectList").innerHTML = `<div class="empty">Yuxarıdakı yarım dairədən qovluq seçin (🏢 BCG, 🚦 NİM, 🌐 Azconnect, 🗂️ Digər)</div>`;
         return;
     }
 
-    const activePool = cat === "nim" ? nimOnly : (cat === "azconnect" ? azcOnly : projectsOnly);
+    if ($("listHeadTitle")) {
+        $("listHeadTitle").textContent = activeOrder.length === 1
+            ? folderMeta[activeOrder[0]].title
+            : "Seçilmiş qovluqlar";
+    }
+
+    const showGroupHead = activeOrder.length > 1;
     const filtering = state.statusFilter !== "all" || state.query;
-    const shown = activePool.filter(p => !filtering || filteredItems(p).length > 0);
-    $("projectCount").textContent = shown.length;
+    let totalShownCount = 0;
+    const sectionsHtml = [];
 
-    $("projectList").innerHTML = shown.length === 0 ? `<div class="empty">${t("noResults")}</div>` : shown.map(p => {
-        const visible = state.visibleIds.has(p.id);
-        const expanded = state.expandedIds.has(p.id);
-        const sum = totals(p.items);
-        const pct = percent(sum.done, sum.plan);
-        const isNim = p.category === "nim";
-        const isPoints = p.type === "points";
-        const totalAnt = p.items.reduce((s, r) => s + (r.antennas || 0), 0);
-        const cleanProjName = String(p.name || "").replace(/\s*\(?\bFaz[-\s]*[12]\b\)?/gi, "").trim();
-        const donePts = p.items.filter(i => i.status === "bitmis" || i.status === "tehvil").length;
-        const subTitle = isNim
-            ? `🚦 ${p.items.length} svetofor kəsişməsi · Hazır: ${donePts}/${p.items.length}`
-            : (isPoints
-                ? `📡 ${totalAnt} ant · ${formatKm(sum.plan)} m / ${formatKm(sum.done)} m`
-                : `〰️ ${formatKm(sum.plan)} / ${formatKm(sum.done)} km · Qalıb: ${formatKm(Math.max(0, sum.plan - sum.done))} km`);
-        const rightPct = isNim ? `${p.items.length ? Math.round(donePts / p.items.length * 100) : 0}%` : `${pct}%`;
+    activeOrder.forEach(folderKey => {
+        const pool = folderMeta[folderKey].list;
+        if (folderKey === "other") {
+            const shownOther = pool.filter(p => !state.query || p.name.toLocaleLowerCase("az").includes(state.query) || p.items.some(i => String(i.name || "").toLocaleLowerCase("az").includes(state.query)));
+            totalShownCount += shownOther.length;
+            if (showGroupHead) {
+                sectionsHtml.push(`<div class="folder-group-head"><span>${folderMeta[folderKey].title}</span><span>${shownOther.length}</span></div>`);
+            }
+            if (shownOther.length === 0) {
+                sectionsHtml.push(`<div class="empty">${t("noResults")}</div>`);
+                return;
+            }
+            sectionsHtml.push(shownOther.map(p => {
+                const visible = state.visibleIds.has(p.id);
+                const expanded = state.expandedIds.has(p.id);
+                const cleanOtherTitle = String(p.name || "").replace(/^Digər\s*:\s*/i, "").trim();
+                return `
+                    <div class="project ${visible ? "" : "hidden-on-map"}" data-id="${esc(p.id)}">
+                        <div class="project-row" style="padding:6px 10px">
+                            <label class="check" title="${t("toggleVisibility")}"><input type="checkbox" data-action="toggle" ${visible ? "checked" : ""}></label>
+                            <button class="project-main" data-action="expand" aria-expanded="${expanded}">
+                                <strong title="${esc(cleanOtherTitle)}">${esc(cleanOtherTitle)}</strong>
+                            </button>
+                            <span class="project-pct" style="color:#38BDF8">${p.items.length}</span>
+                            ${isAdmin() ? `<button class="icon-btn" data-action="edit" title="${t("editProject")}"><i class="fa-solid fa-pen"></i></button>` : ""}
+                            <button class="icon-btn" data-action="expand" aria-label="${esc(cleanOtherTitle)}"><i class="fa-solid fa-chevron-right chevron ${expanded ? "open" : ""}"></i></button>
+                        </div>
+                        ${expanded ? `<div class="segments">${p.items.map(r => `
+                            <button class="segment ${state.selected?.itemId === r.id && state.selected?.projectId === p.id ? "selected" : ""}" data-action="focus" data-item="${esc(r.id)}">
+                                <span class="dot" style="background:#38BDF8"></span>
+                                <span class="segment-name" title="${esc(r.name)}">${esc(r.name)}</span>
+                            </button>
+                        `).join("")}</div>` : ""}
+                    </div>`;
+            }).join(""));
+            return;
+        }
 
-        return `
-            <div class="project ${visible ? "" : "hidden-on-map"}" data-id="${esc(p.id)}">
-                <div class="project-row">
-                    <label class="check" title="${t("toggleVisibility")}"><input type="checkbox" data-action="toggle" ${visible ? "checked" : ""}></label>
-                    <button class="project-main" data-action="expand" aria-expanded="${expanded}">
-                        <strong title="${esc(cleanProjName)}">${isNim ? "🚦 " : (p.category === "azconnect" ? "🌐 " : "")}${esc(cleanProjName)}</strong>
-                        <small>${subTitle}</small>
-                    </button>
-                    <span class="project-pct">${rightPct}</span>
-                    ${isAdmin() ? `<button class="icon-btn" data-action="edit" title="${t("editProject")}"><i class="fa-solid fa-pen"></i></button>` : ""}
-                    <button class="icon-btn" data-action="expand" aria-label="${esc(cleanProjName)}"><i class="fa-solid fa-chevron-right chevron ${expanded ? "open" : ""}"></i></button>
-                </div>
-                ${expanded ? `<div class="segments">${filteredItems(p).map(r => {
-                    const cleanName = String(r.name || "").replace(/\s*\(?\bFaz[-\s]*[12]\b\)?/gi, "").replace(/\s*rayon(u)?\b/gi, "").trim();
-                    const rightText = isNim
-                        ? t(`status${r.status}`)
-                        : (isPoints
-                            ? `${r.antennas || 0} ant · ${formatKm(r.totalKm)} / ${formatKm(r.doneKm)} m`
-                            : `${formatKm(r.totalKm)} / ${formatKm(r.doneKm)} km (${percent(r.doneKm, r.totalKm)}%)`);
-                    return `
-                    <button class="segment ${state.selected?.itemId === r.id && state.selected?.projectId === p.id ? "selected" : ""}" data-action="focus" data-item="${esc(r.id)}">
-                        <span class="dot" style="background:${statusTone(r.status)}"></span>
-                        <span class="segment-name" title="${esc(cleanName)}">${isNim ? "🚦 " : ""}${esc(cleanName)}</span>
-                        <span style="color:${statusTone(r.status)};font-weight:600;white-space:nowrap">${rightText}</span>
-                    </button>`;
-                }).join("")}${isAdmin() ? `<button class="link add-seg" data-action="addSegment">+ ${t("addSegment")}</button>` : ""}</div>` : ""}
-            </div>`;
-    }).join("");
+        const shown = pool.filter(p => !filtering || filteredItems(p).length > 0);
+        totalShownCount += shown.length;
+        if (showGroupHead) {
+            sectionsHtml.push(`<div class="folder-group-head"><span>${folderMeta[folderKey].title}</span><span>${shown.length}</span></div>`);
+        }
+        if (shown.length === 0) {
+            sectionsHtml.push(`<div class="empty">${t("noResults")}</div>`);
+            return;
+        }
+
+        sectionsHtml.push(shown.map(p => {
+            const visible = state.visibleIds.has(p.id);
+            const expanded = state.expandedIds.has(p.id);
+            const sum = totals(p.items);
+            const pct = percent(sum.done, sum.plan);
+            const isNim = p.category === "nim";
+            const isPoints = p.type === "points";
+            const shape = isPointProject(p) ? getProjectShape(p) : null;
+            const shapeBadge = shape ? `<span style="color:${statusTone(p.status)};margin-right:4px" title="Nöqtə işarəsi: ${shape.name}">${shape.symbol}</span>` : "";
+            const totalAnt = p.items.reduce((s, r) => s + (r.antennas || 0), 0);
+            const cleanProjName = String(p.name || "").replace(/\s*\(?\bFaz[-\s]*[12]\b\)?/gi, "").trim();
+            const donePts = p.items.filter(i => i.status === "bitmis" || i.status === "tehvil").length;
+            const subTitle = isNim
+                ? `${p.items.length} svetofor kəsişməsi · Hazır: ${donePts}/${p.items.length}`
+                : (isPoints
+                    ? `📡 ${totalAnt} ant · ${formatKm(sum.plan)} m / ${formatKm(sum.done)} m`
+                    : `〰️ ${formatKm(sum.plan)} / ${formatKm(sum.done)} km · Qalıb: ${formatKm(Math.max(0, sum.plan - sum.done))} km`);
+            const rightPct = isNim ? `${p.items.length ? Math.round(donePts / p.items.length * 100) : 0}%` : `${pct}%`;
+
+            return `
+                <div class="project ${visible ? "" : "hidden-on-map"}" data-id="${esc(p.id)}">
+                    <div class="project-row">
+                        <label class="check" title="${t("toggleVisibility")}"><input type="checkbox" data-action="toggle" ${visible ? "checked" : ""}></label>
+                        <button class="project-main" data-action="expand" aria-expanded="${expanded}">
+                            <strong title="${esc(cleanProjName)}">${shapeBadge}${esc(cleanProjName)}</strong>
+                            <small>${subTitle}</small>
+                        </button>
+                        <span class="project-pct">${rightPct}</span>
+                        ${isAdmin() ? `<button class="icon-btn" data-action="edit" title="${t("editProject")}"><i class="fa-solid fa-pen"></i></button>` : ""}
+                        <button class="icon-btn" data-action="expand" aria-label="${esc(cleanProjName)}"><i class="fa-solid fa-chevron-right chevron ${expanded ? "open" : ""}"></i></button>
+                    </div>
+                    ${expanded ? `<div class="segments">${filteredItems(p).map(r => {
+                        const cleanName = String(r.name || "").replace(/\s*\(?\bFaz[-\s]*[12]\b\)?/gi, "").replace(/\s*rayon(u)?\b/gi, "").trim();
+                        const rightText = isNim
+                            ? t(`status${r.status}`)
+                            : (isPoints
+                                ? `${r.antennas || 0} ant · ${formatKm(r.totalKm)} / ${formatKm(r.doneKm)} m`
+                                : `${formatKm(r.totalKm)} / ${formatKm(r.doneKm)} km (${percent(r.doneKm, r.totalKm)}%)`);
+                        return `
+                        <button class="segment ${state.selected?.itemId === r.id && state.selected?.projectId === p.id ? "selected" : ""}" data-action="focus" data-item="${esc(r.id)}">
+                            <span class="dot" style="background:${statusTone(r.status)}"></span>
+                            <span class="segment-name" title="${esc(cleanName)}">${isNim ? "🚦 " : ""}${esc(cleanName)}</span>
+                            <span style="color:${statusTone(r.status)};font-weight:600;white-space:nowrap">${rightText}</span>
+                        </button>`;
+                    }).join("")}${isAdmin() ? `<button class="link add-seg" data-action="addSegment">+ ${t("addSegment")}</button>` : ""}</div>` : ""}
+                </div>`;
+        }).join(""));
+    });
+
+    $("projectCount").textContent = totalShownCount;
+    $("projectList").innerHTML = sectionsHtml.join("");
 }
 
 function renderDetail() {
@@ -1247,6 +1595,7 @@ function renderAll() {
     renderDetail();
     renderTable();
     renderContractors();
+    renderLegend();
     drawRoutes();
 }
 
@@ -1466,10 +1815,7 @@ function bindEvents() {
 
     $("notesBtn").addEventListener("click", () => $("notesModal").showModal());
     $("materialsBtn").addEventListener("click", () => $("materialsModal").showModal());
-    $("printBtn").addEventListener("click", () => {
-        if (window.openPrintCropMode) window.openPrintCropMode();
-        else window.print();
-    });
+    $("printBtn").addEventListener("click", () => window.print());
     $("toolDock").addEventListener("click", async e => {
         if (!e.target.closest("#shareBtn")) return;
         $("shareModal").showModal();
@@ -1678,7 +2024,7 @@ document.addEventListener("DOMContentLoaded", init);
     const origRenderAll = window.renderAll;
     function updateLegendVisibility() {
         const legend = $("legend");
-        if (legend) legend.hidden = state.visibleIds.size === 0;
+        if (legend) legend.hidden = state.activeFolders.size === 0 || visibleEntries().length === 0;
     }
 
     function executorOptionsHtml(currentExec) {
@@ -1708,6 +2054,139 @@ document.addEventListener("DOMContentLoaded", init);
         card.hidden = true;
         stage.appendChild(card);
 
+        // 3) Admin üçün Xəritə üzərində Xətt və Nöqtə Sürüşdürmə / Redaktə Paneli
+        const geomBar = document.createElement("div");
+        geomBar.id = "geomEditBar";
+        geomBar.className = "geom-edit-bar";
+        geomBar.hidden = true;
+        stage.appendChild(geomBar);
+
+        geomBar.addEventListener("click", e => {
+            const act = e.target.closest("[data-geom-act]")?.dataset.geomAct;
+            if (act === "save") saveGeomEdit();
+            else if (act === "cancel") cancelGeomEdit();
+            else if (act === "mmFinish") openMapMarkerModal();
+            else if (act === "mmUndo") undoMapMarkerVertex();
+            else if (act === "mmCancel") cancelMapMarkerCreate();
+        });
+
+        // 4) Map Marker üslubunda Admin Kənar Əlavəetmə Paneli (Mövcud layihə daxilində yeni Xətt və Nöqtə yaratma)
+        const mmDock = document.createElement("div");
+        mmDock.id = "mapMarkerDock";
+        mmDock.className = "map-marker-dock";
+        mmDock.hidden = !isAdmin();
+        mmDock.innerHTML = `
+            <div class="mm-dock-title"><i class="fa-solid fa-compass-drafting"></i> Layihəyə əlavə et</div>
+            <button type="button" class="mm-btn" data-mm-start="point" title="Xəritədə nöqtə qoy və mövcud layihəyə əlavə et">
+                <i class="fa-solid fa-location-dot"></i> + Yeni Nöqtə
+            </button>
+            <button type="button" class="mm-btn" data-mm-start="line" title="Xəritədə xətt çək və mövcud layihəyə əlavə et">
+                <i class="fa-solid fa-route"></i> + Yeni Xətt
+            </button>
+        `;
+        stage.appendChild(mmDock);
+
+        mmDock.addEventListener("click", e => {
+            const btn = e.target.closest("[data-mm-start]");
+            if (!btn) return;
+            const mode = btn.dataset.mmStart;
+            if (mmCreateState && mmCreateState.mode === mode) {
+                cancelMapMarkerCreate();
+            } else {
+                startMapMarkerCreate(mode);
+            }
+        });
+
+        // 5) Map Marker — Mövcud Layihəyə Əlavə Et və Atributları Doldur Modalı
+        if (!$("mapMarkerModal")) {
+            const modal = document.createElement("dialog");
+            modal.id = "mapMarkerModal";
+            modal.className = "modal";
+            modal.style.width = "min(560px, 95vw)";
+            modal.innerHTML = `
+                <div class="modal-head">
+                    <div>
+                        <h2 id="mmModalTitle">📍 Mövcud Layihəyə Əlavə Et</h2>
+                        <p class="muted" id="mmModalSub">Xəritədə çəkilmiş obyekti aktiv qovluqdakı layihəyə əlavə edin və atributlarını doldurun</p>
+                    </div>
+                    <button class="icon-btn" type="button" data-mm-close title="Bağla"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+                <form id="mmForm" class="edit-form">
+                    <div class="edit-fields" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+                        <label class="wide" style="grid-column:1 / -1">
+                            <span>Aktiv qovluqdakı Layihəni seçin *</span>
+                            <select class="input" id="mmProjectSelect" required></select>
+                        </label>
+                        <label class="wide" id="mmNewProjWrap" style="grid-column:1 / -1" hidden>
+                            <span>Yeni layihənin adı *</span>
+                            <input class="input" type="text" id="mmNewProjName" placeholder="Məs: Qəbələ əlavə şəbəkə layihəsi">
+                        </label>
+                        <label class="wide" style="grid-column:1 / -1">
+                            <span>Adı (Name / Məntəqə və ya Xətt adı) *</span>
+                            <input class="input" type="text" id="mmItemName" required placeholder="Məs: Göyçay Mərkəz əlavə xətt / Svetofor #12">
+                        </label>
+                        <label>
+                            <span>Status *</span>
+                            <select class="input" id="mmStatusSelect"></select>
+                        </label>
+                        <label>
+                            <span>İş icraçısı</span>
+                            <select class="input" id="mmContractorSelect"></select>
+                        </label>
+                        <label id="mmPointAWrap">
+                            <span>Başlanğıc nöqtə (A)</span>
+                            <input class="input" type="text" id="mmPointA" value="Mərkəz">
+                        </label>
+                        <label id="mmPointBWrap">
+                            <span>Son nöqtə (B)</span>
+                            <input class="input" type="text" id="mmPointB" value="Şəbəkə">
+                        </label>
+                        <label>
+                            <span id="mmPlanLabel">1. Nəzərdə tutulan məsafə (km)</span>
+                            <input class="input" type="number" step="any" min="0" id="mmPlanVal" value="0">
+                        </label>
+                        <label>
+                            <span id="mmDoneLabel">2. Faktiki çəkilən məsafə (km)</span>
+                            <input class="input" type="number" step="any" min="0" id="mmDoneVal" value="0">
+                        </label>
+                        <label class="wide" id="mmAntennasWrap" style="grid-column:1 / -1">
+                            <span>Antena sayı (ədəd)</span>
+                            <input class="input" type="number" step="1" min="0" id="mmAntennasVal" value="1">
+                        </label>
+                        <label class="wide" style="grid-column:1 / -1">
+                            <span>Xəritədə seçilmiş koordinatlar</span>
+                            <textarea class="input mono" id="mmCoordsText" rows="3" required></textarea>
+                        </label>
+                    </div>
+                    <p class="form-error" id="mmFormError" role="alert"></p>
+                    <div class="edit-actions">
+                        <button class="btn btn-outline" type="button" id="mmBackToMapBtn"><i class="fa-solid fa-map"></i> Xəritədə düzəliş et</button>
+                        <button class="btn btn-outline" type="button" data-mm-close>Ləğv et</button>
+                        <button class="btn btn-primary" type="submit"><i class="fa-solid fa-check"></i> Layihəyə əlavə et</button>
+                    </div>
+                </form>
+            `;
+            document.body.appendChild(modal);
+
+            modal.addEventListener("click", e => {
+                if (e.target === modal || e.target.closest("[data-mm-close]")) {
+                    modal.close();
+                }
+            });
+            $("mmBackToMapBtn")?.addEventListener("click", () => {
+                modal.close();
+                toast("Xəritədə nöqtələri sürüşdürün və ya əlavə edin, sonra '✔ Tamamla' basın");
+            });
+            $("mmProjectSelect")?.addEventListener("change", syncMmFormForProject);
+            $("mmStatusSelect")?.addEventListener("change", () => {
+                const st = $("mmStatusSelect").value;
+                if (st === "bitmis" || st === "tehvil") {
+                    $("mmDoneVal").value = $("mmPlanVal").value;
+                }
+            });
+            $("mmForm")?.addEventListener("submit", saveMapMarkerItem);
+        }
+
         let drag = null;
         card.addEventListener("mousedown", e => {
             const head = e.target.closest(".info-card-head");
@@ -1729,6 +2208,13 @@ document.addEventListener("DOMContentLoaded", init);
         });
 
         card.addEventListener("click", e => {
+            const geomBtn = e.target.closest("[data-geom-edit]");
+            if (geomBtn) {
+                e.stopPropagation();
+                const [projectId, itemId] = geomBtn.dataset.geomEdit.split(":");
+                startGeomEdit(projectId, itemId);
+                return;
+            }
             const pick = e.target.closest("[data-pick-seg]");
             if (pick && !e.target.closest("select") && !e.target.closest("button")) {
                 const [projectId, itemId] = pick.dataset.pickSeg.split(":");
@@ -1747,6 +2233,8 @@ document.addEventListener("DOMContentLoaded", init);
                 activeProjectId = null;
                 window.__activeProjectId = null;
                 card.hidden = true;
+                renderChips();
+                updateLegendVisibility();
                 drawRoutes();
                 renderProjects();
             } else if (act === "showAll") {
@@ -1760,6 +2248,14 @@ document.addEventListener("DOMContentLoaded", init);
                 else if (activeProjectId) {
                     const proj = state.projects.find(p => p.id === activeProjectId);
                     if (proj) flyToCoords(proj.items.flatMap(i => i.coords));
+                }
+            } else if (act === "geomEdit") {
+                const entry = selectedEntry();
+                if (entry) {
+                    startGeomEdit(entry.project.id, entry.item.id);
+                } else if (activeProjectId) {
+                    const proj = state.projects.find(p => p.id === activeProjectId);
+                    if (proj && proj.items[0]) startGeomEdit(proj.id, proj.items[0].id);
                 }
             } else if (act === "edit") {
                 const entry = selectedEntry();
@@ -1808,6 +2304,578 @@ document.addEventListener("DOMContentLoaded", init);
     }
 
     const AUDIT_STORE_KEY = "bcg.audit.logs.v1";
+    const GEOM_STORE_KEY = "bcg.geom.overrides.v1";
+    let geomEditState = null;
+
+    function applySavedGeomOverrides() {
+        try {
+            const saved = readStore(GEOM_STORE_KEY, null);
+            if (!saved || typeof saved !== "object") return;
+            state.projects.forEach(p => {
+                p.items.forEach(item => {
+                    const key = `${p.id}:${item.id}`;
+                    if (Array.isArray(saved[key]) && saved[key].length >= 1) {
+                        item.coords = saved[key].map(c => [Number(c[0]), Number(c[1])]);
+                    }
+                });
+            });
+        } catch {}
+    }
+
+    function clearGeomHandles() {
+        if (!geomEditState) return;
+        (geomEditState.vertexMarkers || []).forEach(m => m.remove());
+        (geomEditState.midMarkers || []).forEach(m => m.remove());
+        geomEditState.vertexMarkers = [];
+        geomEditState.midMarkers = [];
+    }
+
+    function rebuildGeomHandles() {
+        if (!geomEditState || !window.map) return;
+        clearGeomHandles();
+        const { item } = geomEditState;
+        const coords = item.coords;
+        if (!Array.isArray(coords) || coords.length === 0) return;
+        const isLine = coords.length >= 2;
+
+        // Hər qırılma nöqtəsi (və ya tək nöqtə) üçün sürüşdürülə bilən tutacaq
+        coords.forEach(([lat, lng], idx) => {
+            const el = document.createElement("div");
+            el.className = "geom-vertex-handle";
+            el.title = isLine
+                ? `Qırılma nöqtəsi #${idx + 1} — Sürüşdürün (sağ klik: nöqtəni sil)`
+                : `${item.name} — Yeni mövqeyə sürüşdürün`;
+
+            const marker = new maplibregl.Marker({ element: el, draggable: true })
+                .setLngLat([lng, lat])
+                .addTo(map);
+
+            marker.on("drag", () => {
+                const pos = marker.getLngLat();
+                item.coords[idx] = [Number(pos.lat.toFixed(6)), Number(pos.lng.toFixed(6))];
+                drawRoutes();
+            });
+            marker.on("dragend", () => {
+                const pos = marker.getLngLat();
+                item.coords[idx] = [Number(pos.lat.toFixed(6)), Number(pos.lng.toFixed(6))];
+                drawRoutes();
+                rebuildGeomHandles();
+            });
+
+            el.addEventListener("contextmenu", ev => {
+                ev.preventDefault();
+                ev.stopPropagation();
+                if (item.coords.length <= 2) {
+                    toast("Xəttin ən azı 2 nöqtəsi qalmalıdır", true);
+                    return;
+                }
+                item.coords.splice(idx, 1);
+                drawRoutes();
+                rebuildGeomHandles();
+            });
+
+            geomEditState.vertexMarkers.push(marker);
+        });
+
+        // Xətt seqmentlərinin ortasında "+" tutacağı: dartdıqda yeni qırılma nöqtəsi əlavə edir
+        if (isLine) {
+            for (let i = 0; i < coords.length - 1; i++) {
+                const [lat1, lng1] = coords[i];
+                const [lat2, lng2] = coords[i + 1];
+                const midLat = (lat1 + lat2) / 2;
+                const midLng = (lng1 + lng2) / 2;
+
+                const midEl = document.createElement("div");
+                midEl.className = "geom-mid-handle";
+                midEl.textContent = "+";
+                midEl.title = "Yeni qırılma nöqtəsi əlavə etmək üçün tutub çəkin";
+
+                const midMarker = new maplibregl.Marker({ element: midEl, draggable: true })
+                    .setLngLat([midLng, midLat])
+                    .addTo(map);
+
+                let insertedIdx = null;
+                midMarker.on("dragstart", () => {
+                    const pos = midMarker.getLngLat();
+                    insertedIdx = i + 1;
+                    item.coords.splice(insertedIdx, 0, [Number(pos.lat.toFixed(6)), Number(pos.lng.toFixed(6))]);
+                });
+                midMarker.on("drag", () => {
+                    if (insertedIdx == null) return;
+                    const pos = midMarker.getLngLat();
+                    item.coords[insertedIdx] = [Number(pos.lat.toFixed(6)), Number(pos.lng.toFixed(6))];
+                    drawRoutes();
+                });
+                midMarker.on("dragend", () => {
+                    drawRoutes();
+                    rebuildGeomHandles();
+                });
+
+                geomEditState.midMarkers.push(midMarker);
+            }
+        }
+    }
+
+    function startGeomEdit(projectId, itemId) {
+        if (!isAdmin()) {
+            toast("🔒 Xətt və nöqtələrin xəritədə redaktəsi yalnız Admin üçündür!", true);
+            return;
+        }
+        const proj = state.projects.find(p => p.id === projectId);
+        const item = proj?.items.find(r => r.id === itemId);
+        if (!proj || !item) return;
+
+        if (geomEditState) cancelGeomEdit(true);
+
+        const origCoords = (item.coords || []).map(c => [Number(c[0]), Number(c[1])]);
+        geomEditState = {
+            project: proj,
+            item,
+            origCoords,
+            vertexMarkers: [],
+            midMarkers: []
+        };
+
+        state.selected = { projectId: proj.id, itemId: item.id };
+        activeProjectId = proj.id;
+        window.__activeProjectId = proj.id;
+
+        const bar = $("geomEditBar");
+        if (bar) {
+            const isLine = origCoords.length >= 2;
+            bar.innerHTML = `
+                <span><i class="fa-solid fa-bezier-curve"></i> <b>${esc(item.name)}</b> — ${isLine ? "Qırılma nöqtələrini tutub sağa-sola çəkin ('+' ilə yeni əyilmə əlavə edin)" : "Nöqtəni tutub yeni yerə sürüşdürün"}</span>
+                <button class="btn btn-primary" style="height:28px;padding:0 12px;font-size:12px" data-geom-act="save"><i class="fa-solid fa-check"></i> Yadda saxla</button>
+                <button class="btn btn-outline" style="height:28px;padding:0 10px;font-size:12px;color:#fff;border-color:rgba(255,255,255,0.28)" data-geom-act="cancel">Ləğv et</button>
+            `;
+            bar.hidden = false;
+        }
+
+        flyToCoords(item.coords);
+        drawRoutes();
+        rebuildGeomHandles();
+        toast("📐 Xəritədə redaktə aktivdir: nöqtələri tutub sürüşdürün");
+    }
+
+    async function saveGeomEdit() {
+        if (!geomEditState) return;
+        const { project, item } = geomEditState;
+        const newCoords = item.coords.map(c => [Number(Number(c[0]).toFixed(6)), Number(Number(c[1]).toFixed(6))]);
+        item.coords = newCoords;
+
+        // Lokal yaddaşda saxla
+        const saved = readStore(GEOM_STORE_KEY, {}) || {};
+        saved[`${project.id}:${item.id}`] = newCoords;
+        writeStore(GEOM_STORE_KEY, saved);
+
+        // Supabase aktivdirsə bazaya da göndər
+        if (api.configured) {
+            try {
+                await api.saveSegment(project.id, item.id, { coords: newCoords });
+            } catch { /* lokal olaraq artıq saxlanılıb */ }
+        }
+
+        recordAuditLog(
+            "Xəritə Redaktəsi",
+            project.category === "nim" ? "🚦 NİM" : (project.category === "azconnect" ? "🌐 Azconnect" : "🏢 BCG"),
+            item.name,
+            `Koordinatlar xəritə üzərində sürüşdürülərək yeniləndi (${newCoords.length} nöqtə)`
+        );
+
+        clearGeomHandles();
+        geomEditState = null;
+        if ($("geomEditBar")) $("geomEditBar").hidden = true;
+        renderAll();
+        toast(`✅ "${item.name}" koordinatları yadda saxlanıldı!`);
+    }
+
+    function cancelGeomEdit(silent = false) {
+        if (!geomEditState) return;
+        geomEditState.item.coords = geomEditState.origCoords.map(c => [c[0], c[1]]);
+        clearGeomHandles();
+        geomEditState = null;
+        if ($("geomEditBar")) $("geomEditBar").hidden = true;
+        drawRoutes();
+        if (!silent) toast("Redaktə ləğv edildi");
+    }
+
+    window.startGeomEdit = startGeomEdit;
+
+    // 🧭 Map Marker Üslubunda Mövcud Layihə Daxilində Yeni Xətt və Nöqtə Yaratma (Yalnız Admin)
+    const CUSTOM_ITEMS_STORE_KEY = "bcg.custom.items.v1";
+    let mmCreateState = null;
+
+    function calcCoordsMeters(coords) {
+        if (!Array.isArray(coords) || coords.length < 2) return 0;
+        if (window.tools && typeof tools.length === "function") {
+            return tools.length(coords);
+        }
+        let sum = 0;
+        const R = 6371000;
+        const rad = d => d * Math.PI / 180;
+        for (let i = 1; i < coords.length; i++) {
+            const [lat1, lng1] = coords[i - 1];
+            const [lat2, lng2] = coords[i];
+            const dLat = rad(lat2 - lat1);
+            const dLng = rad(lng2 - lng1);
+            const a = Math.sin(dLat / 2) ** 2 + Math.cos(rad(lat1)) * Math.cos(rad(lat2)) * Math.sin(dLng / 2) ** 2;
+            sum += 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        }
+        return sum;
+    }
+
+    function applySavedCustomItems() {
+        try {
+            const list = readStore(CUSTOM_ITEMS_STORE_KEY, []);
+            if (!Array.isArray(list) || list.length === 0) return;
+            list.forEach(entry => {
+                if (!entry || !entry.projectId || !entry.item) return;
+                let proj = state.projects.find(p => p.id === entry.projectId);
+                if (!proj && entry.newProjectMeta) {
+                    proj = {
+                        ...entry.newProjectMeta,
+                        items: []
+                    };
+                    state.projects.push(proj);
+                    state.visibleIds.add(proj.id);
+                }
+                if (!proj) return;
+                const exists = proj.items.some(i => i.id === entry.item.id);
+                if (!exists) {
+                    proj.items.push(entry.item);
+                }
+            });
+        } catch {}
+    }
+
+    function clearMmMarkers() {
+        if (!mmCreateState) return;
+        (mmCreateState.markers || []).forEach(m => m.remove());
+        mmCreateState.markers = [];
+    }
+
+    function rebuildMmMarkers() {
+        if (!mmCreateState || !window.map) return;
+        clearMmMarkers();
+        window.__mmDraftCoords = mmCreateState.mode === "line" ? mmCreateState.coords : null;
+        drawRoutes();
+
+        mmCreateState.coords.forEach(([lat, lng], idx) => {
+            const el = document.createElement("div");
+            el.className = "geom-vertex-handle";
+            el.title = `Nöqtə #${idx + 1} — yerini dəyişmək üçün sürüşdürün`;
+
+            const marker = new maplibregl.Marker({ element: el, draggable: true })
+                .setLngLat([lng, lat])
+                .addTo(map);
+
+            marker.on("drag", () => {
+                const pos = marker.getLngLat();
+                mmCreateState.coords[idx] = [Number(pos.lat.toFixed(6)), Number(pos.lng.toFixed(6))];
+                window.__mmDraftCoords = mmCreateState.mode === "line" ? mmCreateState.coords : null;
+                drawRoutes();
+                updateMmBar();
+            });
+            marker.on("dragend", () => {
+                const pos = marker.getLngLat();
+                mmCreateState.coords[idx] = [Number(pos.lat.toFixed(6)), Number(pos.lng.toFixed(6))];
+                updateMmBar();
+            });
+
+            mmCreateState.markers.push(marker);
+        });
+    }
+
+    function updateMmBar() {
+        const bar = $("geomEditBar");
+        if (!bar || !mmCreateState) return;
+        const { mode, coords } = mmCreateState;
+        if (mode === "point") {
+            if (coords.length === 0) {
+                bar.innerHTML = `
+                    <span><i class="fa-solid fa-location-dot"></i> <b>Yeni Nöqtə:</b> Xəritədə nöqtənin yerinə klikləyin</span>
+                    <button class="btn btn-outline" style="height:28px;padding:0 10px;font-size:12px;color:#fff;border-color:rgba(255,255,255,0.28)" data-geom-act="mmCancel">Ləğv et</button>
+                `;
+            } else {
+                const [lat, lng] = coords[0];
+                bar.innerHTML = `
+                    <span><i class="fa-solid fa-location-dot"></i> <b>Nöqtə (${lat.toFixed(5)}, ${lng.toFixed(5)}):</b> Sürüşdürüb dəqiqləşdirin və ya təsdiqləyin</span>
+                    <button class="btn btn-primary" style="height:28px;padding:0 12px;font-size:12px" data-geom-act="mmFinish"><i class="fa-solid fa-check"></i> Layihəyə əlavə et</button>
+                    <button class="btn btn-outline" style="height:28px;padding:0 10px;font-size:12px;color:#fff;border-color:rgba(255,255,255,0.28)" data-geom-act="mmCancel">Ləğv et</button>
+                `;
+            }
+        } else {
+            const lenM = calcCoordsMeters(coords);
+            bar.innerHTML = `
+                <span><i class="fa-solid fa-route"></i> <b>Yeni Xətt:</b> ${coords.length} nöqtə ${coords.length >= 2 ? `· Uzunluq: <b>${formatDistance(lenM)}</b>` : "(Xəritədə ardıcıl nöqtələrə klikləyin)"}</span>
+                ${coords.length > 0 ? `<button class="btn btn-outline" style="height:28px;padding:0 10px;font-size:12px;color:#fff;border-color:rgba(255,255,255,0.28)" data-geom-act="mmUndo"><i class="fa-solid fa-rotate-left"></i> Geri</button>` : ""}
+                ${coords.length >= 2 ? `<button class="btn btn-primary" style="height:28px;padding:0 12px;font-size:12px" data-geom-act="mmFinish"><i class="fa-solid fa-check"></i> Tamamla & Layihəyə əlavə et</button>` : ""}
+                <button class="btn btn-outline" style="height:28px;padding:0 10px;font-size:12px;color:#fff;border-color:rgba(255,255,255,0.28)" data-geom-act="mmCancel">Ləğv et</button>
+            `;
+        }
+        bar.hidden = false;
+    }
+
+    function startMapMarkerCreate(mode) {
+        if (!isAdmin()) {
+            toast("🔒 Bu funksiya yalnız Admin üçündür!", true);
+            return;
+        }
+        if (geomEditState) cancelGeomEdit(true);
+        if (mmCreateState) cancelMapMarkerCreate(true);
+
+        mmCreateState = {
+            mode,
+            coords: [],
+            markers: []
+        };
+        document.querySelectorAll("[data-mm-start]").forEach(btn => {
+            btn.classList.toggle("active", btn.dataset.mmStart === mode);
+        });
+        if (window.map) map.getCanvas().style.cursor = "crosshair";
+        updateMmBar();
+        toast(mode === "point"
+            ? "📍 Xəritədə yeni nöqtənin yerinə klikləyin"
+            : "〰️ Xəritədə ardıcıl klikləyərək xətti çəkin, bitirdikdə 'Tamamla' basın");
+    }
+
+    function handleMapMarkerClick(e) {
+        if (!mmCreateState) return false;
+        const lat = Number(e.lngLat.lat.toFixed(6));
+        const lng = Number(e.lngLat.lng.toFixed(6));
+
+        if (mmCreateState.mode === "point") {
+            mmCreateState.coords = [[lat, lng]];
+            rebuildMmMarkers();
+            updateMmBar();
+            openMapMarkerModal();
+            return true;
+        } else {
+            mmCreateState.coords.push([lat, lng]);
+            rebuildMmMarkers();
+            updateMmBar();
+            return true;
+        }
+    }
+
+    function undoMapMarkerVertex() {
+        if (!mmCreateState || mmCreateState.coords.length === 0) return;
+        mmCreateState.coords.pop();
+        rebuildMmMarkers();
+        updateMmBar();
+    }
+
+    function cancelMapMarkerCreate(silent = false) {
+        if (!mmCreateState) return;
+        clearMmMarkers();
+        mmCreateState = null;
+        window.__mmDraftCoords = null;
+        document.querySelectorAll("[data-mm-start]").forEach(btn => btn.classList.remove("active"));
+        if ($("geomEditBar")) $("geomEditBar").hidden = true;
+        if ($("mapMarkerModal")?.open) $("mapMarkerModal").close();
+        if (window.map) map.getCanvas().style.cursor = "";
+        drawRoutes();
+        if (!silent) toast("Əlavəetmə ləğv edildi");
+    }
+
+    function syncMmFormForProject() {
+        const sel = $("mmProjectSelect");
+        if (!sel || !mmCreateState) return;
+        const val = sel.value;
+        const isNewProj = val === "__new__";
+        if ($("mmNewProjWrap")) $("mmNewProjWrap").hidden = !isNewProj;
+
+        const proj = state.projects.find(p => p.id === val);
+        const isPointMode = mmCreateState.mode === "point" || (proj && (proj.type === "points" || proj.category === "nim"));
+        const isNim = proj?.category === "nim";
+
+        if ($("mmPointAWrap")) $("mmPointAWrap").hidden = mmCreateState.mode === "point";
+        if ($("mmPointBWrap")) $("mmPointBWrap").hidden = mmCreateState.mode === "point";
+        if ($("mmAntennasWrap")) $("mmAntennasWrap").hidden = !(isPointMode && !isNim);
+
+        const lenM = calcCoordsMeters(mmCreateState.coords);
+        if (isPointMode) {
+            if ($("mmPlanLabel")) $("mmPlanLabel").textContent = "1. Nəzərdə tutulan məsafə (m)";
+            if ($("mmDoneLabel")) $("mmDoneLabel").textContent = "2. Faktiki çəkilən məsafə (m)";
+            if (mmCreateState.coords.length >= 2) {
+                $("mmPlanVal").value = Math.round(lenM);
+            } else if (Number($("mmPlanVal").value) <= 100) {
+                $("mmPlanVal").value = isNim ? 1 : 5000;
+            }
+        } else {
+            if ($("mmPlanLabel")) $("mmPlanLabel").textContent = "1. Nəzərdə tutulan məsafə (km)";
+            if ($("mmDoneLabel")) $("mmDoneLabel").textContent = "2. Faktiki çəkilən məsafə (km)";
+            const km = Math.max(0.1, Math.round((lenM / 1000) * 100) / 100);
+            $("mmPlanVal").value = km;
+        }
+    }
+
+    function openMapMarkerModal() {
+        if (!mmCreateState) return;
+        if (mmCreateState.mode === "line" && mmCreateState.coords.length < 2) {
+            toast("Xətt üçün ən azı 2 nöqtə klikləyin", true);
+            return;
+        }
+        if (mmCreateState.mode === "point" && mmCreateState.coords.length < 1) {
+            toast("Xəritədə nöqtənin yerinə klikləyin", true);
+            return;
+        }
+
+        const activeCats = state.activeFolders.size > 0
+            ? [...state.activeFolders]
+            : ["project", "nim", "azconnect", "other"];
+        const catNames = { project: "🏢 BCG", nim: "🚦 NİM", azconnect: "🌐 Azconnect", other: "🗂️ Digər" };
+
+        const candidateProjects = state.projects.filter(p => activeCats.includes(p.category || "project"));
+        const pool = candidateProjects.length > 0 ? candidateProjects : state.projects;
+
+        const projSel = $("mmProjectSelect");
+        const curProjId = state.selected?.projectId || activeProjectId || pool[0]?.id || "";
+        projSel.innerHTML = pool.map(p => {
+            const cat = p.category || "project";
+            const cleanTitle = String(p.name || "").replace(/^Digər\s*:\s*/i, "").trim();
+            return `<option value="${esc(p.id)}" ${p.id === curProjId ? "selected" : ""}>[${catNames[cat] || "BCG"}] ${esc(cleanTitle)}</option>`;
+        }).join("") + `<option value="__new__">➕ Aktiv qovluqda yeni layihə yarat...</option>`;
+
+        $("mmStatusSelect").innerHTML = STATUSES.map(s => `<option value="${s}">${t("status" + s)}</option>`).join("");
+        $("mmStatusSelect").value = "icrada";
+
+        const contractorNames = [...new Set(["BCG (Öz briqadamız)", ...Object.keys(state.contractors)])];
+        $("mmContractorSelect").innerHTML = contractorNames.map(n => `<option value="${esc(n)}">${/bcg/i.test(n) ? "🏢 " + esc(n) : "👷 Podratçı: " + esc(n)}</option>`).join("");
+
+        $("mmModalTitle").textContent = mmCreateState.mode === "point"
+            ? "📍 Yeni Nöqtəni Layihəyə Əlavə Et"
+            : "〰️ Yeni Xətti Layihəyə Əlavə Et";
+        $("mmItemName").value = "";
+        $("mmDoneVal").value = 0;
+        $("mmCoordsText").value = mmCreateState.coords.map(c => `${c[0]}, ${c[1]}`).join("\n");
+        $("mmFormError").textContent = "";
+
+        syncMmFormForProject();
+        $("mapMarkerModal")?.showModal();
+    }
+
+    async function saveMapMarkerItem(event) {
+        event.preventDefault();
+        if (!mmCreateState) return;
+
+        const projVal = $("mmProjectSelect").value;
+        const itemName = $("mmItemName").value.trim();
+        const status = $("mmStatusSelect").value || "layihe";
+        const contractor = $("mmContractorSelect").value || "BCG (Öz briqadamız)";
+        const pointA = $("mmPointA").value.trim() || itemName || "Mərkəz";
+        const pointB = $("mmPointB").value.trim() || "Şəbəkə";
+        const planVal = Math.max(0, Number($("mmPlanVal").value) || 0);
+        const doneVal = Math.min(planVal, Math.max(0, Number($("mmDoneVal").value) || 0));
+        const antennas = Math.max(0, Number($("mmAntennasVal").value) || 0);
+
+        if (!itemName) {
+            $("mmFormError").textContent = "Adı (Name) daxil edin";
+            return;
+        }
+
+        let coords;
+        try {
+            coords = textToCoords($("mmCoordsText").value, mmCreateState.mode === "point" ? 1 : 2);
+        } catch {
+            $("mmFormError").textContent = t("coordsInvalid");
+            return;
+        }
+
+        let targetProj = state.projects.find(p => p.id === projVal);
+        let newProjectMeta = null;
+
+        if (projVal === "__new__") {
+            const newProjName = $("mmNewProjName").value.trim();
+            if (!newProjName) {
+                $("mmFormError").textContent = "Yeni layihənin adını daxil edin";
+                return;
+            }
+            const activeCat = [...state.activeFolders][0] || "project";
+            const newId = `proj_mm_${Date.now()}`;
+            newProjectMeta = {
+                id: newId,
+                name: newProjName,
+                category: activeCat,
+                type: mmCreateState.mode === "point" ? "points" : "lines",
+                status,
+                startDate: "",
+                endDate: ""
+            };
+            targetProj = { ...newProjectMeta, items: [] };
+            state.projects.push(targetProj);
+            state.visibleIds.add(targetProj.id);
+            state.activeFolders.add(activeCat);
+        }
+
+        if (!targetProj) return;
+
+        const newItemId = `${mmCreateState.mode === "point" ? "PT" : "LN"}-${Date.now().toString().slice(-4)}`;
+        const newItem = {
+            id: newItemId,
+            name: itemName,
+            pointA,
+            pointB,
+            startDate: new Date().toISOString().slice(0, 10),
+            endDate: "",
+            contractor,
+            totalKm: planVal,
+            doneKm: doneVal,
+            status,
+            closures: 0,
+            manholes: 0,
+            antennas: mmCreateState.mode === "point" ? Math.max(1, antennas) : antennas,
+            coords
+        };
+
+        targetProj.items.push(newItem);
+        state.visibleIds.add(targetProj.id);
+        state.expandedIds.add(targetProj.id);
+        state.activeFolders.add(targetProj.category || "project");
+
+        // Lokal yaddaşda saxla ki səhifə yenilənəndə itməsin
+        const savedList = readStore(CUSTOM_ITEMS_STORE_KEY, []);
+        savedList.push({
+            projectId: targetProj.id,
+            newProjectMeta,
+            item: newItem
+        });
+        writeStore(CUSTOM_ITEMS_STORE_KEY, savedList);
+
+        // Supabase aktivdirsə bazaya da göndər
+        if (api.configured) {
+            try {
+                await api.saveSegment(targetProj.id, null, {
+                    code: newItem.id,
+                    name: newItem.name,
+                    point_a: newItem.pointA,
+                    point_b: newItem.pointB,
+                    start_date: newItem.startDate,
+                    end_date: null,
+                    contractor: newItem.contractor,
+                    total_km: newItem.totalKm,
+                    done_km: newItem.doneKm,
+                    status: newItem.status,
+                    antennas: newItem.antennas,
+                    coords: newItem.coords
+                });
+            } catch { /* lokal olaraq saxlanılıb */ }
+        }
+
+        recordAuditLog(
+            mmCreateState.mode === "point" ? "Yeni Nöqtə Əlavəsi" : "Yeni Xətt Əlavəsi",
+            targetProj.category === "nim" ? "🚦 NİM" : (targetProj.category === "azconnect" ? "🌐 Azconnect" : "🏢 BCG"),
+            `${targetProj.name} → ${newItem.name}`,
+            `Status: ${t("status" + newItem.status)} · Plan: ${newItem.totalKm} / Faktiki: ${newItem.doneKm}`
+        );
+
+        $("mapMarkerModal")?.close();
+        cancelMapMarkerCreate(true);
+        selectSegment(targetProj, newItem);
+        toast(`✅ "${newItem.name}" layihəyə (${targetProj.name}) əlavə olundu!`);
+    }
+
+    window.handleMapMarkerClick = handleMapMarkerClick;
     function recordAuditLog(actionType, folder, target, details) {
         try {
             const raw = localStorage.getItem(AUDIT_STORE_KEY);
@@ -1984,9 +3052,10 @@ document.addEventListener("DOMContentLoaded", init);
                                         <span class="muted">İcraçı:</span>
                                         ${executorOptionsHtml(r.contractor)}
                                     </div>
-                                    <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--ink-2)">
+                                    <div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;color:var(--ink-2)">
                                         <span>👷 İşçi: <b>${esc(cInfo.workers)} nəfər</b></span>
                                         <span>📞 <b>${esc(cInfo.engineer || "—")}</b></span>
+                                        ${isAdmin() ? `<button class="btn btn-outline" style="height:22px;padding:0 7px;font-size:10.5px" data-geom-edit="${esc(proj.id)}:${esc(r.id)}" title="Nöqtəni xəritədə sürüşdür"><i class="fa-solid fa-arrows-up-down-left-right"></i> Sürüşdür</button>` : ""}
                                     </div>
                                 </div>
                             `;
@@ -1994,6 +3063,7 @@ document.addEventListener("DOMContentLoaded", init);
                     </div>
                     <div style="display:flex;gap:6px;padding-top:2px">
                         <button class="btn btn-outline" style="flex:1;height:28px;font-size:12px" data-card-act="zoom"><i class="fa-solid fa-crosshairs"></i> ${t("zoomTo")}</button>
+                        ${isAdmin() ? `<button class="btn btn-outline" style="height:28px;font-size:12px" data-card-act="geomEdit" title="Xəritədə sürüşdür / Redaktə et"><i class="fa-solid fa-arrows-up-down-left-right"></i> Xəritədə redaktə</button>` : ""}
                         ${isAdmin() ? `<button class="btn btn-primary" style="height:28px;font-size:12px" data-card-act="edit"><i class="fa-solid fa-pen"></i></button>` : ""}
                     </div>
                 </div>
@@ -2047,9 +3117,10 @@ document.addEventListener("DOMContentLoaded", init);
                                         <span class="muted">İcraçı:</span>
                                         ${executorOptionsHtml(r.contractor)}
                                     </div>
-                                    <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--ink-2)">
+                                    <div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;color:var(--ink-2)">
                                         <span>👷 İşçi: <b>${esc(cInfo.workers)} nəfər</b></span>
                                         <span>📞 <b>${esc(cInfo.engineer || "—")}</b></span>
+                                        ${isAdmin() ? `<button class="btn btn-outline" style="height:22px;padding:0 7px;font-size:10.5px" data-geom-edit="${esc(proj.id)}:${esc(r.id)}" title="Nöqtəni xəritədə sürüşdür"><i class="fa-solid fa-arrows-up-down-left-right"></i> Sürüşdür</button>` : ""}
                                     </div>
                                 </div>
                             `;
@@ -2057,6 +3128,7 @@ document.addEventListener("DOMContentLoaded", init);
                     </div>
                     <div style="display:flex;gap:6px;padding-top:2px">
                         <button class="btn btn-outline" style="flex:1;height:28px;font-size:12px" data-card-act="zoom"><i class="fa-solid fa-crosshairs"></i> ${t("zoomTo")}</button>
+                        ${isAdmin() ? `<button class="btn btn-outline" style="height:28px;font-size:12px" data-card-act="geomEdit" title="Xəritədə sürüşdür / Redaktə et"><i class="fa-solid fa-arrows-up-down-left-right"></i> Xəritədə redaktə</button>` : ""}
                         ${isAdmin() ? `<button class="btn btn-primary" style="height:28px;font-size:12px" data-card-act="edit"><i class="fa-solid fa-pen"></i></button>` : ""}
                     </div>
                 </div>
@@ -2105,9 +3177,10 @@ document.addEventListener("DOMContentLoaded", init);
                                         <span class="muted">İcraçı:</span>
                                         ${executorOptionsHtml(r.contractor)}
                                     </div>
-                                    <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--ink-2)">
+                                    <div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;color:var(--ink-2)">
                                         <span>👷 İşçi: <b>${esc(cInfo.workers)} nəfər</b></span>
                                         <span>📞 <b>${esc(cInfo.engineer || "—")}</b></span>
+                                        ${isAdmin() ? `<button class="btn btn-outline" style="height:22px;padding:0 7px;font-size:10.5px" data-geom-edit="${esc(proj.id)}:${esc(r.id)}" title="Xəttin qırılma nöqtələrini xəritədə sürüşdür"><i class="fa-solid fa-bezier-curve"></i> Xətti sürüşdür</button>` : ""}
                                     </div>
                                 </div>
                             `;
@@ -2116,6 +3189,7 @@ document.addEventListener("DOMContentLoaded", init);
 
                     <div style="display:flex;gap:6px;padding-top:2px">
                         <button class="btn btn-outline" style="flex:1;height:28px;font-size:12px" data-card-act="zoom"><i class="fa-solid fa-crosshairs"></i> ${t("zoomTo")}</button>
+                        ${isAdmin() ? `<button class="btn btn-outline" style="height:28px;font-size:12px" data-card-act="geomEdit" title="Xəttin qırılma nöqtələrini xəritədə sürüşdür"><i class="fa-solid fa-bezier-curve"></i> Xəritədə redaktə</button>` : ""}
                         ${isAdmin() ? `<button class="btn btn-primary" style="height:28px;font-size:12px" data-card-act="edit"><i class="fa-solid fa-pen"></i></button>` : ""}
                     </div>
                 </div>
@@ -2382,6 +3456,9 @@ document.addEventListener("DOMContentLoaded", init);
 
     window.renderAll = function () {
         ensureDefaultNimAndAzconnect();
+        applySavedCustomItems();
+        applySavedGeomOverrides();
+        if ($("mapMarkerDock")) $("mapMarkerDock").hidden = !isAdmin();
         origRenderAll();
         updateLegendVisibility();
         renderInfoCard();
@@ -2390,27 +3467,57 @@ document.addEventListener("DOMContentLoaded", init);
 
     document.addEventListener("DOMContentLoaded", () => {
         ensureMapWidgets();
-        initPrintCropTool();
         initRightTools();
 
-        // Sol sütun 4 Qovluq (📁 Layihələr, 🚦 NİM, 🌐 Azconnect, 🗂️ Digər) və xəritədə aktiv/deaktiv quşu
+        // Sol dibdə Yarım Dairə üzərində 4 Qovluq (🏢 BCG, 🚦 NİM, 🌐 Azconnect, 🗂️ Digər)
+        // 1x Sol klik: Qovluğu aktiv/deaktiv et · 2x Sol klik: Bütün qovluqları və layihələri söndür
+        let lastFolderLeftClick = 0;
+        let folderSingleClickTimer = null;
+
         $("sideCatTabs")?.addEventListener("click", e => {
-            const chk = e.target.closest("[data-folder-vis]");
-            if (chk) {
-                e.stopPropagation();
-                const folder = chk.dataset.folderVis;
-                if (chk.checked) state.activeFolders.add(folder);
-                else state.activeFolders.delete(folder);
-                const fNames = { project: "📁 Layihələr", nim: "🚦 NİM", azconnect: "🌐 Azconnect", other: "🗂️ Digər" };
-                recordAuditLog("Qovluq Görünüşü", fNames[folder] || folder, "Xəritə qovluğu", `${fNames[folder]} qovluğu xəritədə ${chk.checked ? "aktiv edildi" : "gizlədildi"}`);
+            const now = Date.now();
+            if (now - lastFolderLeftClick < 280) {
+                clearTimeout(folderSingleClickTimer);
+                lastFolderLeftClick = 0;
+                state.activeFolders.clear();
+                state.visibleIds.clear();
+                state.selected = null;
+                activeProjectId = null;
+                window.__activeProjectId = null;
+                if ($("infoCard")) $("infoCard").hidden = true;
+                if (geomEditState) cancelGeomEdit(true);
                 renderAll();
-                toast(`${fNames[folder]} xəritədə ${chk.checked ? "aktiv edildi" : "deaktiv edildi"}`);
+                toast("2x Sol klik: Bütün qovluqlar və layihələr söndürüldü");
                 return;
             }
+            lastFolderLeftClick = now;
+
             const btn = e.target.closest("[data-folder-tab]");
             if (!btn) return;
-            state.sidebarCategory = btn.dataset.folderTab;
-            renderAll();
+            const folder = btn.dataset.folderTab;
+            const fNames = { project: "🏢 BCG", nim: "🚦 NİM", azconnect: "🌐 Azconnect", other: "🗂️ Digər" };
+
+            clearTimeout(folderSingleClickTimer);
+            folderSingleClickTimer = setTimeout(() => {
+                if (state.activeFolders.has(folder)) {
+                    state.activeFolders.delete(folder);
+                    const curProjId = state.selected?.projectId || activeProjectId;
+                    const curProj = state.projects.find(p => p.id === curProjId);
+                    if (curProj && (curProj.category || "project") === folder) {
+                        state.selected = null;
+                        activeProjectId = null;
+                        window.__activeProjectId = null;
+                    }
+                    toast(`${fNames[folder]} söndürüldü`);
+                } else {
+                    state.activeFolders.add(folder);
+                    state.sidebarCategory = folder;
+                    state.projects.filter(p => (p.category || "project") === folder).forEach(p => state.visibleIds.add(p.id));
+                    toast(`${fNames[folder]} aktiv edildi`);
+                }
+                recordAuditLog("Qovluq Seçimi", fNames[folder] || folder, "Yarım dairə menyu", `${fNames[folder]} qovluğu ${state.activeFolders.has(folder) ? "aktiv edildi" : "deaktiv edildi"}`);
+                renderAll();
+            }, 220);
         });
 
         // İdxal seçim pəncərəsi
@@ -2484,6 +3591,8 @@ document.addEventListener("DOMContentLoaded", init);
                 window.__activeProjectId = projId;
                 state.selected = null;
                 renderInfoCard();
+                renderChips();
+                updateLegendVisibility();
                 drawRoutes();
             }
         });
@@ -2491,16 +3600,6 @@ document.addEventListener("DOMContentLoaded", init);
         // Xəritə klik və 1x / 2x sağ klik davranışı
         const bindMapEnhancements = () => {
             if (!window.map) { setTimeout(bindMapEnhancements, 150); return; }
-
-            map.on("click", e => {
-                if (pegmanActive) {
-                    pegmanActive = false;
-                    $("pegmanBtn")?.classList.remove("active");
-                    if ($("pegmanDropHint")) $("pegmanDropHint").hidden = true;
-                    map.getCanvas().style.cursor = "";
-                    openStreetViewAt(e.lngLat.lat, e.lngLat.lng);
-                }
-            });
 
             // 1x Sağ klik: Yalnız status pəncərəsini bağla (Layihələr sütunu açıq qalsın)
             // 2x Ard-arda sağ klik: Sol Layihələr sütununu da bağla
@@ -2532,6 +3631,8 @@ document.addEventListener("DOMContentLoaded", init);
                         window.__activeProjectId = null;
                         if ($("infoCard")) $("infoCard").hidden = true;
                         closePopovers();
+                        renderChips();
+                        updateLegendVisibility();
                         drawRoutes();
                         renderProjects();
                         toast("1x Sağ klik: Status pəncərəsi bağlandı");

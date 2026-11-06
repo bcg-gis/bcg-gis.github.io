@@ -26,7 +26,7 @@
     --radius: 6px;
     --shadow: 0 1px 2px rgba(15, 23, 42, .1), 0 4px 14px rgba(15, 23, 42, .12);
     --appbar-h: 52px;
-    --sidebar-w: 348px;
+    --sidebar-w: 300px;
     color-scheme: light;
 }
 
@@ -467,15 +467,11 @@ body.shared .user, body.shared #logoutBtn, body.shared .bar-sep, body.shared .ta
 
 /* Çap */
 @media print {
-    html, body { display: block; height: auto; overflow: visible; background: #fff; color: #000; }
-    .appbar, .sidebar, .toolbar, .popover, .legend, .cursor-coords, .tool-area, .measure-tip, .toasts, .login, .dock-head, #contractorsPane { display: none !important; }
-    .workspace, .map-column { display: block; }
-    .map-stage { height: 55vh; }
-    .dock, .dock.open { height: auto; border: 0; }
-    .dock-body { display: block !important; border: 0; }
-    #segmentsPane { display: block !important; }
-    .table-wrap { overflow: visible; }
-    th, td, tfoot td { background: #fff; color: #000; position: static; border-color: #bbb; }
+    @page { size: landscape; margin: 6mm; }
+    html, body { display: block; height: 100vh !important; overflow: hidden !important; background: #fff; color: #000; }
+    .appbar, .sidebar, .toolbar, .popover, .cursor-coords, .tool-area, .measure-tip, .toasts, .login, .dock, #drawer, .info-card, .reopen-sidebar-btn { display: none !important; }
+    .workspace, .map-column { display: block !important; height: 100vh !important; width: 100vw !important; }
+    .map-stage { position: relative !important; height: 96vh !important; width: 100% !important; }
 }
 
 /* === YENİLİKLƏR VƏ ÖNBAXIŞ ƏLAVƏLƏRİ === */
@@ -485,72 +481,259 @@ body.shared .user, body.shared #logoutBtn, body.shared .bar-sep, body.shared .ta
 #drawer { display: none !important; }
 #materialsModal { width: min(980px, 95vw); }
 
-/* Sol sütun: 4 Qovluq (📁 Layihələr, 🚦 NİM, 🌐 Azconnect, 🗂️ Digər) */
-.side-cat-tabs {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 6px;
-    padding: 8px 10px;
-    background: var(--canvas);
-    border-bottom: 1px solid var(--line);
-}
-.side-cat-btn {
-    height: 32px;
-    padding: 0 8px;
-    border: 1px solid var(--line);
-    border-radius: var(--radius);
-    background: var(--panel);
-    color: var(--ink-2);
-    font-weight: 600;
-    font-size: 12px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 6px;
-    cursor: pointer;
-    user-select: none;
-    transition: all 0.15s;
-}
-.side-cat-btn:hover { background: var(--hover); color: var(--ink); }
-.side-cat-btn.active {
-    background: var(--brand);
-    border-color: var(--brand);
-    color: #fff;
-    box-shadow: 0 2px 8px color-mix(in srgb, var(--brand) 35%, transparent);
-}
-.side-cat-btn.folder-off {
-    opacity: 0.52;
-}
-.folder-vis-chk {
-    width: 14px;
-    height: 14px;
-    margin: 0;
-    accent-color: #22C55E;
-    cursor: pointer;
+/* Sol sütun: Sol dibdə Yarım Dairə üzərində 4 Qovluq (🏢 BCG, 🚦 NİM, 🌐 Azconnect, 🗂️ Digər) — Böyüdülmüş ölçü */
+.semi-folder-stage {
+    position: relative;
+    height: 250px;
+    background: radial-gradient(circle at 0% 40%, color-mix(in srgb, var(--brand) 16%, transparent) 0%, var(--canvas) 76%);
+    border-bottom: 0;
+    overflow: hidden;
     flex-shrink: 0;
 }
+.semi-arc-svg {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 220px;
+    height: 250px;
+    pointer-events: none;
+}
+.semi-folder-node {
+    position: absolute;
+    height: 38px;
+    padding: 0 15px;
+    border-radius: 999px;
+    border: 1.8px solid var(--line-strong);
+    background: var(--panel);
+    color: var(--ink-2);
+    font-weight: 700;
+    font-size: 13.5px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    user-select: none;
+    transition: all 0.18s ease;
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.25);
+}
+/* Yarım dairə xətti üzərində düzülüş (böyüdülmüş) */
+.semi-folder-node.pos-1 { top: 10px;  left: 52px; }
+.semi-folder-node.pos-2 { top: 56px;  left: 98px; }
+.semi-folder-node.pos-3 { top: 106px; left: 98px; }
+.semi-folder-node.pos-4 { top: 152px; left: 52px; }
+
+.semi-folder-node:hover {
+    transform: translateX(4px) scale(1.02);
+    color: var(--ink);
+    border-color: var(--brand);
+}
+.semi-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--ink-3);
+    transition: all 0.18s;
+}
+/* Aktiv qovluqların fərqli və parlaq rəngləri (baxanda dərhal aktiv olduğu bilinir) */
+.semi-folder-node[data-folder-tab="project"].active {
+    background: linear-gradient(135deg, #2563eb, #0284c7);
+    border-color: #7dd3fc;
+    color: #ffffff;
+    box-shadow: 0 0 16px rgba(56, 189, 248, 0.6);
+}
+.semi-folder-node[data-folder-tab="nim"].active {
+    background: linear-gradient(135deg, #d97706, #ea580c);
+    border-color: #fde047;
+    color: #ffffff;
+    box-shadow: 0 0 16px rgba(245, 158, 11, 0.6);
+}
+.semi-folder-node[data-folder-tab="azconnect"].active {
+    background: linear-gradient(135deg, #0891b2, #0d9488);
+    border-color: #67e8f9;
+    color: #ffffff;
+    box-shadow: 0 0 16px rgba(6, 182, 212, 0.6);
+}
+.semi-folder-node[data-folder-tab="other"].active {
+    background: linear-gradient(135deg, #7c3aed, #9333ea);
+    border-color: #d8b4fe;
+    color: #ffffff;
+    box-shadow: 0 0 16px rgba(168, 85, 247, 0.6);
+}
+.semi-folder-node.active .semi-dot {
+    background: #ffffff;
+    box-shadow: 0 0 6px #ffffff;
+}
 .folder-btn-label {
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
     white-space: nowrap;
+    letter-spacing: 0.01em;
 }
 .side-cat-badge {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 18px;
-    height: 18px;
-    padding: 0 5px;
-    border-radius: 9px;
-    font-size: 11px;
+    min-width: 21px;
+    height: 21px;
+    padding: 0 6px;
+    border-radius: 999px;
+    font-size: 12px;
     font-weight: 700;
-    background: rgba(128,128,128,0.16);
+    background: rgba(128,128,128,0.2);
 }
-.side-cat-btn.active .side-cat-badge {
-    background: rgba(255,255,255,0.22);
+.semi-folder-node.active .side-cat-badge {
+    background: rgba(255,255,255,0.26);
     color: #fff;
+}
+
+/* Sağ alətlər panelində açılan alt-alətlər üçün Yarım Dairə (Semi-Circle Flyout) */
+.fly-group .fly {
+    position: absolute;
+    top: 50%;
+    right: calc(100% + 4px);
+    transform: translateY(-50%);
+    width: 112px;
+    height: 164px;
+    display: none;
+    background: none !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    pointer-events: none;
+    z-index: 525;
+}
+.fly-group.open .fly {
+    display: block;
+}
+.fly-group .fly::before {
+    content: "";
+    position: absolute;
+    right: 0;
+    top: 8px;
+    width: 82px;
+    height: 148px;
+    border-radius: 110px 0 0 110px;
+    border: 2px dashed color-mix(in srgb, var(--brand) 70%, #38bdf8);
+    border-right: 0;
+    background: radial-gradient(circle at 100% 50%, color-mix(in srgb, var(--brand) 18%, transparent) 0%, transparent 74%);
+    pointer-events: none;
+}
+.fly-group .fly > button {
+    position: absolute;
+    width: 34px !important;
+    height: 34px !important;
+    border-radius: 50% !important;
+    background: var(--panel);
+    color: var(--ink-2);
+    border: 1.5px solid var(--line-strong);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+    pointer-events: auto;
+    display: grid;
+    place-items: center;
+    transition: transform 0.16s ease, background 0.16s ease, border-color 0.16s ease;
+}
+.fly-group .fly > button:hover:not(:disabled) {
+    transform: scale(1.12);
+    border-color: var(--brand);
+    background: var(--hover);
+    color: var(--ink);
+}
+.fly-group .fly > button.on,
+.fly-group .fly > button.active {
+    background: var(--brand);
+    color: var(--brand-ink);
+    border-color: #7dd3fc;
+    box-shadow: 0 0 12px rgba(56, 189, 248, 0.55);
+}
+
+/* Dinamik Şərti İşarələr (Legend) - nöqtə layihələrinin fərqli işarələri */
+.legend-divider {
+    height: 1px;
+    background: var(--line);
+    margin: 4px 0;
+}
+.legend-sec-title {
+    font-size: 10.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--ink-3);
+    margin-top: 1px;
+}
+.legend-shape-badge {
+    width: 16px;
+    height: 16px;
+    display: inline-grid;
+    place-items: center;
+    font-size: 12px;
+    line-height: 1;
+    flex-shrink: 0;
+}
+
+/* Admin Xəritə Üzərində Xətt və Nöqtə Sürüşdürmə (Geometry Edit) */
+.geom-edit-bar[hidden] { display: none !important; }
+.geom-edit-bar {
+    position: absolute;
+    z-index: 540;
+    top: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 14px;
+    background: var(--bar);
+    color: var(--bar-ink);
+    border: 1.5px solid #38bdf8;
+    border-radius: 999px;
+    box-shadow: 0 8px 26px rgba(0, 0, 0, 0.45);
+    font-size: 12px;
+    max-width: calc(100% - 110px);
+}
+.geom-vertex-handle {
+    width: 15px;
+    height: 15px;
+    border-radius: 50%;
+    background: #ffffff;
+    border: 3px solid #0284c7;
+    box-shadow: 0 2px 7px rgba(0, 0, 0, 0.55);
+    cursor: grab;
+    transition: transform 0.12s ease;
+}
+.geom-vertex-handle:hover {
+    transform: scale(1.25);
+    background: #fde047;
+    border-color: #0f172a;
+}
+.geom-vertex-handle:active {
+    cursor: grabbing;
+}
+.geom-mid-handle {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: rgba(56, 189, 248, 0.88);
+    border: 2px solid #ffffff;
+    box-shadow: 0 1px 5px rgba(0, 0, 0, 0.45);
+    cursor: pointer;
+    opacity: 0.82;
+    transition: transform 0.12s ease, opacity 0.12s ease;
+}
+.geom-mid-handle:hover {
+    transform: scale(1.3);
+    opacity: 1;
+    background: #22c55e;
+}
+/* İki və ya daha çox qovluq seçildikdə siyahıda hər qovluğun öz başlığı */
+.folder-group-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 12px;
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    background: color-mix(in srgb, var(--brand) 10%, var(--canvas));
+    border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+    color: var(--ink);
 }
 
 /* 2. Layihə və ya seqment seçiləndə açılan, ölçüsü dəyişdirilə bilən kvadrat məlumat pəncərəsi */
@@ -916,3 +1099,163 @@ body.shared .user, body.shared #logoutBtn, body.shared .bar-sep, body.shared .ta
     font-size: 12px;
 }
 .notif-toast strong { display: block; margin-bottom: 3px; color: var(--brand); }
+
+/* Map Marker üslubunda Admin kənar əlavəetmə aləti (Mövcud layihə daxilində yeni Xətt və Nöqtə yaratma) */
+.map-marker-dock {
+    position: absolute;
+    z-index: 510;
+    right: 12px;
+    bottom: 52px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px;
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--panel) 95%, transparent);
+    backdrop-filter: blur(8px);
+    border: 1px solid var(--line-strong);
+    box-shadow: var(--shadow);
+}
+.map-marker-dock[hidden] { display: none !important; }
+.mm-dock-title {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--ink-3);
+    padding: 0 4px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+.mm-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    height: 32px;
+    padding: 0 11px;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    background: var(--canvas);
+    color: var(--ink);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.16s ease;
+    white-space: nowrap;
+}
+.mm-btn i {
+    color: var(--brand);
+    font-size: 13px;
+}
+.mm-btn:hover {
+    border-color: var(--brand);
+    background: var(--brand-soft);
+    color: var(--brand);
+}
+.mm-btn.active {
+    background: var(--brand);
+    border-color: var(--brand);
+    color: #ffffff;
+    box-shadow: 0 3px 10px color-mix(in srgb, var(--brand) 40%, transparent);
+}
+.mm-btn.active i {
+    color: #ffffff;
+}
+@media print {
+    .map-marker-dock, .geom-edit-bar { display: none !important; }
+}
+
+/* === Fiber optik kabel: en kəsiyi, qovluq lifləri və status panelinə gedən kabel başlanğıcı === */
+.fo-trunk-base, .fo-branch-base {
+    fill: none;
+    stroke: #3b4a60;
+    stroke-width: 2;
+    stroke-linecap: round;
+    opacity: 0.75;
+}
+.fo-trunk-active, .fo-branch-active {
+    fill: none;
+    stroke: var(--fo-color);
+    stroke-width: 2.6;
+    stroke-linecap: round;
+    opacity: 0;
+    transition: opacity 0.35s ease;
+}
+.fo-trunk-pulse, .fo-branch-pulse {
+    fill: none;
+    stroke: #ffffff;
+    stroke-width: 1.4;
+    stroke-linecap: round;
+    stroke-dasharray: 4 26;
+    opacity: 0;
+}
+.fo-system-group.active .fo-trunk-active,
+.fo-system-group.active .fo-branch-active {
+    opacity: 1;
+    filter: url(#foGlow);
+}
+.fo-system-group.active .fo-trunk-pulse,
+.fo-system-group.active .fo-branch-pulse {
+    opacity: 0.85;
+    animation: foPulse 1.6s linear infinite;
+}
+@keyframes foPulse { to { stroke-dashoffset: -60; } }
+.fo-port-dot { fill: #475569; stroke: #0b1220; stroke-width: 1.2; transition: fill 0.3s; }
+.fo-system-group.active .fo-port-dot { fill: var(--fo-color); filter: url(#foGlow); }
+
+.fo-tube-ring { fill: #111c2e; stroke: #475569; stroke-width: 1.1; transition: all 0.3s; }
+.fo-tube-glass { fill: #334155; transition: all 0.3s; }
+.fo-core-tube.active .fo-tube-ring { stroke: var(--fo-color); stroke-width: 1.5; }
+.fo-core-tube.active .fo-tube-glass { fill: var(--fo-color); filter: url(#foGlow); }
+
+.fo-status-coupler {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 4px;
+    padding: 5px 8px;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    background: color-mix(in srgb, var(--panel) 85%, transparent);
+    font-size: 10px;
+    color: var(--ink-3);
+    pointer-events: none;
+    opacity: 0.7;
+    transition: opacity 0.3s;
+}
+.fo-status-coupler.active { opacity: 1; color: var(--ink-2); }
+.fo-coupler-leds { display: flex; gap: 5px; }
+.fo-led { width: 9px; height: 9px; border-radius: 50%; background: #334155; border: 1px solid #1e293b; transition: all 0.3s; }
+.fo-led.active { background: var(--fo-color); box-shadow: 0 0 7px var(--fo-color); }
+
+/* Kabel başlanğıcının daxil olduğu status paneli: aktiv olanda işıqlanır */
+#listView .filters { border-top: 3px solid #1e293b; transition: border-color 0.3s, box-shadow 0.3s; }
+#listView .filters.fo-fed {
+    border-top-color: transparent;
+    border-image: linear-gradient(90deg, #38bdf8, #f59e0b, #06b6d4, #a855f7) 1;
+    box-shadow: inset 0 8px 14px -10px rgba(56, 189, 248, 0.55);
+}
+
+/* Kabel gövdəsindəki liflər bir-birinə yaxın olduğu üçün nazik çəkilir */
+.fo-trunk-base { stroke-width: 1.6; }
+.fo-trunk-active { stroke-width: 2.2; }
+.fo-trunk-pulse { stroke-width: 1.1; }
+.fo-status-coupler { display: none !important; }
+
+/* Daha dar sol panel üçün yığcam sətirlər */
+.filters { padding: 10px 12px; }
+.list-head { padding: 10px 12px 6px; }
+.project-row { padding: 7px 6px 7px 12px; gap: 6px; }
+.segments { padding: 0 6px 8px 24px; }
+.chip { padding: 0 6px; font-size: 11.5px; }
+
+/* Yığcam şərti işarələr (legend) */
+.legend { padding: 6px 8px; gap: 2px; font-size: 11px; max-width: 190px; }
+.legend-row { gap: 6px; }
+.legend-line { width: 13px; }
+.legend-sec-title { font-size: 9.5px; }
+.legend-proj-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
