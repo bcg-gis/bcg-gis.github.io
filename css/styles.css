@@ -1,4 +1,4 @@
-:root {
+﻿:root {
     --bar: #0e1a2b;
     --bar-ink: #e6ecf4;
     --bar-muted: #93a3b8;
@@ -1259,3 +1259,5 @@ body.shared .user, body.shared #logoutBtn, body.shared .bar-sep, body.shared .ta
 .legend-line { width: 13px; }
 .legend-sec-title { font-size: 9.5px; }
 .legend-proj-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+

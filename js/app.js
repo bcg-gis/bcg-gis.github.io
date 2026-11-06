@@ -1,4 +1,4 @@
-/* BCG GIS paneli: vəziyyət, xəritə, panellər */
+﻿/* BCG GIS paneli: vəziyyət, xəritə, panellər */
 
 const AZERBAIJAN_BOUNDS = [[38.39, 44.77], [41.91, 50.63]];
 
@@ -1356,10 +1356,10 @@ function renderProjects() {
     if ($("addProjectBtn")) $("addProjectBtn").hidden = !isAdmin() || state.activeFolders.size === 0;
 
     const folderMeta = {
-        project: { title: "🏢 BCG", list: projectsOnly },
-        nim: { title: "🚦 NİM (Svetofor Kəsişmələri)", list: nimOnly },
-        azconnect: { title: "🌐 Azconnect Xətləri", list: azcOnly },
-        other: { title: "🗂️ Digər", list: otherOnly }
+        project: { title: "<i class=\"fa-solid fa-building\"></i> BCG", list: projectsOnly },
+        nim: { title: "<i class=\"fa-solid fa-traffic-light\" style=\"color:#f59e0b\"></i> NİM (Svetofor Kəsişmələri)", list: nimOnly },
+        azconnect: { title: "<i class=\"fa-solid fa-globe\" style=\"color:#06b6d4\"></i> Azconnect Xətləri", list: azcOnly },
+        other: { title: "<i class=\"fa-solid fa-folder-tree\" style=\"color:#a855f7\"></i> Digər", list: otherOnly }
     };
 
     const activeOrder = ["project", "nim", "azconnect", "other"].filter(f => state.activeFolders.has(f));
@@ -1371,7 +1371,7 @@ function renderProjects() {
     }
 
     if ($("listHeadTitle")) {
-        $("listHeadTitle").textContent = activeOrder.length === 1
+        $("listHeadTitle").innerHTML = activeOrder.length === 1
             ? folderMeta[activeOrder[0]].title
             : "Seçilmiş qovluqlar";
     }
