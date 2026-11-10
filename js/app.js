@@ -1867,9 +1867,9 @@ function bindEvents() {
             if ($("adminImportChoiceWrap")) $("adminImportChoiceWrap").hidden = !isAdmin();
             if ($("userAutoOtherNotice")) $("userAutoOtherNotice").hidden = isAdmin();
             if ($("importRoleSubtitle")) {
-                $("importRoleSubtitle").textContent = isAdmin()
-                    ? "👑 Admin: Faylın hansı qovluğa (Layihələr, NİM, Azconnect, Digər) düşəcəyini seçin"
-                    : "ℹ️ İstifadəçi: Yüklənən fayl avtomatik '🗂️ Digər' qovluğuna əlavə olunur";
+                $("importRoleSubtitle").innerHTML = isAdmin()
+                    ? '<i class="fa-solid fa-user-shield" style="color:#22c55e"></i> <b>Admin:</b> Faylın hansı qovluğa (BCG, NİM, Azconnect, Digər) düşəcəyini seçin'
+                    : '<i class="fa-solid fa-circle-info" style="color:#38bdf8"></i> <b>İstifadəçi:</b> Yüklənən fayl avtomatik <b>Digər</b> qovluğuna əlavə olunur';
             }
             $("importModal").showModal();
         } else {
