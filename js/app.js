@@ -1639,11 +1639,52 @@ async function deleteNote(id) {
 }
 
 /* İMPORT: GeoJSON, KML, KMZ (həm Xətt, həm də Nöqtə layihələri üçün ArcGIS Pro atribut dəstəyi ilə) */
+function normalizeKey(k) {
+    return String(k || "")
+        .trim()
+        .toLowerCase()
+        .replace(/[\s_\-\.]+/g, "")
+        .replace(/ə/g, "e")
+        .replace(/ı/g, "i")
+        .replace(/ç/g, "c")
+        .replace(/ş/g, "s")
+        .replace(/ğ/g, "g")
+        .replace(/ö/g, "o")
+        .replace(/ü/g, "u");
+}
+
+function normalizeStatus(val) {
+    if (!val) return "layihe";
+    const s = String(val).trim().toLowerCase()
+        .replace(/ə/g, "e").replace(/ı/g, "i").replace(/ç/g, "c").replace(/ş/g, "s");
+    if (s.includes("bit") || s.includes("tamam") || s.includes("done") || s.includes("finish")) return "bitmis";
+    if (s.includes("icra") || s.includes("gedir") || s.includes("prog") || s.includes("davam")) return "icrada";
+    if (s.includes("tehvil") || s.includes("teslim") || s.includes("ready") || s.includes("hazir")) return "tehvil";
+    if (s.includes("layi") || s.includes("plan") || s.includes("proy")) return "layihe";
+    if (s.includes("lif") || s.includes("kabel")) return "layihe";
+    return STATUSES.includes(s) ? s : "layihe";
+}
+
+function getPropCaseInsensitive(props, ...aliases) {
+    if (!props) return undefined;
+    const normMap = {};
+    for (const [k, v] of Object.entries(props)) {
+        normMap[normalizeKey(k)] = v;
+    }
+    for (const a of aliases) {
+        const val = normMap[normalizeKey(a)];
+        if (val !== undefined && val !== null && String(val).trim() !== "" && String(val).trim() !== "<Null>") {
+            return String(val).trim();
+        }
+    }
+    return undefined;
+}
+
 function linesFromGeoJson(data) {
     const items = [];
     const addGeometry = (geometry, props = {}) => {
         if (!geometry) return;
-        const name = String(props.name || props.NAME || props.rayon || props.RAYON || "").replace(/\s*rayon(u)?\b/gi, "").trim();
+        const name = getPropCaseInsensitive(props, "Name", "name", "xett_adi", "xett", "title", "ad", "rayon") || "";
         if (geometry.type === "Point") {
             const [lng, lat] = geometry.coordinates;
             items.push({ isPoint: true, name, props, coords: [[lat, lng]] });
@@ -1666,6 +1707,49 @@ function linesFromKml(text) {
     const doc = new DOMParser().parseFromString(text, "application/xml");
     if (doc.querySelector("parsererror")) throw new Error("Invalid KML");
 
+    function parseProps(placemark) {
+        const props = {};
+        if (!placemark) return props;
+
+        // 1. ExtendedData -> Data name/value & SimpleData
+        Array.from(placemark.getElementsByTagName("Data")).forEach(d => {
+            const k = d.getAttribute("name");
+            const v = d.getElementsByTagName("value")[0]?.textContent?.trim();
+            if (k && v !== undefined) props[k] = v;
+        });
+        Array.from(placemark.getElementsByTagName("SimpleData")).forEach(sd => {
+            const k = sd.getAttribute("name");
+            const v = sd.textContent?.trim();
+            if (k && v !== undefined) props[k] = v;
+        });
+
+        // 2. description HTML table parsing (ArcGIS Pro Layer to KML creates HTML table in <description>)
+        const descNode = placemark.getElementsByTagName("description")[0];
+        if (descNode && descNode.textContent) {
+            const descHtml = descNode.textContent;
+            // Match any <td>Key</td> <td>Value</td> or <th>Key</th> <td>Value</td>
+            const rowMatches = descHtml.matchAll(/<tr[^>]*>\s*<(?:td|th)[^>]*>(.*?)<\/(?:td|th)>\s*<td[^>]*>(.*?)<\/td>\s*<\/tr>/gis);
+            for (const m of rowMatches) {
+                const k = m[1].replace(/<[^>]+>/g, "").trim();
+                const v = m[2].replace(/<[^>]+>/g, "").trim();
+                if (k && v) props[k] = v;
+            }
+        }
+        return props;
+    }
+
+    function resolveName(placemark, props) {
+        // First try props from ArcGIS table: Name, name, xett_adi, title, ad, rayon
+        const propName = getPropCaseInsensitive(props, "Name", "name", "xett_adi", "xett", "LineName", "title", "ad", "rayon");
+        if (propName) return propName;
+
+        // Then direct <name> tag inside Placemark
+        const directName = placemark && Array.from(placemark.children).find(el => el.nodeName.toLowerCase() === "name")?.textContent?.trim();
+        if (directName && !/^id[xs]?\d+$/i.test(directName)) return directName;
+
+        return directName || "";
+    }
+
     const items = [];
     Array.from(doc.getElementsByTagName("LineString")).forEach(node => {
         const coordsNode = node.getElementsByTagName("coordinates")[0];
@@ -1676,33 +1760,26 @@ function linesFromKml(text) {
         }).filter(c => !isNaN(c[0]) && !isNaN(c[1]));
 
         let placemark = node.parentNode;
-        while (placemark && placemark.nodeName !== "Placemark") placemark = placemark.parentNode;
-        const nameNode = placemark && Array.from(placemark.children).find(el => el.nodeName === "name");
-        items.push({ isPoint: false, name: nameNode?.textContent.trim(), props: {}, coords });
+        while (placemark && placemark.nodeName.toLowerCase() !== "placemark") placemark = placemark.parentNode;
+        const props = parseProps(placemark);
+        const name = resolveName(placemark, props);
+        items.push({ isPoint: false, name, props, coords });
     });
+
     Array.from(doc.getElementsByTagName("Point")).forEach(node => {
         const coordsNode = node.getElementsByTagName("coordinates")[0];
         if (!coordsNode) return;
         const [lng, lat] = coordsNode.textContent.trim().split(",").map(Number);
         if (isNaN(lat) || isNaN(lng)) return;
-        let placemark = node.parentNode;
-        while (placemark && placemark.nodeName !== "Placemark") placemark = placemark.parentNode;
-        const nameNode = placemark && Array.from(placemark.children).find(el => el.nodeName === "name");
-        items.push({ isPoint: true, name: String(nameNode?.textContent.trim() || "").replace(/\s*rayon(u)?\b/gi, "").trim(), props: {}, coords: [[lat, lng]] });
-    });
-    return items;
-}
 
-async function readLines(file) {
-    const extension = file.name.split(".").pop().toLowerCase();
-    if (extension === "kmz") {
-        const zip = await JSZip.loadAsync(file);
-        const kml = Object.values(zip.files).find(f => /\.kml$/i.test(f.name));
-        if (!kml) return [];
-        return linesFromKml(await kml.async("string"));
-    }
-    const text = await file.text();
-    return extension === "kml" ? linesFromKml(text) : linesFromGeoJson(JSON.parse(text));
+        let placemark = node.parentNode;
+        while (placemark && placemark.nodeName.toLowerCase() !== "placemark") placemark = placemark.parentNode;
+        const props = parseProps(placemark);
+        const name = resolveName(placemark, props).replace(/\s*rayon(u)?\b/gi, "").trim();
+        items.push({ isPoint: true, name, props, coords: [[lat, lng]] });
+    });
+
+    return items;
 }
 
 function projectFromFile(fileName, lines) {
@@ -1713,28 +1790,48 @@ function projectFromFile(fileName, lines) {
         name: fileName.replace(/\.[^/.]+$/, ""),
         items: lines.map((line, index) => {
             const p = line.props || {};
-            const rawStatus = String(p.status || p.STATUS || "layihe").toLowerCase();
-            const status = STATUSES.includes(rawStatus) ? rawStatus : "layihe";
-            const contractor = p.contractor || p.CONTRACTOR || p.icraci || "BCG (Öz briqadamız)";
+
+            // 1. Status: İcrada, təhvil, lahiyə, bitmiş
+            const rawStatus = getPropCaseInsensitive(p, "status", "Status", "STATUS") || line.props?.status || "layihe";
+            const status = normalizeStatus(rawStatus);
+
+            // 2. İcraçı: icraçı, icraci, contractor
+            const contractor = getPropCaseInsensitive(p, "icraçı", "icraci", "contractor", "icraci_sirket", "icraci_adi") || "BCG (Öz briqadamız)";
+
+            // 3. Name: Ağsu-Şamaxı, Şamaxı-İsmayıllı və s.
+            const nameVal = (line.name && line.name.trim()) || getPropCaseInsensitive(p, "Name", "name", "xett_adi", "title", "ad") || `${t("importedLine")} ${index + 1}`;
+
+            // 4. pointA & pointB
+            const pointA = getPropCaseInsensitive(p, "pointA", "point_a", "pointa", "a", "baslangic") || "A";
+            const pointB = getPropCaseInsensitive(p, "pointB", "point_b", "pointb", "b", "son") || "B";
+
             if (line.isPoint || line.coords.length === 1) {
-                const planM = Number(p.plan_m ?? p.planM ?? p.total_m ?? p.total_km ?? 10000);
-                const doneM = Math.min(planM, Number(p.done_m ?? p.doneM ?? p.done_km ?? 0));
-                const antennas = Number(p.antennas ?? p.antena ?? p.ANTENNAS ?? 10);
+                const planM = Number(getPropCaseInsensitive(p, "plan_m", "planM", "total_m", "total_km", "totalKm") || 10000);
+                const doneM = Math.min(planM, Number(getPropCaseInsensitive(p, "done_m", "doneM", "done_km", "doneKm") || 0));
+                const antennas = Number(getPropCaseInsensitive(p, "antennas", "antena", "antenna", "say") || 10);
                 return {
                     id: `PT-${String(index + 1).padStart(2, "0")}`,
-                    name: line.name || `Məntəqə ${index + 1}`,
-                    pointA: line.name || "Mərkəz", pointB: "Şəbəkə", startDate: "", endDate: "", contractor,
+                    name: nameVal,
+                    pointA: pointA !== "A" ? pointA : (nameVal || "Mərkəz"),
+                    pointB: pointB !== "B" ? pointB : "Şəbəkə",
+                    startDate: "", endDate: "", contractor,
                     totalKm: planM, doneKm: doneM, status, closures: 0, manholes: 0, antennas,
                     coords: line.coords
                 };
             }
+
+            // Xətt layihəsi: totalKm və doneKm birbaşa ArcGIS sütunlarından
             const km = tools.length(line.coords) / 1000;
-            const totalKm = Number(p.total_km ?? p.totalKm ?? Math.round(km * 10) / 10);
-            const doneKm = Math.min(totalKm, Number(p.done_km ?? p.doneKm ?? 0));
+            const rawTotalKm = getPropCaseInsensitive(p, "totalKm", "total_km", "totalkm", "plan_km", "planKm", "plan");
+            const rawDoneKm = getPropCaseInsensitive(p, "doneKm", "done_km", "donekm", "faktiki_km", "faktiki");
+
+            const totalKm = rawTotalKm !== undefined ? Number(rawTotalKm) : Math.round(km * 10) / 10;
+            const doneKm = rawDoneKm !== undefined ? Math.min(totalKm, Number(rawDoneKm)) : 0;
+
             return {
                 id: `IMP-${String(index + 1).padStart(2, "0")}`,
-                name: line.name || `${t("importedLine")} ${index + 1}`,
-                pointA: p.point_a || "A", pointB: p.point_b || "B", startDate: "", endDate: "", contractor,
+                name: nameVal,
+                pointA, pointB, startDate: "", endDate: "", contractor,
                 totalKm, doneKm, status, closures: 0, manholes: 0, antennas: 0,
                 coords: line.coords
             };
