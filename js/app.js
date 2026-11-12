@@ -1472,16 +1472,16 @@ function mapStyle() {
             { id: "routes-other", type: "line", source: "routes", filter: ["all", ["==", ["geometry-type"], "LineString"], ["has", "isOther"], ["!", ["has", "isPolygon"]]], layout: { "line-cap": "round", "line-join": "round" },
                 paint: {
                     "line-color": ["get", "color"],
-                    "line-width": ["case", ["get", "sel"], ["+", ["coalesce", ["get", "lineWidth"], 1.8], 0.9], ["coalesce", ["get", "lineWidth"], 1.8]],
+                    "line-width": ["case", ["get", "sel"], ["+", ["coalesce", ["get", "lineWidth"], 1.3], 0.8], ["coalesce", ["get", "lineWidth"], 1.3]],
                     "line-opacity": ["case", ["get", "dim"], 0.25, 0.88]
                 } },
-            /* Alt qatın mərkəz adları (Rayon adları və Digər qovluğunun mərkəz yazıları — sakit, gözə çarpmayan üslubda): 10 km miqyasına qədər qalır */
+            /* Alt qatın mərkəz adları (Rayon adları və Digər qovluğunun mərkəz yazıları — sakit, gözə çarpmayan üslubda): sabit 10 km ölçüsü, üst-üstə düşmür */
             { id: "routes-poly-label", type: "symbol", source: "route-labels", minzoom: 3.5, filter: ["has", "subtleCenterImg"],
                 layout: {
                     "icon-image": ["get", "subtleCenterImg"],
                     "icon-anchor": "center",
-                    "icon-size": ["interpolate", ["linear"], ["zoom"], 4, 0.52, 6.5, 0.68, 8.8, 0.82],
-                    "icon-padding": 6,
+                    "icon-size": 0.80,
+                    "icon-padding": 8,
                     "icon-allow-overlap": false,
                     "icon-ignore-placement": false
                 },
@@ -1493,26 +1493,26 @@ function mapStyle() {
             { id: "routes-casing", type: "line", source: "routes", filter: ["all", ["==", ["geometry-type"], "LineString"], ["!", ["has", "isOther"]], ["!", ["has", "isPolygon"]]], layout: { "line-cap": "round", "line-join": "round" },
                 paint: {
                     "line-color": "#ffffff",
-                    "line-width": ["interpolate", ["linear"], ["zoom"], 5, 4.4, 14, 5.8],
+                    "line-width": ["interpolate", ["linear"], ["zoom"], 5, 2.8, 14, 3.8],
                     "line-opacity": ["case", ["get", "sel"], 0.95, 0]
                 } },
-            /* Xətt özü bütöv rənglidir — kənarlarında qara zolaq olmadan gözü yormayan təmiz rəng */
+            /* Xətt özü bütöv rənglidir — qalınlığı azaldılmış, xəritədə az yer tutan zərif xətt */
             { id: "routes-line", type: "line", source: "routes", filter: ["all", ["==", ["geometry-type"], "LineString"], ["!", ["has", "isOther"]], ["!", ["has", "isPolygon"]]], layout: { "line-cap": "round", "line-join": "round" },
                 paint: {
                     "line-color": ["get", "color"],
-                    "line-width": ["interpolate", ["linear"], ["zoom"], 5, ["case", ["get", "sel"], 4.2, 2.7], 14, ["case", ["get", "sel"], 5.4, 3.5]],
+                    "line-width": ["interpolate", ["linear"], ["zoom"], 5, ["case", ["get", "sel"], 2.6, 1.5], 11, ["case", ["get", "sel"], 3.0, 1.8], 15, ["case", ["get", "sel"], 3.6, 2.2]],
                     "line-opacity": ["case", ["get", "dim"], 0.25, 1]
                 } },
             { id: "routes-hit", type: "line", source: "routes", filter: ["all", ["==", ["geometry-type"], "LineString"], ["!", ["has", "isPolygon"]]], paint: { "line-color": "#000", "line-width": 14, "line-opacity": 0 } },
-            /* Digər (RM və köməkçi xətlər): adları xətt boyu çıxır, 10 km miqyasına qədər qalır və miqyas böyüdükcə normal kiçilir */
+            /* Digər (RM və köməkçi xətlər): adları xətt boyu çıxır, sabit ölçü, toqquşma yoxdur */
             { id: "routes-other-line", type: "symbol", source: "routes", minzoom: 3.5, filter: ["all", ["==", ["geometry-type"], "LineString"], ["has", "otherLineImg"]],
                 layout: {
                     "symbol-placement": "line",
-                    "symbol-spacing": 340,
+                    "symbol-spacing": 380,
                     "icon-image": ["get", "otherLineImg"],
                     "icon-rotation-alignment": "map",
                     "icon-keep-upright": true,
-                    "icon-size": ["interpolate", ["linear"], ["zoom"], 4, 0.52, 6.5, 0.68, 8.8, 0.82],
+                    "icon-size": 0.80,
                     "icon-allow-overlap": false,
                     "icon-ignore-placement": false
                 },
@@ -1524,15 +1524,15 @@ function mapStyle() {
                     "icon-image": ["get", "otherPointImg"],
                     "icon-rotate": ["get", "iconRotate"],
                     "icon-rotation-alignment": "map",
-                    "icon-size": ["interpolate", ["linear"], ["zoom"], 4, 0.52, 6.5, 0.68, 8.8, 0.82],
-                    "icon-padding": 16,
+                    "icon-size": 0.80,
+                    "icon-padding": 12,
                     "icon-allow-overlap": false,
                     "icon-ignore-placement": false
                 },
                 paint: {
                     "icon-opacity": ["case", ["get", "dim"], 0.28, 1]
                 } },
-            /* Kabel üzərində lif sayı (FO 48, FO 24, FO 12): 10 km miqyasında sabit qalır, uzaqlaşdıqda normal kiçilir */
+            /* Kabel üzərində lif sayı (FO 48, FO 24, FO 12): sabit 10 km ölçüsü (0.80), üst-üstə girmir */
             { id: "routes-fo-points", type: "symbol", source: "route-labels", minzoom: 3.5, filter: ["has", "foPointImg"],
                 layout: {
                     "icon-image": ["get", "foPointImg"],
@@ -1540,8 +1540,8 @@ function mapStyle() {
                     "icon-rotation-alignment": "map",
                     "icon-keep-upright": true,
                     "icon-offset": [0, -6],
-                    "icon-size": ["interpolate", ["linear"], ["zoom"], 4, 0.54, 6.5, 0.70, 8.8, 0.84],
-                    "icon-padding": 10,
+                    "icon-size": 0.80,
+                    "icon-padding": 12,
                     "icon-allow-overlap": false,
                     "icon-ignore-placement": false
                 },
@@ -1553,7 +1553,7 @@ function mapStyle() {
                 layout: {
                     "icon-image": ["get", "pinIcon"],
                     "icon-anchor": "bottom",
-                    "icon-size": ["interpolate", ["linear"], ["zoom"], 4, 0.52, 6.5, 0.64, 8.8, 0.74],
+                    "icon-size": 0.68,
                     "icon-allow-overlap": true,
                     "icon-ignore-placement": true
                 },
@@ -1589,41 +1589,28 @@ function mapStyle() {
                 paint: {
                     "icon-opacity": ["case", ["get", "dim"], 0.28, 1]
                 } },
-            /* A və B nöqtə adları: 10 km miqyasına qədər qalır, miqyas böyüdükcə normal kiçilir */
-            { id: "routes-ends-label", type: "symbol", source: "route-labels", minzoom: 3.5, maxzoom: 10.5, filter: ["has", "endLabelImg"],
+            /* A və B nöqtə adları: sabit 10 km ölçüsü (0.80), icon-allow-overlap: false ilə bir-birinin içinə girmir */
+            { id: "routes-ends-label", type: "symbol", source: "route-labels", minzoom: 3.5, filter: ["has", "endLabelImg"],
                 layout: {
                     "icon-image": ["get", "endLabelImg"],
                     "icon-anchor": "bottom",
                     "icon-offset": ["get", "endOffset"],
-                    "icon-size": ["interpolate", ["linear"], ["zoom"], 4, 0.54, 6.5, 0.70, 8.8, 0.84],
-                    "icon-padding": 2,
-                    "icon-allow-overlap": true,
-                    "icon-ignore-placement": true
+                    "icon-size": 0.80,
+                    "icon-padding": 8,
+                    "icon-allow-overlap": false,
+                    "icon-ignore-placement": false
                 },
                 paint: {
                     "icon-opacity": ["case", ["get", "dim"], 0.28, 1]
                 } },
-            { id: "routes-ends-label-fixed", type: "symbol", source: "route-labels", minzoom: 10.5, filter: ["has", "endLabelImg"],
-                layout: {
-                    "icon-image": ["get", "endLabelImg"],
-                    "icon-anchor": "bottom",
-                    "icon-offset": ["get", "endOffset"],
-                    "icon-size": 0.84,
-                    "icon-padding": 2,
-                    "icon-allow-overlap": true,
-                    "icon-ignore-placement": true
-                },
-                paint: {
-                    "icon-opacity": ["case", ["get", "dim"], 0.28, 1]
-                } },
-            /* Nöqtə adları brauzer şrifti ilə şəkil kimi çəkilir: 10 km miqyasına qədər qalır, miqyas böyüdükcə normal kiçilir */
+            /* Nöqtə adları brauzer şrifti ilə: sabit 10 km ölçüsü (0.80), üst-üstə düşmür */
             { id: "routes-point-name", type: "symbol", source: "route-labels", minzoom: 6, maxzoom: 9.6, filter: ["has", "nameImg"],
                 layout: {
                     "icon-image": ["get", "nameImg"],
                     "icon-anchor": "top",
                     "icon-offset": [0, 11],
-                    "icon-size": ["interpolate", ["linear"], ["zoom"], 6, 0.66, 8.8, 0.84],
-                    "icon-padding": 3,
+                    "icon-size": 0.80,
+                    "icon-padding": 6,
                     "icon-allow-overlap": false,
                     "icon-ignore-placement": false
                 },
@@ -1633,8 +1620,8 @@ function mapStyle() {
                     "icon-image": ["get", "labelImg"],
                     "icon-anchor": "top",
                     "icon-offset": [0, 12],
-                    "icon-size": 0.84,
-                    "icon-padding": 1,
+                    "icon-size": 0.80,
+                    "icon-padding": 6,
                     "icon-allow-overlap": false,
                     "icon-ignore-placement": false
                 },
@@ -1644,9 +1631,10 @@ function mapStyle() {
                     "icon-image": ["get", "labelImg"],
                     "icon-anchor": "top",
                     "icon-offset": [0, 12],
-                    "icon-size": 0.84,
-                    "icon-allow-overlap": true,
-                    "icon-ignore-placement": true
+                    "icon-size": 0.80,
+                    "icon-padding": 6,
+                    "icon-allow-overlap": false,
+                    "icon-ignore-placement": false
                 },
                 paint: { "icon-opacity": ["case", ["get", "dim"], 0.28, 1] } },
             ...tools.layers()
@@ -1684,7 +1672,7 @@ function initMap() {
     map.on("rotate", () => {
         $("northIcon").style.transform = `rotate(${-45 - map.getBearing()}deg)`;
     });
-    ["routes-poly-fill", "routes-poly-line", "routes-other", "routes-hit", "routes-other-line", "routes-other-points", "routes-fo-points", "routes-ends", "routes-ends-label", "routes-ends-label-fixed", "routes-point-overview", "routes-point-halo", "routes-point-shape", "routes-point-name", "routes-point-label", "routes-point-label-near"].forEach(layer => {
+    ["routes-poly-fill", "routes-poly-line", "routes-other", "routes-hit", "routes-other-line", "routes-other-points", "routes-fo-points", "routes-ends", "routes-ends-label", "routes-point-overview", "routes-point-halo", "routes-point-shape", "routes-point-name", "routes-point-label", "routes-point-label-near"].forEach(layer => {
         map.on("mousemove", layer, e => {
             if (tools.isActive()) return;
             window.routeHover = true;
@@ -2087,7 +2075,7 @@ function drawRoutes() {
         if (validLabel) {
             const hasNearbySameLabel = placedEndLabels.some(p =>
                 (p.nameKey === nameKey && Math.hypot(p.lng - lng, p.lat - lat) < 0.055)
-                || Math.hypot(p.lng - lng, p.lat - lat) < 0.0025
+                || Math.hypot(p.lng - lng, p.lat - lat) < 0.0055
             );
             if (!hasNearbySameLabel) {
                 const endLabelImg = ensureEndLabelImage(validLabel);
@@ -2378,7 +2366,7 @@ function drawRoutes() {
                 if (itemSegs.length > 0 && segTotalLen > 0) {
                     const foFractions = segTotalLen < 0.14 ? [0.50] : (segTotalLen < 0.48 ? [0.33, 0.67] : [0.22, 0.50, 0.78]);
                     sampleSegmentsAtFractions(itemSegs, segTotalLen, foFractions).forEach(({ coord, angle, seg }) => {
-                        const tooCloseFo = placedFoPoints.some(p => Math.hypot(p.lng - coord[0], p.lat - coord[1]) < 0.025);
+                        const tooCloseFo = placedFoPoints.some(p => Math.hypot(p.lng - coord[0], p.lat - coord[1]) < 0.035);
                         if (tooCloseFo) return;
                         placedFoPoints.push({ lng: coord[0], lat: coord[1] });
                         labelFeatures.push({
@@ -2483,7 +2471,7 @@ function onMapClick(e) {
         setDrawer(false);
     }
     const box = [[e.point.x - 5, e.point.y - 5], [e.point.x + 5, e.point.y + 5]];
-    const hit = map.queryRenderedFeatures(box, { layers: ["routes-point-overview", "routes-point-halo", "routes-point-shape", "routes-point-label", "routes-point-label-near", "routes-point-name", "routes-ends", "routes-ends-label", "routes-ends-label-fixed", "routes-other-points", "routes-other-line", "routes-fo-points", "routes-hit", "routes-other", "routes-poly-line", "routes-poly-fill"] })[0];
+    const hit = map.queryRenderedFeatures(box, { layers: ["routes-point-overview", "routes-point-halo", "routes-point-shape", "routes-point-label", "routes-point-label-near", "routes-point-name", "routes-ends", "routes-ends-label", "routes-other-points", "routes-other-line", "routes-fo-points", "routes-hit", "routes-other", "routes-poly-line", "routes-poly-fill"] })[0];
     if (!hit) return;
     const project = state.projects.find(p => p.id === hit.properties.projectId);
     if (project) selectSegment(project, project.items.find(r => r.id === hit.properties.itemId));
