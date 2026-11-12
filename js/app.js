@@ -49,13 +49,35 @@ function esc(value) {
 }
 
 const formatDate = iso => iso ? iso.split("-").reverse().join(".") : "—";
-const formatKm = km => km.toLocaleString("en-US", { maximumFractionDigits: 1 });
+const formatKm = km => {
+    const n = Number(km) || 0;
+    return Number(n.toFixed(3)).toString();
+};
 const toKmValue = val => {
     const n = Number(val) || 0;
     if (n <= 0) return 0;
     return n >= 100 ? n / 1000 : n;
 };
-const formatDistance = m => m >= 1000 ? `${(m / 1000).toFixed(2)} km` : `${Math.round(m)} m`;
+const normalizePointMetersInput = val => {
+    const n = Number(String(val ?? "").replace(/,/g, ".")) || 0;
+    if (n <= 0) return 0;
+    return n >= 100 ? Math.round(n) : Math.round(n * 1000);
+};
+function isPointItemRecord(r) {
+    if (!r) return false;
+    return Boolean(r.summary || r.unit === "m" || (r.antennas || 0) > 0 || (Array.isArray(r.coords) && r.coords.length === 1));
+}
+function getPointKmPair(r) {
+    if (!r) return { planKm: 0, doneKm: 0 };
+    const rawPlan = Number(r.totalKm) || 0;
+    const rawDone = Number(r.doneKm) || 0;
+    if (r.unit === "km") return { planKm: rawPlan, doneKm: rawDone };
+    if (r.unit === "m" || rawPlan >= 100 || rawDone >= 100) {
+        return { planKm: rawPlan / 1000, doneKm: rawDone / 1000 };
+    }
+    return { planKm: rawPlan, doneKm: rawDone };
+}
+const formatDistance = m => m >= 1000 ? `${formatKm(m / 1000)} km` : `${Math.round(m)} m`;
 const percent = (done, total) => total > 0 ? Math.min(100, Math.round(done / total * 100)) : 0;
 
 function readStore(key, fallback) {
@@ -100,12 +122,17 @@ function visibleEntries() {
 }
 
 function totals(items) {
-    return items.reduce((sum, r) => ({
-        plan: sum.plan + r.totalKm,
-        done: sum.done + r.doneKm,
-        closures: sum.closures + (r.closures || 0),
-        manholes: sum.manholes + (r.manholes || 0)
-    }), { plan: 0, done: 0, closures: 0, manholes: 0 });
+    return (items || []).reduce((sum, r) => {
+        const { planKm, doneKm } = isPointItemRecord(r)
+            ? getPointKmPair(r)
+            : { planKm: Number(r.totalKm) || 0, doneKm: Number(r.doneKm) || 0 };
+        return {
+            plan: sum.plan + planKm,
+            done: sum.done + doneKm,
+            closures: sum.closures + (r.closures || 0),
+            manholes: sum.manholes + (r.manholes || 0)
+        };
+    }, { plan: 0, done: 0, closures: 0, manholes: 0 });
 }
 
 /* DİL VƏ MÖVZU */
@@ -564,6 +591,7 @@ function saveSegmentOverride(projectId, item) {
         contractor: item.contractor,
         totalKm: item.totalKm,
         doneKm: item.doneKm,
+        unit: item.unit,
         antennas: item.antennas,
         summary: item.summary,
         rayon: item.rayon,
@@ -826,7 +854,11 @@ async function submitEditor(event) {
     }
     try {
         if (values.start_date && values.end_date && values.end_date < values.start_date) throw new Error("dates");
-        if ("done_km" in values && values.done_km > values.total_km) throw new Error("km");
+        if ("done_km" in values) {
+            const pCmp = editor.isPoints ? normalizePointMetersInput(values.total_km) : values.total_km;
+            const dCmp = editor.isPoints ? normalizePointMetersInput(values.done_km) : values.done_km;
+            if (dCmp > pCmp) throw new Error("km");
+        }
         await editor.onSave(values);
         await reloadData();
     } catch (error) {
@@ -999,11 +1031,16 @@ function editSegment(project, item) {
     const contractorNames = [...new Set([...Object.keys(adminMap), ...(item?.contractor ? [item.contractor] : [])])].filter(Boolean);
     const currentFiber = item ? getSegmentFiber(item, project) : "";
     const fiberOpts = currentFiber && !FIBER_OPTIONS.includes(currentFiber) ? [currentFiber, ...FIBER_OPTIONS] : FIBER_OPTIONS;
+    const ptKm = isPoints && item ? getPointKmPair(item) : null;
     openEditor({
         title: t(item ? "editSegment" : "addSegment"),
+        isPoints,
         values: item ? {
             code: item.id, name: item.name, point_a: item.pointA || "", point_b: item.pointB || "", start_date: item.startDate, end_date: item.endDate,
-            contractor: item.contractor || "", total_km: item.totalKm, done_km: item.doneKm, status: item.status || "layihe",
+            contractor: item.contractor || "",
+            total_km: isPoints ? Number(formatKm(ptKm.planKm)) : item.totalKm,
+            done_km: isPoints ? Number(formatKm(ptKm.doneKm)) : item.doneKm,
+            status: item.status || "layihe",
             fiber_count: currentFiber,
             custom_color: item.customColor || item.fillColor || (item.isPolygon ? "#38BDF8" : "#38BDF8"),
             line_width: item.lineWidth || (item.isPolygon ? 1.4 : 2.0),
@@ -1042,8 +1079,8 @@ function editSegment(project, item) {
                 { key: "point_b", label: `📍 ${t("pointB")}`, required: true },
                 { key: "start_date", label: t("fieldStart"), type: "date" },
                 { key: "end_date", label: t("fieldEnd"), type: "date" },
-                { key: "total_km", label: isPoints ? "1. Nəzərdə tutulan (m)" : `1. Nəzərdə tutulan (km)`, type: "number" },
-                { key: "done_km", label: isPoints ? "2. Faktiki iş görülən (m)" : `2. Faktiki iş görülən (km)`, type: "number" },
+                { key: "total_km", label: isPoints ? "1. Verilən məsafə (km və ya m)" : `1. Nəzərdə tutulan (km)`, type: "number" },
+                { key: "done_km", label: isPoints ? "2. Çəkilən məsafə (km və ya m)" : `2. Faktiki iş görülən (km)`, type: "number" },
                 ...(isPoints ? [{ key: "antennas", label: "Antena sayı (ədəd)", type: "number", wide: true }] : []),
                 { key: "contractor", label: "İş icraçısı (Admin Panel qovluğundan)", type: "select", wide: true, options: [["", t("notAssigned")], ...contractorNames.map(n => [n, `👷 ${n}`])] }
             ] : []),
@@ -1053,6 +1090,8 @@ function editSegment(project, item) {
             const parsedCoords = textToCoords(row.coords, (isPoints || isOther) ? 1 : 2);
             const oldCode = item?.id;
             const foVal = normalizeFiberCount(row.fiber_count ?? item?.fiberCount ?? "", "");
+            const finalTotal = isPoints ? normalizePointMetersInput(row.total_km) : (Number(row.total_km) || 0);
+            const finalDone = isPoints ? normalizePointMetersInput(row.done_km) : (Number(row.done_km) || 0);
             if (item) {
                 item.id = row.code;
                 item.name = row.name;
@@ -1062,12 +1101,16 @@ function editSegment(project, item) {
                     item.status = row.status || item.status;
                     item.fiberCount = foVal;
                     item.userSetFiber = Boolean(foVal);
-                    item.totalKm = Number(row.total_km) || 0;
-                    item.doneKm = Number(row.done_km) || 0;
+                    item.totalKm = finalTotal;
+                    item.doneKm = finalDone;
                     item.contractor = row.contractor || "";
                     item.startDate = row.start_date || "";
                     item.endDate = row.end_date || "";
-                    if (isPoints) item.antennas = Number(row.antennas || 0);
+                    if (isPoints) {
+                        item.antennas = Number(row.antennas || 0);
+                        item.unit = "m";
+                        item.summary = true;
+                    }
                 } else {
                     item.status = row.status || item.status || "layihe";
                     if (row.custom_color) {
@@ -1098,8 +1141,10 @@ function editSegment(project, item) {
                     lineWidth: isOther ? normalizeLineWidth(row.line_width, 1.8) : 0,
                     isPolygon: row.poly_fill === "filled" ? true : false,
                     polyFilled: row.poly_fill === "filled" ? true : (row.poly_fill === "hollow" ? false : undefined),
-                    totalKm: Number(row.total_km) || 0,
-                    doneKm: Number(row.done_km) || 0,
+                    totalKm: finalTotal,
+                    doneKm: finalDone,
+                    unit: isPoints ? "m" : undefined,
+                    summary: isPoints ? true : undefined,
                     contractor: row.contractor || "",
                     startDate: row.start_date || "",
                     endDate: row.end_date || "",
@@ -1905,7 +1950,7 @@ function ensureSummaryCardImage({ name, color, folderName, antennas, doneKm, tot
     if (!map || !name) return null;
     const light = isLightBaseMap();
     const folder = folderName || "";
-    const key = `sumcard_v4:${light ? "l" : "d"}:${color}:${name}:${folder}:${antennas}:${doneKm}:${totalKm}:${contractor}`;
+    const key = `sumcard_v5:${light ? "l" : "d"}:${color}:${name}:${folder}:${antennas}:${doneKm}:${totalKm}:${contractor}`;
     if (map.hasImage(key)) return key;
 
     const ratio = 2;
@@ -1916,7 +1961,7 @@ function ensureSummaryCardImage({ name, color, folderName, antennas, doneKm, tot
     const fTitle = `800 13px ${LABEL_FONT}`;
     const fBody = `600 11.5px ${LABEL_FONT}`;
     const fSmall = `600 10px ${LABEL_FONT}`;
-    const bodyText = `${antennas} antena · ${formatKm(doneKm)} / ${formatKm(totalKm)} km`;
+    const bodyText = `${antennas} antena - ${formatKm(totalKm)} / ${formatKm(doneKm)} km`;
     const folderText = folder ? String(folder).trim() : "";
     const contractorText = contractor ? `İcraçı: ${contractor}` : "";
 
@@ -2521,13 +2566,12 @@ function drawRoutes() {
 
             const stColor = statusTone(r.status);
             const rayonName = String(r.name || r.rayon || "").trim();
-            const verilenKm = toKmValue(r.totalKm);
-            const cekilenKm = toKmValue(r.doneKm);
+            const { planKm: verilenKm, doneKm: cekilenKm } = getPointKmPair(r);
             const pct = percent(cekilenKm, verilenKm);
             const rawProjName = String(project.name || "").replace(/\s*\(?\bFaz[-\s]*[12]\b\)?/gi, "").trim();
             const compactProjName = rawProjName.length > 28 ? `${rawProjName.slice(0, 27).trim()}…` : rawProjName;
 
-            const tip = `<b style="color:${stColor}">${esc(rayonName)}</b><small>${rawProjName ? `<span style="opacity:0.85">${esc(rawProjName)}</span><br>` : ""}📡 ${r.antennas || 0} antena<br>🔌 Kabel: ${formatKm(cekilenKm)} / ${formatKm(verilenKm)} km (${pct}%)${r.contractor ? `<br>👷 İcraçı: <b>${esc(r.contractor)}</b>` : ""}</small>`;
+            const tip = `<b style="color:${stColor}">${esc(rayonName)}</b><small>${rawProjName ? `<span style="opacity:0.85">${esc(rawProjName)}</span><br>` : ""}📡 ${r.antennas || 0} antena - ${formatKm(verilenKm)} / ${formatKm(cekilenKm)} km (${pct}%)${r.contractor ? `<br>👷 İcraçı: <b>${esc(r.contractor)}</b>` : ""}</small>`;
             const sumProps = {
                 isRayonPoint: true,
                 isSummary: true,
@@ -2574,13 +2618,14 @@ function drawRoutes() {
 
             const cleanName = String(r.name || "").replace(/\s*\(?\bFaz[-\s]*[12]\b\)?/gi, "").replace(/\s*rayon(u)?(?![a-zəçşğıöü])/gi, "").trim();
             const antCount = Number(r.antennas || 0);
-            const antPart = antCount ? `${antCount} ant · ` : "";
-            const vKm = toKmValue(r.totalKm);
-            const cKm = toKmValue(r.doneKm);
-            const distPart = vKm ? `Kabel: ${formatKm(cKm)} / ${formatKm(vKm)} km` : "";
-            const label = `${cleanName}\n${antPart}${distPart}`.trim();
+            const { planKm: vKm, doneKm: cKm } = getPointKmPair(r);
+            const distPart = (vKm || cKm) ? `${formatKm(vKm)} / ${formatKm(cKm)} km` : "";
+            const subLine = antCount && distPart
+                ? `${antCount} antena - ${distPart}`
+                : (antCount ? `${antCount} antena` : distPart);
+            const label = `${cleanName}\n${subLine}`.trim();
             const shortLabel = `${cleanName}${antCount ? ` (${antCount} ant)` : ""}`;
-            const tip = `<b>${shape.symbol} ${esc(cleanName)}</b><small>Layihə: <b>${esc(project.name)}</b>${antCount ? `<br>📡 ${antCount} antena` : ""} · Plan: ${formatKm(vKm)} km / Faktiki: ${formatKm(cKm)} km (${percent(cKm, vKm)}%)${cExtra ? `<br>${cExtra}` : ""}</small>`;
+            const tip = `<b>${shape.symbol} ${esc(cleanName)}</b><small>Layihə: <b>${esc(project.name)}</b><br>📡 ${antCount} antena - ${formatKm(vKm)} / ${formatKm(cKm)} km (${percent(cKm, vKm)}%)${cExtra ? `<br>${cExtra}` : ""}</small>`;
 
             const ptProps = {
                 isRayonPoint: true,
@@ -2847,6 +2892,7 @@ function renderLayerOptions() {
 
 function renderLegend() {
     const activePointProjects = state.projects.filter(p =>
+        p.category !== "other" &&
         state.activeFolders.has(p.category || "project") &&
         state.visibleIds.has(p.id) &&
         isPointProject(p)
@@ -2856,42 +2902,52 @@ function renderLegend() {
           activePointProjects.map(p => {
               const shape = getProjectShape(p);
               const cleanProjName = String(p.name || "").replace(/\s*\(?\bFaz[-\s]*[12]\b\)?/gi, "").trim();
-              const tone = p.category === "other" ? "#38BDF8" : statusTone(p.status);
+              const tone = statusTone(p.status);
               return `<div class="legend-row" title="${esc(cleanProjName)}"><span class="legend-shape-badge" style="color:${tone}">${shape.symbol}</span><span class="legend-proj-name">${esc(cleanProjName)}</span></div>`;
           }).join("")
         : "";
 
-    // 🗂️ Digər qovluğu: RM xətlərinin rəngləri və adları
+    // 🗂️ Digər qovluğu: yalnız RM xətlərinin rəngləri və adları (Xəzər dənizi, Rayon sərhədləri və digərləri daxil edilmir)
     const otherProjects = state.projects.filter(p =>
         p.category === "other" &&
         state.activeFolders.has("other") &&
         state.visibleIds.has(p.id)
     );
+    const isRmText = str => /\brm\b|\brm[-\s_\d]|\d+[-\s_]*rm\b/i.test(String(str || ""));
     const rmItems = [];
     const seenRm = new Set();
     otherProjects.forEach(p => {
+        const projClean = String(p.name || "").replace(/^Digər\s*:\s*/i, "").trim();
+        const projIsRm = isRmText(projClean);
         (p.items || []).forEach(r => {
-            const rawName = String(r.name || p.name || "").replace(/^Digər\s*:\s*/i, "").trim();
+            const rawOtherName = String(r.name || "").replace(/^Digər\s*:\s*/i, "").trim();
+            const isGenericOther = /^(?:idxal\s*x[əe]tti|imported\s*line|x[əe]tt|line|imp|ply|poliqon)[-\s]*\d*$/i.test(rawOtherName);
+            const displayName = (!isGenericOther && rawOtherName) ? rawOtherName : (projClean || rawOtherName);
+            if (!displayName) return;
+            if (!isRmText(displayName) && !projIsRm) return;
+            if (/(x[əe]z[əe]r|caspian|d[əe]niz|rayon\s*s[əe]rh[əe]d)/i.test(displayName)) return;
             const color = normalizeColorCode(r.customColor || p.customColor, "#38BDF8");
-            const key = `${rawName}_${color}`;
-            if (!seenRm.has(key) && rawName) {
+            const key = `${displayName.toLocaleLowerCase("az")}_${color}`;
+            if (!seenRm.has(key)) {
                 seenRm.add(key);
-                rmItems.push({ name: rawName, color });
+                rmItems.push({ name: displayName, color });
             }
         });
     });
 
+    const focusedProjId = state.selected?.projectId || window.__activeProjectId || null;
+    const focusedProj = focusedProjId ? state.projects.find(p => p.id === focusedProjId && state.activeFolders.has(p.category || "project")) : null;
     const onlyOtherActive = state.activeFolders.size === 1 && state.activeFolders.has("other");
 
-    if (onlyOtherActive && rmItems.length > 0) {
-        $("legend").innerHTML = `<div class="legend-sec-title">RM Xətləri</div>`
-            + rmItems.map(rm => `<div class="legend-row"><span class="legend-line" style="background:${rm.color}"></span><span>${esc(rm.name)}</span></div>`).join("")
-            + pointProjectsHtml;
+    if (onlyOtherActive || focusedProj?.category === "other") {
+        $("legend").innerHTML = rmItems.map(rm =>
+            `<div class="legend-row"><span class="legend-line" style="background:${rm.color}"></span><span>${esc(rm.name)}</span></div>`
+        ).join("");
         return;
     }
 
     const rmHtml = rmItems.length > 0
-        ? `<div class="legend-divider"></div><div class="legend-sec-title">Digər (RM xətləri)</div>`
+        ? `<div class="legend-divider"></div>`
           + rmItems.map(rm => `<div class="legend-row"><span class="legend-line" style="background:${rm.color}"></span><span>${esc(rm.name)}</span></div>`).join("")
         : "";
 
@@ -3065,9 +3121,7 @@ function renderProjects() {
             const subTitle = isNim
                 ? `${p.items.length} svetofor kəsişməsi · Hazır: ${donePts}/${p.items.length}`
                 : (isPoints
-                    ? (isHasSum
-                        ? `📡 ${totalAnt} ant · ${formatKm(sum.done / 1000)} / ${formatKm(sum.plan / 1000)} km`
-                        : `📡 ${totalAnt} ant · ${formatKm(sum.plan)} m / ${formatKm(sum.done)} m`)
+                    ? `📡 ${totalAnt} antena - ${formatKm(sum.plan)} / ${formatKm(sum.done)} km`
                     : `〰️ ${formatKm(sum.plan)} / ${formatKm(sum.done)} km · Qalıb: ${formatKm(Math.max(0, sum.plan - sum.done))} km`);
             const rightPct = isNim ? `${p.items.length ? Math.round(donePts / p.items.length * 100) : 0}%` : `${pct}%`;
 
@@ -3089,21 +3143,22 @@ function renderProjects() {
                         const foBadge = segFo
                             ? `<span style="background:rgba(14,165,233,0.16);color:#38BDF8;border:1px solid rgba(56,189,248,0.38);border-radius:6px;padding:1px 5px;font-size:10px;font-weight:700;margin-right:4px">${esc(segFo)}</span>`
                             : "";
-                        const isSum = isPoints && isSummaryItem(r);
                         const cBrief = r.contractor ? ` · 👷 ${esc(r.contractor)}` : "";
+                        const { planKm: rPlanKm, doneKm: rDoneKm } = isPoints ? getPointKmPair(r) : { planKm: r.totalKm, doneKm: r.doneKm };
                         const rightText = isNim
                             ? t(`status${r.status}`)
                             : (isPoints
-                                ? (isSum
-                                    ? `${r.antennas || 0} ant · ${formatKm(r.doneKm / 1000)} / ${formatKm(r.totalKm / 1000)} km${cBrief}`
-                                    : `${r.antennas || 0} ant · ${formatKm(r.totalKm)} / ${formatKm(r.doneKm)} m${cBrief}`)
+                                ? `${r.antennas || 0} antena - ${formatKm(rPlanKm)} / ${formatKm(rDoneKm)} km${cBrief}`
                                 : `${formatKm(r.totalKm)} / ${formatKm(r.doneKm)} km (${percent(r.doneKm, r.totalKm)}%)`);
                         return `
-                        <button class="segment ${state.selected?.itemId === r.id && state.selected?.projectId === p.id ? "selected" : ""}" data-action="focus" data-item="${esc(r.id)}">
-                            <span class="dot" style="background:${statusTone(r.status)}"></span>
-                            <span class="segment-name" title="${esc(cleanName)}">${isNim ? "🚦 " : ""}${foBadge}${esc(cleanName)}</span>
-                            <span style="color:${statusTone(r.status)};font-weight:600;white-space:nowrap">${rightText}</span>
-                        </button>`;
+                        <div class="segment ${state.selected?.itemId === r.id && state.selected?.projectId === p.id ? "selected" : ""}" style="display:flex;align-items:center;gap:6px;padding-right:6px">
+                            <button type="button" style="flex:1;display:flex;align-items:center;gap:8px;background:none;border:0;color:inherit;text-align:left;cursor:pointer;padding:0;min-width:0" data-action="focus" data-item="${esc(r.id)}">
+                                <span class="dot" style="background:${statusTone(r.status)}"></span>
+                                <span class="segment-name" title="${esc(cleanName)}">${isNim ? "🚦 " : ""}${foBadge}${esc(cleanName)}</span>
+                                <span style="color:${statusTone(r.status)};font-weight:600;white-space:nowrap">${rightText}</span>
+                            </button>
+                            ${isAdmin() ? `<button type="button" class="icon-btn small" data-action="editSeg" data-item="${esc(r.id)}" title="Nöqtəni / Xətti redaktə et"><i class="fa-solid fa-pen"></i></button>` : ""}
+                        </div>`;
                     }).join("")}${isAdmin() ? `<button class="link add-seg" data-action="addSegment">+ ${t("addSegment")}</button>` : ""}</div>` : ""}
                 </div>`;
         }).join(""));
@@ -3121,7 +3176,8 @@ function renderDetail() {
 
     const { project, item: r } = entry;
     const tone = statusTone(r.status);
-    const pct = percent(r.doneKm, r.totalKm);
+    const { planKm: dPlanKm, doneKm: dDoneKm } = isPointItemRecord(r) ? getPointKmPair(r) : { planKm: r.totalKm, doneKm: r.doneKm };
+    const pct = percent(dDoneKm, dPlanKm);
     const info = findContractorInfo(r.contractor);
     const isLineSeg = Array.isArray(r.coords) && r.coords.length >= 2 && project.type !== "points" && project.category !== "nim";
     const foText = isLineSeg ? getSegmentFiber(r, project) : "";
@@ -3148,12 +3204,12 @@ function renderDetail() {
                 <i class="fa-solid fa-location-dot" style="color:${tone}"></i><strong>${esc(ends.bName || r.name)}</strong>
             </div>
             <div>
-                <div class="meter-row"><b>${pct}%</b><span class="muted">${formatKm(r.doneKm)} / ${formatKm(r.totalKm)} km</span></div>
+                <div class="meter-row"><b>${pct}%</b><span class="muted">${formatKm(dPlanKm)} / ${formatKm(dDoneKm)} km</span></div>
                 <div class="progress"><span style="width:${pct}%;background:${tone}"></span></div>
             </div>
             <dl class="spec">
                 ${foText ? row("Kabelin lif sayı", `<b>🔌 ${esc(foText)}</b>`) : ""}
-                ${row(t("thLeft"), `${formatKm(Math.max(0, r.totalKm - r.doneKm))} km`)}
+                ${row(t("thLeft"), `${formatKm(Math.max(0, dPlanKm - dDoneKm))} km`)}
                 ${row(t("thDates"), `${formatDate(r.startDate)} – ${formatDate(r.endDate)}`)}
                 ${row(t("closures"), r.closures || 0)}
                 ${row(t("manholes"), r.manholes || 0)}
@@ -3183,14 +3239,15 @@ function renderTable() {
         const isLineSeg = Array.isArray(r.coords) && r.coords.length >= 2 && project.type !== "points" && project.category !== "nim";
         const segFo = isLineSeg ? getSegmentFiber(r, project) : "";
         const foBadge = segFo ? ` · <b style="color:#38BDF8">🔌 ${esc(segFo)}</b>` : "";
+        const { planKm: tPlanKm, doneKm: tDoneKm } = isPointItemRecord(r) ? getPointKmPair(r) : { planKm: r.totalKm, doneKm: r.doneKm };
         return `
         <tr data-index="${index}" class="${selected?.item === r ? "selected" : ""}">
             <td><b>📍 ${esc(ends.aName)} ➔ 📍 ${esc(ends.bName)}</b><small>${esc(project.name)} · ${esc(r.name)}${foBadge}</small></td>
             <td>${formatDate(r.startDate)} – ${formatDate(r.endDate)}</td>
             <td>${esc(r.contractor || t("notAssigned"))}</td>
-            <td class="num">${formatKm(r.totalKm)} km</td>
-            <td class="num">${formatKm(r.doneKm)} km</td>
-            <td class="num">${formatKm(Math.max(0, r.totalKm - r.doneKm))} km</td>
+            <td class="num">${formatKm(tPlanKm)} km</td>
+            <td class="num">${formatKm(tDoneKm)} km</td>
+            <td class="num">${formatKm(Math.max(0, tPlanKm - tDoneKm))} km</td>
             <td>${r.closures || 0} / ${r.manholes || 0}</td>
             <td><span class="pill" style="--tone:${statusTone(r.status)}">${t(`status${r.status}`)}</span></td>
         </tr>`;
@@ -3335,13 +3392,14 @@ function getPropCaseInsensitive(props, ...aliases) {
     return undefined;
 }
 
-function findPropByPattern(props, pattern) {
+function findPropByPattern(props, pattern, excludePattern = null) {
     if (!props) return undefined;
     for (const [k, v] of Object.entries(props)) {
         if (k.startsWith("_")) continue;
         const cleaned = cleanAttrVal(v);
         if (cleaned === undefined) continue;
         const normK = normalizeKey(k);
+        if (excludePattern && (excludePattern.test(normK) || excludePattern.test(k))) continue;
         if (pattern.test(normK) || pattern.test(k)) {
             return { val: cleaned, colName: k };
         }
@@ -3399,8 +3457,8 @@ function parseAntennaCount(p, nameVal = "", rawDesc = "") {
 
 function parsePointDistances(p, nameVal = "", rawDesc = "") {
     // 1. ArcGIS Pro sütun adları / Shapefile 10 simvol qısaltmaları üçün pattern axtarışı (məs: Kabel_veri, Kabel_ceki, Kabel_verilen_km, Kabel_verilen_m və s.)
-    const matchVerilen = findPropByPattern(p, /(veril|plan|total|mesafe|uzunluq|kabelv|kabelp|kabelm|^m$|^km$|^veri|kabelveri)/i);
-    const matchCekilen = findPropByPattern(p, /([çc]ekil|faktiki|done|icra|kabelc|kabelf|kabeld|^ceki|kabelceki)/i);
+    const matchVerilen = findPropByPattern(p, /(veril|plan|total|mesafe|uzunluq|kabelv|kabelp|kabelm|^m$|^km$|^veri|kabelveri)/i, /([çc]ekil|faktiki|done|icra|ceki)/i);
+    const matchCekilen = findPropByPattern(p, /([çc]ekil|faktiki|done|icra|kabelc|kabelf|kabeld|^ceki|kabelceki)/i, /(veril|plan|total|veri)/i);
 
     let planMeters = matchVerilen ? parseDistanceMeters(matchVerilen.val, matchVerilen.colName) : null;
     let doneMeters = matchCekilen ? parseDistanceMeters(matchCekilen.val, matchCekilen.colName) : null;
@@ -3915,6 +3973,7 @@ function projectFromFile(fileName, lines, polyFillMode = "auto") {
                     startDate: "", endDate: "", contractor,
                     totalKm: planMeters,
                     doneKm: doneMeters,
+                    unit: "m",
                     status,
                     customColor: "",
                     lineWidth,
@@ -4285,8 +4344,9 @@ document.addEventListener("DOMContentLoaded", init);
 
     const origRenderAll = window.renderAll;
     function updateLegendVisibility() {
+        renderLegend();
         const legend = $("legend");
-        if (legend) legend.hidden = state.activeFolders.size === 0 || visibleEntries().length === 0;
+        if (legend) legend.hidden = state.activeFolders.size === 0 || visibleEntries().length === 0 || !legend.innerHTML.trim();
     }
 
     function executorOptionsHtml(currentExec) {
@@ -4516,7 +4576,75 @@ document.addEventListener("DOMContentLoaded", init);
             window.addEventListener("mouseup", onUp);
         });
 
+        async function quickSavePointRow(rowEl) {
+            if (!isAdmin() || !rowEl) return;
+            const [projectId, itemId] = (rowEl.dataset.pickSeg || "").split(":");
+            const proj = state.projects.find(p => p.id === projectId);
+            const item = proj?.items.find(r => r.id === itemId);
+            if (!proj || !item) return;
+
+            const antInp = rowEl.querySelector("[data-pt-ant]");
+            const planInp = rowEl.querySelector("[data-pt-plan]");
+            const doneInp = rowEl.querySelector("[data-pt-done]");
+            const stSel = rowEl.querySelector("[data-pt-status]");
+
+            if (antInp) item.antennas = Math.max(0, parseInt(antInp.value, 10) || 0);
+            if (planInp) item.totalKm = normalizePointMetersInput(planInp.value);
+            if (doneInp) item.doneKm = normalizePointMetersInput(doneInp.value);
+            if (stSel && stSel.value) item.status = stSel.value;
+            item.unit = "m";
+            item.summary = true;
+
+            saveSegmentOverride(proj.id, item);
+            saveImportedProjects();
+            if (api.configured) {
+                try {
+                    await api.saveSegment(proj.id, item.id, {
+                        code: item.id,
+                        name: item.name,
+                        point_a: item.pointA || item.name || "",
+                        point_b: item.pointB || "Şəbəkə",
+                        total_km: item.totalKm,
+                        done_km: item.doneKm,
+                        antennas: item.antennas,
+                        status: item.status,
+                        contractor: item.contractor || null,
+                        coords: item.coords
+                    });
+                } catch {}
+            }
+            const { planKm, doneKm } = getPointKmPair(item);
+            recordAuditLog("Nöqtə Məsafə Redaktəsi", "🏢 BCG", `${proj.name} → ${item.name}`, `${item.antennas} antena - ${formatKm(planKm)} / ${formatKm(doneKm)} km (${t("status" + item.status)})`);
+            renderAll();
+            renderInfoCard();
+            toast(`✅ ${item.name}: ${item.antennas} antena - ${formatKm(planKm)} / ${formatKm(doneKm)} km`);
+        }
+
+        card.addEventListener("keydown", e => {
+            if (e.key === "Enter" && e.target.closest(".pt-quick-edit")) {
+                e.preventDefault();
+                e.stopPropagation();
+                quickSavePointRow(e.target.closest("[data-pick-seg]"));
+            }
+        });
+
         card.addEventListener("click", e => {
+            const quickSaveBtn = e.target.closest("[data-pt-quick-save]");
+            if (quickSaveBtn) {
+                e.stopPropagation();
+                quickSavePointRow(quickSaveBtn.closest("[data-pick-seg]"));
+                return;
+            }
+            const editSegBtn = e.target.closest("[data-edit-seg]");
+            if (editSegBtn) {
+                e.stopPropagation();
+                if (!isAdmin()) return;
+                const [projectId, itemId] = editSegBtn.dataset.editSeg.split(":");
+                const proj = state.projects.find(p => p.id === projectId);
+                const item = proj?.items.find(r => r.id === itemId);
+                if (proj && item) editSegment(proj, item);
+                return;
+            }
             const geomBtn = e.target.closest("[data-geom-edit]");
             if (geomBtn) {
                 e.stopPropagation();
@@ -4525,7 +4653,7 @@ document.addEventListener("DOMContentLoaded", init);
                 return;
             }
             const pick = e.target.closest("[data-pick-seg]");
-            if (pick && !e.target.closest("select") && !e.target.closest("button")) {
+            if (pick && !e.target.closest("select") && !e.target.closest("button") && !e.target.closest("input") && !e.target.closest("label") && !e.target.closest(".pt-quick-edit")) {
                 const [projectId, itemId] = pick.dataset.pickSeg.split(":");
                 const proj = state.projects.find(p => p.id === projectId);
                 const item = proj?.items.find(r => r.id === itemId);
@@ -4578,6 +4706,10 @@ document.addEventListener("DOMContentLoaded", init);
 
         card.addEventListener("change", async e => {
             if (!isAdmin()) return;
+            if (e.target.closest("[data-pt-status]")) {
+                await quickSavePointRow(e.target.closest("[data-pick-seg]"));
+                return;
+            }
             const nimSt = e.target.closest("[data-nim-status-select]");
             if (nimSt) {
                 const [projectId, itemId] = nimSt.dataset.nimStatusSelect.split(":");
@@ -5445,8 +5577,8 @@ document.addEventListener("DOMContentLoaded", init);
         // A) NÖQTƏ / ANTENA LAYİHƏSİ
         if (isPoints) {
             const totalAnt = proj.items.reduce((s, i) => s + (i.antennas || 0), 0);
-            const planKmVal = toKmValue(sum.plan);
-            const doneKmVal = toKmValue(sum.done);
+            const planKmVal = sum.plan;
+            const doneKmVal = sum.done;
             const leftKmVal = Math.max(0, planKmVal - doneKmVal);
             const sumPct = percent(doneKmVal, planKmVal);
             card.innerHTML = `
@@ -5454,7 +5586,7 @@ document.addEventListener("DOMContentLoaded", init);
                     <div>
                         <small style="display:flex;align-items:center;gap:6px">
                             <span class="dot" style="background:${tone}"></span>
-                            <span>📡 ${totalAnt} antena</span>
+                            <span>📡 ${totalAnt} antena - ${formatKm(planKmVal)} / ${formatKm(doneKmVal)} km</span>
                         </small>
                         <strong>${esc(cleanProjName)}</strong>
                     </div>
@@ -5465,15 +5597,14 @@ document.addEventListener("DOMContentLoaded", init);
                 </div>
                 <div class="info-card-body">
                     ${!entry ? `<div class="info-grid">
-                        <div class="info-stat"><small>1. Nəzərdə tutulan</small><b>${formatKm(planKmVal)} km</b></div>
-                        <div class="info-stat"><small>2. Faktiki (${sumPct}%)</small><b>${formatKm(doneKmVal)} km</b></div>
+                        <div class="info-stat"><small>1. Verilən kabel</small><b>${formatKm(planKmVal)} km</b></div>
+                        <div class="info-stat"><small>2. Çəkilən (${sumPct}%)</small><b>${formatKm(doneKmVal)} km</b></div>
                         <div class="info-stat"><small>Qalıb</small><b>${formatKm(leftKmVal)} km</b></div>
                     </div>` : ""}
                     <div class="info-sub-list">
                         ${items.map(r => {
                             const rTone = statusTone(r.status);
-                            const rVerilenKm = toKmValue(r.totalKm);
-                            const rCekilenKm = toKmValue(r.doneKm);
+                            const { planKm: rVerilenKm, doneKm: rCekilenKm } = getPointKmPair(r);
                             const rLeftKm = Math.max(0, rVerilenKm - rCekilenKm);
                             const rPct = percent(rCekilenKm, rVerilenKm);
                             const cleanName = String(r.name || "").replace(/\s*\(?\bFaz[-\s]*[12]\b\)?/gi, "").replace(/\s*rayon(u)?\b/gi, "").trim();
@@ -5483,13 +5614,38 @@ document.addEventListener("DOMContentLoaded", init);
                                     <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
                                         <strong style="display:flex;align-items:center;gap:6px">
                                             <span class="dot" style="background:${rTone}"></span>
-                                            ${esc(cleanName)} (${r.antennas || 0} ant)
+                                            ${esc(cleanName)}
                                         </strong>
                                         <span class="pill" style="--tone:${rTone}">${t(`status${r.status}`)}</span>
                                     </div>
                                     <div style="color:var(--ink-2);font-size:11.5px">
-                                        Kabel: Verilən <b>${formatKm(rVerilenKm)} km</b> · Çəkilən: <b style="color:${rTone}">${formatKm(rCekilenKm)} km (${rPct}%)</b> · Qalıb: <b>${formatKm(rLeftKm)} km</b>
+                                        📡 <b style="color:var(--ink)">${r.antennas || 0} antena - ${formatKm(rVerilenKm)} / ${formatKm(rCekilenKm)} km</b> <span style="color:${rTone};font-weight:700">(${rPct}%)</span> · Qalıb: <b>${formatKm(rLeftKm)} km</b>
                                     </div>
+                                    ${isAdmin() ? `
+                                    <div class="pt-quick-edit" style="display:grid;grid-template-columns:0.75fr 1fr 1fr 1.1fr auto;gap:5px;align-items:end;background:rgba(15,23,42,0.35);padding:6px;border-radius:8px;border:1px solid rgba(56,189,248,0.22);margin:3px 0">
+                                        <label style="display:flex;flex-direction:column;gap:2px;font-size:10px;color:var(--ink-2)">
+                                            <span>Antena</span>
+                                            <input class="input" type="number" step="1" min="0" data-pt-ant value="${r.antennas || 0}" style="height:25px;padding:0 5px;font-size:11.5px">
+                                        </label>
+                                        <label style="display:flex;flex-direction:column;gap:2px;font-size:10px;color:var(--ink-2)">
+                                            <span>Verilən (km/m)</span>
+                                            <input class="input" type="number" step="any" min="0" data-pt-plan value="${formatKm(rVerilenKm)}" style="height:25px;padding:0 5px;font-size:11.5px">
+                                        </label>
+                                        <label style="display:flex;flex-direction:column;gap:2px;font-size:10px;color:var(--ink-2)">
+                                            <span>Çəkilən (km/m)</span>
+                                            <input class="input" type="number" step="any" min="0" data-pt-done value="${formatKm(rCekilenKm)}" style="height:25px;padding:0 5px;font-size:11.5px">
+                                        </label>
+                                        <label style="display:flex;flex-direction:column;gap:2px;font-size:10px;color:var(--ink-2)">
+                                            <span>Status</span>
+                                            <select class="input" data-pt-status style="height:25px;padding:0 4px;font-size:11px">
+                                                ${STATUSES.map(s => `<option value="${s}" ${r.status === s ? "selected" : ""}>${t("status" + s)}</option>`).join("")}
+                                            </select>
+                                        </label>
+                                        <button type="button" class="btn btn-primary" style="height:25px;padding:0 8px;font-size:11px" data-pt-quick-save="${esc(proj.id)}:${esc(r.id)}" title="Dəyişiklikləri sürətli saxla">
+                                            <i class="fa-solid fa-check"></i> Saxla
+                                        </button>
+                                    </div>
+                                    ` : ""}
                                     <div class="info-exec-row">
                                         <span class="muted">İcraçı:</span>
                                         ${executorOptionsHtml(r.contractor)}
@@ -5499,7 +5655,10 @@ document.addEventListener("DOMContentLoaded", init);
                                          <span>👷 İşçi: <b>${esc(cInfo.workers)} nəfər</b> · 🚜 Tex.: <b>${esc(cInfo.machinery ?? 0)}</b></span>
                                         <span>📞 <b>${esc(cInfo.engineer || "—")}</b></span>
                                         ` : `<span class="muted">${isAdmin() ? `<a href="admin.html#contractors" target="_blank" style="color:#38BDF8;text-decoration:none">⚙️ Admin Paneldə İcraçı əlavə et</a>` : ""}</span>`}
-                                        ${isAdmin() ? `<button class="btn btn-outline" style="height:22px;padding:0 7px;font-size:10.5px" data-geom-edit="${esc(proj.id)}:${esc(r.id)}" title="Nöqtəni xəritədə sürüşdür"><i class="fa-solid fa-arrows-up-down-left-right"></i> Sürüşdür</button>` : ""}
+                                        ${isAdmin() ? `<div style="display:flex;gap:4px">
+                                            <button class="btn btn-outline" style="height:22px;padding:0 7px;font-size:10.5px" data-edit-seg="${esc(proj.id)}:${esc(r.id)}" title="Bu nöqtəni tam redaktə et"><i class="fa-solid fa-pen"></i> Redaktə</button>
+                                            <button class="btn btn-outline" style="height:22px;padding:0 7px;font-size:10.5px" data-geom-edit="${esc(proj.id)}:${esc(r.id)}" title="Nöqtəni xəritədə sürüşdür"><i class="fa-solid fa-arrows-up-down-left-right"></i> Sürüşdür</button>
+                                        </div>` : ""}
                                     </div>
                                 </div>
                             `;
