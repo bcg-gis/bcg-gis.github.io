@@ -208,6 +208,23 @@ async function handleLogout() {
     showLogin();
 }
 
+const STORAGE_IMPORTED_KEY = "bcg.imported_projects.v2";
+
+function getStoredImportedProjects() {
+    return readStore(STORAGE_IMPORTED_KEY, []);
+}
+
+function saveImportedProjects() {
+    try {
+        const toSave = (state.projects || []).filter(p =>
+            p && (p.imported || p.isLocal || p.category === "other" || String(p.id).startsWith("imp_") || String(p.id).startsWith("proj_custom_") || String(p.id).startsWith("proj_local_"))
+        );
+        writeStore(STORAGE_IMPORTED_KEY, toSave);
+    } catch (e) {
+        console.warn("saveImportedProjects error:", e);
+    }
+}
+
 async function enterApp(user) {
     state.user = user;
     let data;
@@ -222,6 +239,17 @@ async function enterApp(user) {
     }
     $("login").hidden = true;
     Object.assign(state, data);
+
+    // Baza layihələri ilə lokal/idxal olunmuş layihələri birləşdir
+    const storedImported = getStoredImportedProjects();
+    const existingIds = new Set(state.projects.map(p => p.id));
+    storedImported.forEach(p => {
+        if (!existingIds.has(p.id)) {
+            state.projects.push(p);
+            existingIds.add(p.id);
+        }
+    });
+
     state.projects.forEach(p => state.visibleIds.add(p.id));
     tools.setUser(user.id);
     renderRole();
@@ -235,8 +263,46 @@ const statusOptions = () => STATUSES.map(id => [id, t(`status${id}`)]);
 
 async function reloadData() {
     const known = new Set(state.projects.map(p => p.id));
-    Object.assign(state, await api.loadAll(state.user.id));
-    state.projects.forEach(p => { if (!known.has(p.id)) state.visibleIds.add(p.id); });
+    const knownVisible = new Set(state.visibleIds);
+
+    // Mövcud yaddaşda və lokal depoda olan layihələri qoru
+    const localImported = state.projects.filter(p =>
+        p && (p.imported || p.isLocal || p.category === "other" || String(p.id).startsWith("imp_") || String(p.id).startsWith("proj_custom_") || String(p.id).startsWith("proj_local_"))
+    );
+    const storedImported = getStoredImportedProjects();
+
+    const localMap = new Map();
+    storedImported.forEach(p => { if (p && p.id) localMap.set(p.id, p); });
+    localImported.forEach(p => { if (p && p.id) localMap.set(p.id, p); });
+
+    try {
+        const fresh = await api.loadAll(state.user.id);
+        const dbProjects = fresh.projects || [];
+        const dbIds = new Set(dbProjects.map(p => p.id));
+
+        const merged = [...dbProjects];
+        for (const [id, localProj] of localMap.entries()) {
+            const idx = merged.findIndex(p => p.id === id);
+            if (idx >= 0) {
+                // Bazada varsa, redaktə edilmiş ad və məlumatları birləşdir
+                merged[idx] = { ...merged[idx], ...localProj };
+            } else {
+                merged.push(localProj);
+            }
+        }
+        state.projects = merged;
+        if (fresh.contractors) state.contractors = fresh.contractors;
+        if (fresh.materials) state.materials = fresh.materials;
+        if (fresh.notes) state.notes = fresh.notes;
+    } catch (err) {
+        console.warn("api.loadAll xətası, lokal məlumatlar saxlanılır:", err);
+    }
+
+    state.projects.forEach(p => {
+        if (!known.has(p.id) || knownVisible.has(p.id) || p.imported) state.visibleIds.add(p.id);
+    });
+
+    saveImportedProjects();
     renderMaterials();
     renderAll();
 }
@@ -320,11 +386,47 @@ function editProject(project) {
             { key: "start_date", label: t("fieldStart"), type: "date" },
             { key: "end_date", label: t("fieldEnd"), type: "date" }
         ],
-        onSave: row => api.saveProjectRow(project?.id, row),
+        onSave: async row => {
+            if (project) {
+                project.name = row.name;
+                project.status = row.status || project.status;
+                project.type = row.project_type || project.type;
+                project.startDate = row.start_date || "";
+                project.endDate = row.end_date || "";
+            } else {
+                const newId = `proj_local_${Date.now()}`;
+                const newProj = {
+                    id: newId,
+                    name: row.name,
+                    status: row.status || "layihe",
+                    type: row.project_type || "lines",
+                    category: state.sidebarCategory || "project",
+                    startDate: row.start_date || "",
+                    endDate: row.end_date || "",
+                    items: [],
+                    isLocal: true
+                };
+                state.projects.push(newProj);
+                state.visibleIds.add(newId);
+                project = newProj;
+            }
+            saveImportedProjects();
+            try {
+                await api.saveProjectRow(project.id, row);
+            } catch (e) {
+                console.warn("api.saveProjectRow xətası (lokal qorunur):", e);
+            }
+        },
         onDelete: project && (async () => {
-            await api.deleteProject(project.id);
+            state.projects = state.projects.filter(p => p.id !== project.id);
             state.visibleIds.delete(project.id);
             if (state.selected?.projectId === project.id) state.selected = null;
+            saveImportedProjects();
+            try {
+                await api.deleteProject(project.id);
+            } catch (e) {
+                console.warn("api.deleteProject xətası:", e);
+            }
         })
     });
 }
@@ -372,17 +474,66 @@ function editSegment(project, item) {
             { key: "coords", label: t("coordsField"), type: "textarea", wide: true, required: true, placeholder: "41.4205, 46.9242", action: { label: t("useLastDrawing"), run: useLastDrawing } }
         ],
         onSave: async row => {
-            await api.saveSegment(project.id, item?.id, {
-                ...row,
-                antennas: Number(row.antennas || 0),
-                contractor: row.contractor || null,
-                coords: textToCoords(row.coords, isPoints ? 1 : 2)
-            });
+            const parsedCoords = textToCoords(row.coords, isPoints ? 1 : 2);
+            if (item) {
+                item.id = row.code;
+                item.name = row.name;
+                item.pointA = row.point_a;
+                item.pointB = row.point_b;
+                item.status = row.status;
+                item.totalKm = Number(row.total_km) || 0;
+                item.doneKm = Number(row.done_km) || 0;
+                item.contractor = row.contractor;
+                item.startDate = row.start_date || "";
+                item.endDate = row.end_date || "";
+                if (isPoints) item.antennas = Number(row.antennas || 0);
+                item.coords = parsedCoords;
+            } else {
+                const newSeg = {
+                    id: row.code,
+                    name: row.name,
+                    pointA: row.point_a,
+                    pointB: row.point_b,
+                    status: row.status,
+                    totalKm: Number(row.total_km) || 0,
+                    doneKm: Number(row.done_km) || 0,
+                    contractor: row.contractor,
+                    startDate: row.start_date || "",
+                    endDate: row.end_date || "",
+                    antennas: Number(row.antennas || 0),
+                    coords: parsedCoords
+                };
+                if (!project.items) project.items = [];
+                project.items.push(newSeg);
+                item = newSeg;
+            }
+
+            saveImportedProjects();
+
+            try {
+                await api.saveSegment(project.id, item?.id, {
+                    ...row,
+                    antennas: Number(row.antennas || 0),
+                    contractor: row.contractor || null,
+                    coords: parsedCoords
+                });
+            } catch (e) {
+                console.warn("api.saveSegment xətası (lokal qorunur):", e);
+            }
+
             if (item) state.selected = { projectId: project.id, itemId: row.code };
         },
         onDelete: item && (async () => {
-            await api.deleteSegment(project.id, item.id);
+            if (project?.items) {
+                project.items = project.items.filter(r => r.id !== item.id);
+            }
             state.selected = null;
+            saveImportedProjects();
+            try {
+                await api.deleteSegment(project.id, item.id);
+            } catch (e) {
+                console.warn("api.deleteSegment xətası:", e);
+            }
         })
     });
 }
@@ -1946,16 +2097,23 @@ async function handleImportFiles(fileList, targetCategory) {
                 continue;
             }
             const project = projectFromFile(file.name, lines);
+            project.id = project.id || (`imp_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`);
+            project.imported = true;
             project.category = cat;
             if (cat === "nim") project.type = "points";
             else if (cat === "azconnect" || cat === "other") project.type = "lines";
             if (cat === "other") {
                 project.name = `Digər: ${project.name.replace(/^Digər:\s*/i, "")}`;
             }
-            try { await api.saveProject(project); } catch { /* lokal saxla */ }
+            try {
+                await api.saveProject(project);
+            } catch (err) {
+                console.warn("api.saveProject xətası (lokal qorunur):", err);
+            }
             state.projects.push(project);
             state.visibleIds.add(project.id);
             added.push(project);
+            saveImportedProjects();
             toast(`${t("importOk")}: ${project.name} (${catLabels[cat] || "📁 Layihələr"})`);
         } catch {
             toast(`${file.name}: ${t("importError")}`, true);

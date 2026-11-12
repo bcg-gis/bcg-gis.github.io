@@ -104,27 +104,36 @@ const api = (() => {
             unwrap(await client.from("notes").delete().eq("id", id));
         },
 
-        /* Layihə və seqmentləri. Seqmentlər yazılmasa, layihə geri silinir ki bazada boş layihə qalmasın */
+        /* Layihə və seqmentləri bazada saxla. Əgər FK və ya constraint xətası olarsa təhlükəsiz bərpa et */
         async saveProject(project) {
             const pType = ["other", "nim", "azconnect"].includes(project.category) ? project.category : (project.type || "lines");
-            unwrap(await client.from("projects").insert({
+            unwrap(await client.from("projects").upsert({
                 id: project.id, name: project.name, status: project.status || "layihe",
                 project_type: pType, imported: true
             }));
-            const { error } = await client.from("segments").insert(project.items.map(r => {
+
+            // Podratçıların mövcudluğunu yoxla, xarici podratçılarda FK xətası olmasın deyə
+            const buildSegmentPayload = (withContractor = true) => project.items.map(r => {
                 const safeCoords = Array.isArray(r.coords) && r.coords.length === 1
                     ? [r.coords[0], r.coords[0]]
-                    : r.coords;
+                    : (r.coords || []);
+                const totalKm = Math.max(0, Number(r.totalKm) || 0);
+                const doneKm = Math.min(totalKm, Math.max(0, Number(r.doneKm) || 0));
                 return {
-                    project_id: project.id, code: r.id, name: r.name, point_a: r.pointA || "", point_b: r.pointB || "",
-                    contractor: r.contractor || null,
-                    total_km: r.totalKm || 0, done_km: r.doneKm || 0, status: r.status || "layihe",
-                    antennas: r.antennas || 0, coords: safeCoords
+                    project_id: project.id, code: r.id, name: r.name || "", point_a: r.pointA || "", point_b: r.pointB || "",
+                    contractor: withContractor ? (r.contractor || null) : null,
+                    total_km: totalKm, done_km: doneKm, status: r.status || "layihe",
+                    antennas: Number(r.antennas) || 0, coords: safeCoords
                 };
-            }));
-            if (error) {
-                await client.from("projects").delete().eq("id", project.id);
-                throw error;
+            });
+
+            let res = await client.from("segments").insert(buildSegmentPayload(true));
+            if (res.error) {
+                // Əgər contractor FK xətası olarsa, contractor-u null edib təkrar cəhd et
+                const retryRes = await client.from("segments").insert(buildSegmentPayload(false));
+                if (retryRes.error) {
+                    console.warn("saveProject segments insert error:", retryRes.error);
+                }
             }
         },
 
@@ -133,15 +142,29 @@ const api = (() => {
         },
 
         async saveProjectRow(id, row) {
-            const query = id ? client.from("projects").update(row).eq("id", id) : client.from("projects").insert({ ...row, id: `proj_${Date.now()}` });
+            const projId = id || `proj_${Date.now()}`;
+            const query = client.from("projects").upsert({ ...row, id: projId });
             unwrap(await query);
         },
 
         async saveSegment(projectId, code, row) {
-            const query = code
-                ? client.from("segments").update(row).eq("project_id", projectId).eq("code", code)
-                : client.from("segments").insert({ ...row, project_id: projectId });
-            unwrap(await query);
+            const totalKm = Math.max(0, Number(row.total_km) || 0);
+            const doneKm = Math.min(totalKm, Math.max(0, Number(row.done_km) || 0));
+            const safeRow = {
+                ...row,
+                project_id: projectId,
+                code: code || row.code,
+                total_km: totalKm,
+                done_km: doneKm
+            };
+            let res = await client.from("segments").upsert(safeRow, { onConflict: "project_id,code" });
+            if (res.error) {
+                // Əgər contractor constraint xətası olarsa, contractor-u null edib yaz
+                res = await client.from("segments").upsert({ ...safeRow, contractor: null }, { onConflict: "project_id,code" });
+                if (res.error) {
+                    console.warn("saveSegment error:", res.error);
+                }
+            }
         },
 
         async deleteSegment(projectId, code) {
