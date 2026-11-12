@@ -19,11 +19,18 @@ const api = (() => {
     });
 
     const detectCategory = row => {
+        try {
+            const pMap = JSON.parse(localStorage.getItem("bcg.proj.meta.v1") || "{}");
+            if (row.id && pMap[row.id]?.category) return pMap[row.id].category;
+            const imp = JSON.parse(localStorage.getItem("bcg.imported_projects.v2") || "[]");
+            const found = Array.isArray(imp) ? imp.find(p => p && p.id === row.id) : null;
+            if (found?.category) return found.category;
+        } catch {}
         const pt = String(row.project_type || "").toLowerCase();
         const nm = String(row.name || "").trim();
         if (pt === "nim" || /^nim\b|^svetofor/i.test(nm)) return "nim";
         if (pt === "azconnect" || /^azconnect\b|^azcon/i.test(nm)) return "azconnect";
-        if (pt === "other" || /^(rm\b|rm-|dendrologiya|digər)/i.test(nm)) return "other";
+        if (pt === "other" || /^(rm\b|rm-|dendrologiya|digər|xəzər|xezer|caspian|rayon\s*sərhəd)/i.test(nm)) return "other";
         return "project";
     };
 
