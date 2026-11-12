@@ -967,11 +967,14 @@
             const role = $("uRole").value;
             if (!name || !email) return;
 
-            const users = getUsers();
+            const cleanEmail = email.toLowerCase();
+            const users = getUsers().filter(u => String(u.email || "").trim().toLowerCase() !== cleanEmail);
             users.unshift({
                 id: Date.now(),
                 name,
                 email,
+                password: pass,
+                passMask: pass || "OTP",
                 role,
                 authMode: pass ? `🔑 Şifrə (${pass})` : "📧 Email kodu ilə (OTP)",
                 lastLogin: "Hələ daxil olmayıb",
@@ -1097,9 +1100,14 @@
             const savedAdminPass = localStorage.getItem("bcg.admin.auth_pass.v1");
             const validPasses = new Set(["admin123", "Bcg#2026", "admin"]);
             if (savedAdminPass) validPasses.add(savedAdminPass);
+            getUsers().filter(u => u.role === "admin").forEach(u => {
+                if (u.password) validPasses.add(String(u.password).trim());
+                const m = String(u.authMode || "").match(/\(([^)]+)\)/);
+                if (m && m[1]) validPasses.add(m[1].trim());
+            });
 
             // Əgər savedAdminPass varsa, birbaşa onunla və ya standart admin şifrəsi ilə yoxla
-            const isMatch = savedAdminPass ? (entered === savedAdminPass || validPasses.has(entered)) : validPasses.has(entered);
+            const isMatch = validPasses.has(entered);
             if (isMatch && entered.length > 0) {
                 $("adminLockBackdrop").hidden = true;
                 toast("🔓 Admin girişi təsdiqləndi");
