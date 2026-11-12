@@ -339,7 +339,7 @@
                     <div class="tabs" role="tablist">
                         <button class="tab" role="tab" data-tab="projects" data-i18n="projects"></button>
                         <button class="tab active" role="tab" data-tab="segments"><span data-i18n="segments"></span> <span class="muted" id="drawerCount"></span></button>
-                        <button class="tab" role="tab" data-tab="contractors"><span data-i18n="contractors"></span> <span class="muted" id="contractorCount"></span></button>
+                        <button class="tab" role="tab" data-tab="contractors" hidden><span data-i18n="contractors"></span> <span class="muted" id="contractorCount"></span></button>
                     </div>
                     <span class="dock-summary mono" id="drawerSummary"></span>
                     <span class="cursor-coords mono" id="cursorCoords">40.14300, 47.57700</span>
@@ -532,36 +532,13 @@
             <div id="userAutoOtherNotice" class="mat-summary" hidden>
                 <span><i class="fa-solid fa-circle-info" style="color:#38bdf8"></i> Layihəyə import yalnız <b>Admin</b> tərəfindən edilir. Sizin yüklədiyiniz fayl avtomatik <b><i class="fa-solid fa-folder-tree" style="color:#a855f7"></i> Digər</b> bölməsinə düşür.</span>
             </div>
-            <div id="importProjTypeWrap" class="edit-fields" style="grid-template-columns:1fr 1fr">
+            <div id="importProjTypeWrap" class="edit-fields" style="grid-template-columns:1fr">
                 <label class="wide">
                     <span>Layihə növü:</span>
                     <select class="input" id="importGeomType">
                         <option value="auto">&#10024; Fayldan avtomatik təyin et</option>
                         <option value="lines">&#12336;&#65039; Magistral Xətt layihəsi</option>
                         <option value="points">&#128205; Nöqtə / Antena layihəsi</option>
-                    </select>
-                </label>
-                <label>
-                    <span><i class="fa-solid fa-location-dot" style="color:#22c55e"></i> Başlanğıc qovşaq adı (A Konum):</span>
-                    <input class="input" type="text" id="impPointAName" placeholder="Avtomatik (atributdan)">
-                </label>
-                <label>
-                    <span><i class="fa-solid fa-location-dot" style="color:#ef4444"></i> Son qovşaq adı (B Konum):</span>
-                    <input class="input" type="text" id="impPointBName" placeholder="Avtomatik (atributdan)">
-                </label>
-                <label class="wide">
-                    <span>🔌 Kabelin lif sayı (FO 48, FO 24, FO 12...):</span>
-                    <select class="input" id="impFiberSelect">
-                        <option value="FO 48">🔌 FO 48</option>
-                        <option value="FO 24">🔌 FO 24</option>
-                        <option value="FO 12">🔌 FO 12</option>
-                        <option value="FO 96">🔌 FO 96</option>
-                        <option value="FO 72">🔌 FO 72</option>
-                        <option value="FO 36">🔌 FO 36</option>
-                        <option value="FO 16">🔌 FO 16</option>
-                        <option value="FO 8">🔌 FO 8</option>
-                        <option value="FO 4">🔌 FO 4</option>
-                        <option value="FO 144">🔌 FO 144</option>
                     </select>
                 </label>
             </div>
@@ -588,10 +565,10 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" integrity="sha384-+mbV2IY1Zk/X1p/nWllGySJSUN8uMs+gUAN10Or95UBH0fpj6GfKgPmgC5EXieXG" crossorigin="anonymous"></script>
     <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js" integrity="sha384-SYKAG6cglRMN0RVvhNeBY0r3FYKNOJtznwA0v7B5Vp9tr31xAHsZC0DqkQ/pZDmj" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js" integrity="sha384-0w2KAL2YHP6wKOkUDzkCDGgVvfmHnj02DHeQ6XcHOgTfFsGyonKOpShMH1x6nk9o" crossorigin="anonymous"></script>
-    <script src="js/config.js?v=20261112r"></script>
-    <script src="js/api.js?v=20261112r"></script>
-    <script src="js/i18n.js?v=20261112r"></script>
-    <script src="js/app.js?v=20261112r"></script>
-    <script src="js/tools.js?v=20261112r"></script>
+    <script src="js/config.js?v=20261112s"></script>
+    <script src="js/api.js?v=20261112s"></script>
+    <script src="js/i18n.js?v=20261112s"></script>
+    <script src="js/app.js?v=20261112s"></script>
+    <script src="js/tools.js?v=20261112s"></script>
 </body>
 </html>

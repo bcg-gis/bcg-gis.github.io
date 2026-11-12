@@ -211,6 +211,47 @@ async function handleLogout() {
 const STORAGE_IMPORTED_KEY = "bcg.imported_projects.v2";
 const SEG_META_STORE_KEY = "bcg.seg.meta.v1";
 const PROJ_META_STORE_KEY = "bcg.proj.meta.v1";
+const ADMIN_CONTRACTORS_KEY = "bcg.admin.contractors.v2";
+
+const LEGACY_DEMO_CONTRACTORS = new Set([
+    "bcg (öz briqadamız)",
+    "bcg (oz briqadamiz)",
+    "azfibertech mmc",
+    "kaspiantelekom",
+    "optik inşaat",
+    "optik insaat",
+    "aztelekom",
+    "baktelekom"
+]);
+
+function syncAdminContractors() {
+    const map = readStore(ADMIN_CONTRACTORS_KEY, {}) || {};
+    if (map && typeof map === "object" && !Array.isArray(map)) {
+        state.contractors = map;
+    } else {
+        state.contractors = {};
+    }
+    return state.contractors;
+}
+
+/* ArcGIS-də icraçı sütununa yazılan adı Admin Paneldəki İş İcraçıları qovluğu ilə avtomatik uyğunlaşdırır */
+function findContractorInfo(rawName) {
+    if (!rawName) return null;
+    const trimmed = String(rawName).trim();
+    if (!trimmed) return null;
+    const map = syncAdminContractors();
+    if (map[trimmed]) {
+        return { name: trimmed, ...map[trimmed] };
+    }
+    const targetNorm = normalizeKey(trimmed);
+    if (!targetNorm) return null;
+    for (const [k, info] of Object.entries(map)) {
+        if (normalizeKey(k) === targetNorm) {
+            return { name: k, ...info };
+        }
+    }
+    return null;
+}
 
 /* Kabel lif sayı seçimləri — istəyə uyğun ardıcıllıqla (FO 48, FO 24, FO 12 və s.) */
 const FIBER_OPTIONS = [
@@ -304,6 +345,7 @@ function saveSegmentOverride(projectId, item) {
 
 function applySavedMetaOverrides() {
     try {
+        syncAdminContractors();
         const pMap = readStore(PROJ_META_STORE_KEY, {}) || {};
         const sMap = readStore(SEG_META_STORE_KEY, {}) || {};
         (state.projects || []).forEach(p => {
@@ -315,7 +357,15 @@ function applySavedMetaOverrides() {
                 if (sMap[key]) {
                     Object.assign(r, sMap[key]);
                 }
-                if (!r.fiberCount && p.type !== "points" && p.category !== "nim") {
+                if (r.contractor) {
+                    const matched = findContractorInfo(r.contractor);
+                    if (matched) {
+                        r.contractor = matched.name;
+                    } else if (LEGACY_DEMO_CONTRACTORS.has(String(r.contractor).trim().toLowerCase())) {
+                        r.contractor = "";
+                    }
+                }
+                if (!r.fiberCount && p.type !== "points" && p.category !== "nim" && p.category !== "other") {
                     r.fiberCount = getSegmentFiber(r, p);
                 }
             });
@@ -569,61 +619,79 @@ function useLastDrawing() {
 
 function editSegment(project, item) {
     const isPoints = project?.type === "points";
-    const contractorNames = [...new Set(["BCG (Öz briqadamız)", ...Object.keys(state.contractors)])];
+    const isOther = project?.category === "other";
+    const adminMap = syncAdminContractors();
+    const contractorNames = [...new Set([...Object.keys(adminMap), ...(item?.contractor ? [item.contractor] : [])])].filter(Boolean);
     const currentFiber = item ? getSegmentFiber(item, project) : "FO 48";
     const fiberOpts = FIBER_OPTIONS.includes(currentFiber) ? FIBER_OPTIONS : [currentFiber, ...FIBER_OPTIONS];
     openEditor({
         title: t(item ? "editSegment" : "addSegment"),
         values: item ? {
-            code: item.id, name: item.name, point_a: item.pointA, point_b: item.pointB, start_date: item.startDate, end_date: item.endDate,
-            contractor: item.contractor, total_km: item.totalKm, done_km: item.doneKm, status: item.status,
+            code: item.id, name: item.name, point_a: item.pointA || "", point_b: item.pointB || "", start_date: item.startDate, end_date: item.endDate,
+            contractor: item.contractor || "", total_km: item.totalKm, done_km: item.doneKm, status: item.status || "layihe",
             fiber_count: currentFiber,
             antennas: item.antennas || 0, coords: coordsToText(item.coords)
-        } : { status: "layihe", fiber_count: "FO 48", total_km: 0, done_km: 0, antennas: 0, point_a: "Mərkəz", point_b: "Şəbəkə", contractor: "BCG (Öz briqadamız)" },
+        } : {
+            code: `${isOther ? "RM" : (isPoints ? "PT" : "SEG")}-${Date.now().toString().slice(-4)}`,
+            status: "layihe",
+            fiber_count: "FO 48",
+            total_km: 0,
+            done_km: 0,
+            antennas: 0,
+            point_a: isOther ? "" : "Mərkəz",
+            point_b: isOther ? "" : "Şəbəkə",
+            contractor: ""
+        },
         fields: [
             { key: "code", label: t("fieldCode"), required: true },
             { key: "status", label: t("thStatus"), type: "select", options: statusOptions() },
-            ...(!isPoints ? [{ key: "fiber_count", label: "🔌 Kabelin lif sayı (FO)", type: "select", wide: true, options: fiberOpts.map(fo => [fo, `🔌 ${fo}`]) }] : []),
+            ...(!isPoints && !isOther ? [{ key: "fiber_count", label: "🔌 Kabelin lif sayı (FO)", type: "select", wide: true, options: fiberOpts.map(fo => [fo, `🔌 ${fo}`]) }] : []),
             { key: "name", label: t("fieldName"), required: true, wide: true },
-            { key: "point_a", label: `📍 ${t("pointA")}`, required: true },
-            { key: "point_b", label: `📍 ${t("pointB")}`, required: true },
-            { key: "start_date", label: t("fieldStart"), type: "date" },
-            { key: "end_date", label: t("fieldEnd"), type: "date" },
-            { key: "total_km", label: isPoints ? "1. Nəzərdə tutulan (m)" : `1. Nəzərdə tutulan (km)`, type: "number" },
-            { key: "done_km", label: isPoints ? "2. Faktiki iş görülən (m)" : `2. Faktiki iş görülən (km)`, type: "number" },
-            ...(isPoints ? [{ key: "antennas", label: "Antena sayı (ədəd)", type: "number", wide: true }] : []),
-            { key: "contractor", label: "İş icraçısı (BCG və ya Podratçı)", type: "select", wide: true, options: [["", t("notAssigned")], ...contractorNames.map(n => [n, /bcg/i.test(n) ? `🏢 ${n}` : `👷 Podratçı: ${n}`])] },
+            ...(!isOther ? [
+                { key: "point_a", label: `📍 ${t("pointA")}`, required: true },
+                { key: "point_b", label: `📍 ${t("pointB")}`, required: true },
+                { key: "start_date", label: t("fieldStart"), type: "date" },
+                { key: "end_date", label: t("fieldEnd"), type: "date" },
+                { key: "total_km", label: isPoints ? "1. Nəzərdə tutulan (m)" : `1. Nəzərdə tutulan (km)`, type: "number" },
+                { key: "done_km", label: isPoints ? "2. Faktiki iş görülən (m)" : `2. Faktiki iş görülən (km)`, type: "number" },
+                ...(isPoints ? [{ key: "antennas", label: "Antena sayı (ədəd)", type: "number", wide: true }] : []),
+                { key: "contractor", label: "İş icraçısı (Admin Panel qovluğundan)", type: "select", wide: true, options: [["", t("notAssigned")], ...contractorNames.map(n => [n, `👷 ${n}`])] }
+            ] : []),
             { key: "coords", label: t("coordsField"), type: "textarea", wide: true, required: true, placeholder: "41.4205, 46.9242", action: { label: t("useLastDrawing"), run: useLastDrawing } }
         ],
         onSave: async row => {
-            const parsedCoords = textToCoords(row.coords, isPoints ? 1 : 2);
+            const parsedCoords = textToCoords(row.coords, (isPoints || isOther) ? 1 : 2);
             const oldCode = item?.id;
             const foVal = normalizeFiberCount(row.fiber_count || item?.fiberCount || "FO 48");
             if (item) {
                 item.id = row.code;
                 item.name = row.name;
-                item.pointA = row.point_a;
-                item.pointB = row.point_b;
-                item.status = row.status;
-                item.fiberCount = foVal;
-                item.totalKm = Number(row.total_km) || 0;
-                item.doneKm = Number(row.done_km) || 0;
-                item.contractor = row.contractor;
-                item.startDate = row.start_date || "";
-                item.endDate = row.end_date || "";
-                if (isPoints) item.antennas = Number(row.antennas || 0);
+                if (!isOther) {
+                    item.pointA = row.point_a;
+                    item.pointB = row.point_b;
+                    item.status = row.status || item.status;
+                    item.fiberCount = foVal;
+                    item.totalKm = Number(row.total_km) || 0;
+                    item.doneKm = Number(row.done_km) || 0;
+                    item.contractor = row.contractor || "";
+                    item.startDate = row.start_date || "";
+                    item.endDate = row.end_date || "";
+                    if (isPoints) item.antennas = Number(row.antennas || 0);
+                } else {
+                    item.status = row.status || item.status || "layihe";
+                }
                 item.coords = parsedCoords;
             } else {
                 const newSeg = {
                     id: row.code,
                     name: row.name,
-                    pointA: row.point_a,
-                    pointB: row.point_b,
-                    status: row.status,
+                    pointA: row.point_a || row.name || "",
+                    pointB: row.point_b || "",
+                    status: row.status || "layihe",
                     fiberCount: foVal,
                     totalKm: Number(row.total_km) || 0,
                     doneKm: Number(row.done_km) || 0,
-                    contractor: row.contractor,
+                    contractor: row.contractor || "",
                     startDate: row.start_date || "",
                     endDate: row.end_date || "",
                     antennas: Number(row.antennas || 0),
@@ -642,6 +710,8 @@ function editSegment(project, item) {
                 delete dbRow.fiber_count;
                 await api.saveSegment(project.id, oldCode || item?.id, {
                     ...dbRow,
+                    point_a: item.pointA || "",
+                    point_b: item.pointB || "",
                     antennas: Number(row.antennas || 0),
                     contractor: row.contractor || null,
                     coords: parsedCoords
@@ -668,7 +738,8 @@ function editSegment(project, item) {
 }
 
 function editContractor(name) {
-    const info = name ? state.contractors[name] : { workers: 0, machinery: 0 };
+    const map = syncAdminContractors();
+    const info = name && map[name] ? map[name] : { workers: 0, machinery: 0, engineer: "" };
     openEditor({
         title: t(name ? "editContractor" : "addContractor"),
         values: { ...info, name: name || "" },
@@ -678,8 +749,25 @@ function editContractor(name) {
             { key: "machinery", label: t("machinery"), type: "number" },
             { key: "engineer", label: t("engineer"), wide: true }
         ],
-        onSave: row => api.saveContractor(name, row),
-        onDelete: name && (() => api.deleteContractor(name))
+        onSave: async row => {
+            const updated = { ...syncAdminContractors() };
+            if (name && name !== row.name) delete updated[name];
+            updated[row.name] = {
+                workers: Number(row.workers) || 0,
+                machinery: Number(row.machinery) || 0,
+                engineer: row.engineer || ""
+            };
+            writeStore(ADMIN_CONTRACTORS_KEY, updated);
+            state.contractors = updated;
+            try { await api.saveContractor(name, row); } catch {}
+        },
+        onDelete: name && (async () => {
+            const updated = { ...syncAdminContractors() };
+            delete updated[name];
+            writeStore(ADMIN_CONTRACTORS_KEY, updated);
+            state.contractors = updated;
+            try { await api.deleteContractor(name); } catch {}
+        })
     });
 }
 
@@ -1603,15 +1691,15 @@ function drawRoutes() {
             return;
         }
 
-        const cName = r.contractor || "BCG (Öz briqadamız)";
-        const cInfo = state.contractors[cName] || { workers: "—", engineer: "—" };
+        const cInfo = findContractorInfo(r.contractor) || { workers: "—", machinery: "—", engineer: "—" };
+        const cExtra = r.contractor ? `👷 İcraçı: <b>${esc(r.contractor)}</b> · 👥 İşçi: <b>${esc(cInfo.workers)} nəfər</b> · 🚜 Texnika: <b>${esc(cInfo.machinery ?? 0)}</b><br>📞 Əlaqə: <b>${esc(cInfo.engineer || "—")}</b>` : "";
 
         if (project.category === "nim") {
             const [lat, lng] = coords[0];
             const cleanName = String(r.name || "").trim();
             const stText = t(`status${r.status}`);
             const label = `${cleanName}\n${stText}`;
-            const tip = `<b>${shape.symbol} 🚦 ${esc(r.name)}</b><small>Layihə: <b>${esc(project.name)}</b><br>Status: <b style="color:${color}">${esc(stText)}</b><br>${r.contractor ? `👷 İcraçı: ${esc(r.contractor)} · 👥 İşçi: <b>${esc(cInfo.workers)} nəfər</b><br>📞 <b>${esc(cInfo.engineer || "—")}</b>` : ""}</small>`;
+            const tip = `<b>${shape.symbol} 🚦 ${esc(r.name)}</b><small>Layihə: <b>${esc(project.name)}</b><br>Status: <b style="color:${color}">${esc(stText)}</b>${cExtra ? `<br>${cExtra}` : ""}</small>`;
             const nimProps = {
                 isRayonPoint: true,
                 isNim: true,
@@ -1643,7 +1731,7 @@ function drawRoutes() {
             const antPart = antCount ? `${antCount} antena · ` : "";
             const label = `${cleanName}\n${antPart}Kabel: ${formatKm(r.totalKm)} / ${formatKm(r.doneKm)} m`;
             const shortLabel = `${cleanName}\n${antCount ? `${antCount} ant · ` : ""}${formatKm((Number(r.totalKm) || 0) / 1000)} km`;
-            const tip = `<b>${shape.symbol} ${esc(cleanName)}</b><small>Layihə: <b>${esc(project.name)}</b><br>📡 ${r.antennas || 0} antena · Plan: ${formatKm(r.totalKm)} m / Faktiki: ${formatKm(r.doneKm)} m (${percent(r.doneKm, r.totalKm)}%)<br>${r.contractor ? `👷 İcraçı: ${esc(r.contractor)}<br>👥 İşçi sayı: <b>${esc(cInfo.workers)} nəfər</b> · 📞 İcraçı: <b>${esc(cInfo.engineer || "—")}</b>` : ""}</small>`;
+            const tip = `<b>${shape.symbol} ${esc(cleanName)}</b><small>Layihə: <b>${esc(project.name)}</b><br>📡 ${r.antennas || 0} antena · Plan: ${formatKm(r.totalKm)} m / Faktiki: ${formatKm(r.doneKm)} m (${percent(r.doneKm, r.totalKm)}%)${cExtra ? `<br>${cExtra}` : ""}</small>`;
 
             const ptProps = {
                 isRayonPoint: true,
@@ -1665,7 +1753,7 @@ function drawRoutes() {
             const foImg = ensureFoBadgeImage(foLabel, color);
             const { nameA, nameB } = resolveLineEndNames(r, project);
             const stText = t(`status${r.status}`);
-            const lineTip = `<b>${esc(r.name)}</b><small>📍 <b>${esc(nameA || r.name)}</b> ➔ <b>${esc(nameB || r.name)}</b><br>🔌 Kabel: <b style="color:#38BDF8">${esc(foLabel)}</b> · Status: <b style="color:${color}">${esc(stText)}</b><br>📏 Plan: ${formatKm(r.totalKm)} km / Faktiki: ${formatKm(r.doneKm)} km (${percent(r.doneKm, r.totalKm)}%)<br>${r.contractor ? `👷 İcraçı: ${esc(r.contractor)}<br>👥 İşçi sayı: <b>${esc(cInfo.workers)} nəfər</b> · 📞 İcraçı: <b>${esc(cInfo.engineer || "—")}</b>` : ""}</small>`;
+            const lineTip = `<b>${esc(r.name)}</b><small>📍 <b>${esc(nameA || r.name)}</b> ➔ <b>${esc(nameB || r.name)}</b><br>🔌 Kabel: <b style="color:#38BDF8">${esc(foLabel)}</b> · Status: <b style="color:${color}">${esc(stText)}</b><br>📏 Plan: ${formatKm(r.totalKm)} km / Faktiki: ${formatKm(r.doneKm)} km (${percent(r.doneKm, r.totalKm)}%)${cExtra ? `<br>${cExtra}` : ""}</small>`;
 
             features.push({
                 type: "Feature", geometry: { type: "LineString", coordinates: line },
@@ -2059,11 +2147,14 @@ function renderProjects() {
                             <button class="icon-btn" data-action="expand" aria-label="${esc(cleanOtherTitle)}"><i class="fa-solid fa-chevron-right chevron ${expanded ? "open" : ""}"></i></button>
                         </div>
                         ${expanded ? `<div class="segments">${p.items.map(r => `
-                            <button class="segment ${state.selected?.itemId === r.id && state.selected?.projectId === p.id ? "selected" : ""}" data-action="focus" data-item="${esc(r.id)}">
-                                <span class="dot" style="background:#38BDF8"></span>
-                                <span class="segment-name" title="${esc(r.name)}">${esc(r.name)}</span>
-                            </button>
-                        `).join("")}</div>` : ""}
+                            <div class="segment ${state.selected?.itemId === r.id && state.selected?.projectId === p.id ? "selected" : ""}" style="display:flex;align-items:center;gap:6px;padding-right:6px">
+                                <button type="button" style="flex:1;display:flex;align-items:center;gap:8px;background:none;border:0;color:inherit;text-align:left;cursor:pointer;padding:0;min-width:0" data-action="focus" data-item="${esc(r.id)}">
+                                    <span class="dot" style="background:#38BDF8"></span>
+                                    <span class="segment-name" title="${esc(r.name)}">${esc(r.name)}</span>
+                                </button>
+                                ${isAdmin() ? `<button type="button" class="icon-btn small" data-action="editSeg" data-item="${esc(r.id)}" title="Redaktə et"><i class="fa-solid fa-pen"></i></button>` : ""}
+                            </div>
+                        `).join("")}${isAdmin() ? `<button class="link add-seg" data-action="addSegment">+ ${t("addSegment")}</button>` : ""}</div>` : ""}
                     </div>`;
             }).join(""));
             return;
@@ -2144,7 +2235,7 @@ function renderDetail() {
     const { project, item: r } = entry;
     const tone = statusTone(r.status);
     const pct = percent(r.doneKm, r.totalKm);
-    const info = state.contractors[r.contractor];
+    const info = findContractorInfo(r.contractor);
     const isLineSeg = Array.isArray(r.coords) && r.coords.length >= 2 && project.type !== "points" && project.category !== "nim";
     const foText = isLineSeg ? getSegmentFiber(r) : "";
     const ends = resolveLineEndNames(r);
@@ -2532,23 +2623,25 @@ function projectFromFile(fileName, lines) {
             const rawStatus = getPropCaseInsensitive(p, "status", "Status", "STATUS") || line.props?.status || "layihe";
             const status = normalizeStatus(rawStatus);
 
-            // 2. İcraçı: icraçı, icraci, contractor (boşdursa tam boş qalır)
-            const contractor = getPropCaseInsensitive(p, "icraçı", "icraci", "contractor", "icraci_sirket", "icraci_adi", "podratci") || "";
+            // 2. İcraçı: icraçı, icraci, contractor — Admin Paneldəki İş İcraçıları qovluğu ilə avtomatik uyğunlaşdırılır
+            const rawContractor = getPropCaseInsensitive(p, "icraçı", "icraci", "contractor", "icraci_sirket", "icraci_adi", "podratci", "briqada") || "";
+            const matchedContractor = findContractorInfo(rawContractor);
+            const contractor = matchedContractor ? matchedContractor.name : rawContractor;
 
             // 3. Name: Ağsu-Şamaxı, Şamaxı-İsmayıllı və s.
             let nameVal = (line.name && line.name.trim())
                 || getPropCaseInsensitive(p, "Name", "name", "xett_adi", "xett", "LineName", "title", "ad", "rayon", "label", "layihe_adi");
 
-            // 4. pointA & pointB
-            let pointA = getPropCaseInsensitive(p, "pointA", "point_a", "pointa", "a", "baslangic", "from") || "";
-            let pointB = getPropCaseInsensitive(p, "pointB", "point_b", "pointb", "b", "son", "to") || "";
+            // 4. pointA & pointB (birbaşa faylın atributlarından oxunur)
+            let pointA = getPropCaseInsensitive(p, "pointA", "point_a", "pointa", "a_noqte", "a_noqtesi", "baslangic", "start_point", "from", "a") || "";
+            let pointB = getPropCaseInsensitive(p, "pointB", "point_b", "pointb", "b_noqte", "b_noqtesi", "son", "end_point", "to", "b") || "";
 
             // Əgər pointA / pointB boşdursa və name-də tire varsa (məs: Ağsu-Şamaxı), avtomatik ayır
             if ((!pointA || !pointB) && nameVal && /[-–—]/.test(nameVal)) {
                 const parts = nameVal.split(/[-–—]/).map(s => s.trim()).filter(Boolean);
                 if (parts.length >= 2) {
                     if (!pointA) pointA = parts[0];
-                    if (!pointB) pointB = parts[1];
+                    if (!pointB) pointB = parts[parts.length - 1];
                 }
             }
             if (!nameVal && pointA && pointB) {
@@ -2585,8 +2678,8 @@ function projectFromFile(fileName, lines) {
             // Əgər doneKm boş və ya "-" olarsa, avtomatik 0 qəbul edilir
             const doneKm = rawDoneKm !== undefined ? parseAttrNumber(rawDoneKm, 0) : 0;
 
-            // Kabelin lif sayı (FO 48, FO 24, FO 12 və s.)
-            const rawFiber = getPropCaseInsensitive(p, "fiber_count", "fiberCount", "fiber", "fo", "lif", "lif_sayi", "lif_sayı", "kabel", "cable")
+            // Kabelin lif sayı (FO 48, FO 24, FO 12 və s. — birbaşa faylın atributlarından oxunur)
+            const rawFiber = getPropCaseInsensitive(p, "fiber_count", "fiberCount", "fiber", "fo", "lif", "lif_sayi", "lif_sayı", "kabel", "kabel_lif", "cable", "tutum")
                 || (/\bfo[-\s_]*\d+\b/i.exec(nameVal)?.[0])
                 || "FO 48";
             const fiberCount = normalizeFiberCount(rawFiber);
@@ -2626,16 +2719,6 @@ async function handleImportFiles(fileList, targetCategory) {
             if (cat === "other") {
                 project.name = `Digər: ${project.name.replace(/^Digər:\s*/i, "")}`;
             }
-            const customA = $("impPointAName")?.value.trim();
-            const customB = $("impPointBName")?.value.trim();
-            const customFo = $("impFiberSelect")?.value;
-            project.items.forEach(it => {
-                if (customA) it.pointA = customA;
-                if (customB) it.pointB = customB;
-                if (customFo && Array.isArray(it.coords) && it.coords.length >= 2) {
-                    it.fiberCount = normalizeFiberCount(customFo);
-                }
-            });
             try {
                 await api.saveProject(project);
             } catch (err) {
@@ -2828,6 +2911,9 @@ function bindEvents() {
         } else if (action === "focus") {
             selectSegment(project, project.items.find(r => r.id === button.dataset.item));
             return;
+        } else if (action === "editSeg") {
+            editSegment(project, project.items.find(r => r.id === button.dataset.item));
+            return;
         } else if (action === "edit") {
             editProject(project);
             return;
@@ -2907,10 +2993,14 @@ document.addEventListener("DOMContentLoaded", init);
     }
 
     function executorOptionsHtml(currentExec) {
-        const names = [...new Set(["", "BCG (Öz briqadamız)", ...Object.keys(state.contractors)])];
+        const adminMap = syncAdminContractors();
+        const cur = String(currentExec || "").trim();
+        const names = [...new Set(["", ...Object.keys(adminMap), ...(cur ? [cur] : [])])];
         return `<select class="input" data-exec-select>${names.map(name => {
-            const isOwn = /bcg/i.test(name);
-            return `<option value="${esc(name)}" ${name === currentExec ? "selected" : ""}>${isOwn ? "🏢 " + esc(name) : (name ? "👷 Podratçı: " + esc(name) : "— İcraçı seçilməyib —")}</option>`;
+            if (!name) return `<option value="" ${!cur ? "selected" : ""}>— İcraçı seçilməyib —</option>`;
+            const info = findContractorInfo(name);
+            const sub = info ? ` (${info.workers || 0} işçi · ${info.machinery || 0} tex.)` : "";
+            return `<option value="${esc(name)}" ${name === cur ? "selected" : ""}>👷 ${esc(name)}${esc(sub)}</option>`;
         }).join("")}</select>`;
     }
 
@@ -3655,8 +3745,8 @@ document.addEventListener("DOMContentLoaded", init);
             $("mmFiberSelect").value = "FO 48";
         }
 
-        const contractorNames = [...new Set(["BCG (Öz briqadamız)", ...Object.keys(state.contractors)])];
-        $("mmContractorSelect").innerHTML = contractorNames.map(n => `<option value="${esc(n)}">${/bcg/i.test(n) ? "🏢 " + esc(n) : "👷 Podratçı: " + esc(n)}</option>`).join("");
+        const contractorNames = Object.keys(syncAdminContractors());
+        $("mmContractorSelect").innerHTML = `<option value="">— İcraçı seçilməyib —</option>` + contractorNames.map(n => `<option value="${esc(n)}">👷 ${esc(n)}</option>`).join("");
 
         $("mmModalTitle").textContent = mmCreateState.mode === "point"
             ? "📍 Yeni Nöqtəni Layihəyə Əlavə Et"
@@ -3677,7 +3767,7 @@ document.addEventListener("DOMContentLoaded", init);
         const projVal = $("mmProjectSelect").value;
         const itemName = $("mmItemName").value.trim();
         const status = $("mmStatusSelect").value || "layihe";
-        const contractor = $("mmContractorSelect").value || "BCG (Öz briqadamız)";
+        const contractor = $("mmContractorSelect").value || "";
         const pointA = $("mmPointA").value.trim() || itemName || "Mərkəz";
         const pointB = $("mmPointB").value.trim() || "Şəbəkə";
         const planVal = Math.max(0, Number($("mmPlanVal").value) || 0);
@@ -3828,12 +3918,12 @@ document.addEventListener("DOMContentLoaded", init);
                 type: "points",
                 status: "icrada",
                 items: [
-                    { id: "NIM-01", name: "28 May – Rəşid Behbudov kəsişməsi", status: "bitmis", contractor: "BCG (Öz briqadamız)", totalKm: 1, doneKm: 1, antennas: 1, coords: [[40.3798, 49.8486]] },
-                    { id: "NIM-02", name: "Heydər Əliyev pr. – Koroğlu qovşağı", status: "icrada", contractor: "AzFiberTech MMC", totalKm: 1, doneKm: 0.6, antennas: 1, coords: [[40.4209, 49.9182]] },
-                    { id: "NIM-03", name: "Tbilisi pr. – 20 Yanvar dairəsi", status: "icrada", contractor: "BCG (Öz briqadamız)", totalKm: 1, doneKm: 0.7, antennas: 1, coords: [[40.4098, 49.8085]] },
-                    { id: "NIM-04", name: "Babək pr. – Xalqlar Dostluğu kəsişməsi", status: "tehvil", contractor: "KaspianTelekom", totalKm: 1, doneKm: 1, antennas: 1, coords: [[40.3972, 49.9531]] },
-                    { id: "NIM-05", name: "Ziya Bünyadov pr. – Karl Marks dairəsi", status: "layihe", contractor: "Optik İnşaat", totalKm: 1, doneKm: 0, antennas: 1, coords: [[40.4152, 49.8538]] },
-                    { id: "NIM-06", name: "Nobel pr. – Ağ Şəhər svetofor qovşağı", status: "bitmis", contractor: "BCG (Öz briqadamız)", totalKm: 1, doneKm: 1, antennas: 1, coords: [[40.3774, 49.8920]] }
+                    { id: "NIM-01", name: "28 May – Rəşid Behbudov kəsişməsi", status: "bitmis", contractor: "", totalKm: 1, doneKm: 1, antennas: 1, coords: [[40.3798, 49.8486]] },
+                    { id: "NIM-02", name: "Heydər Əliyev pr. – Koroğlu qovşağı", status: "icrada", contractor: "", totalKm: 1, doneKm: 0.6, antennas: 1, coords: [[40.4209, 49.9182]] },
+                    { id: "NIM-03", name: "Tbilisi pr. – 20 Yanvar dairəsi", status: "icrada", contractor: "", totalKm: 1, doneKm: 0.7, antennas: 1, coords: [[40.4098, 49.8085]] },
+                    { id: "NIM-04", name: "Babək pr. – Xalqlar Dostluğu kəsişməsi", status: "tehvil", contractor: "", totalKm: 1, doneKm: 1, antennas: 1, coords: [[40.3972, 49.9531]] },
+                    { id: "NIM-05", name: "Ziya Bünyadov pr. – Karl Marks dairəsi", status: "layihe", contractor: "", totalKm: 1, doneKm: 0, antennas: 1, coords: [[40.4152, 49.8538]] },
+                    { id: "NIM-06", name: "Nobel pr. – Ağ Şəhər svetofor qovşağı", status: "bitmis", contractor: "", totalKm: 1, doneKm: 1, antennas: 1, coords: [[40.3774, 49.8920]] }
                 ]
             };
             const nim2 = {
@@ -3843,8 +3933,8 @@ document.addEventListener("DOMContentLoaded", init);
                 type: "points",
                 status: "icrada",
                 items: [
-                    { id: "NIM-07", name: "Sumqayıt – Sülh küçəsi mərkəzi kəsişmə", status: "bitmis", contractor: "BCG (Öz briqadamız)", totalKm: 1, doneKm: 1, antennas: 1, coords: [[40.5897, 49.6686]] },
-                    { id: "NIM-08", name: "Gəncə – Heydər Əliyev pr. mərkəzi svetofor", status: "icrada", contractor: "AzFiberTech MMC", totalKm: 1, doneKm: 0.5, antennas: 1, coords: [[40.6828, 46.3606]] }
+                    { id: "NIM-07", name: "Sumqayıt – Sülh küçəsi mərkəzi kəsişmə", status: "bitmis", contractor: "", totalKm: 1, doneKm: 1, antennas: 1, coords: [[40.5897, 49.6686]] },
+                    { id: "NIM-08", name: "Gəncə – Heydər Əliyev pr. mərkəzi svetofor", status: "icrada", contractor: "", totalKm: 1, doneKm: 0.5, antennas: 1, coords: [[40.6828, 46.3606]] }
                 ]
             };
             state.projects.push(nim1, nim2);
@@ -3859,8 +3949,8 @@ document.addEventListener("DOMContentLoaded", init);
                 type: "lines",
                 status: "icrada",
                 items: [
-                    { id: "AZC-01", name: "Bakı Mərkəz – Xırdalan – Sumqayıt xətti", pointA: "Bakı Mərkəz Qovşaq", pointB: "Sumqayıt Stansiya", status: "bitmis", fiberCount: "FO 48", totalKm: 36.4, doneKm: 36.4, contractor: "BCG (Öz briqadamız)", coords: [[40.4093, 49.8671], [40.4520, 49.7550], [40.5897, 49.6686]] },
-                    { id: "AZC-02", name: "Bakı – Hövsan – Türkan – Zirə xətti", pointA: "Bakı Şərq Qovşaq", pointB: "Zirə Qovşaq", status: "icrada", fiberCount: "FO 24", totalKm: 42.0, doneKm: 28.5, contractor: "AzFiberTech MMC", coords: [[40.3890, 49.9520], [40.3690, 50.0850], [40.3640, 50.2910]] }
+                    { id: "AZC-01", name: "Bakı Mərkəz – Xırdalan – Sumqayıt xətti", pointA: "Bakı Mərkəz Qovşaq", pointB: "Sumqayıt Stansiya", status: "bitmis", fiberCount: "FO 48", totalKm: 36.4, doneKm: 36.4, contractor: "", coords: [[40.4093, 49.8671], [40.4520, 49.7550], [40.5897, 49.6686]] },
+                    { id: "AZC-02", name: "Bakı – Hövsan – Türkan – Zirə xətti", pointA: "Bakı Şərq Qovşaq", pointB: "Zirə Qovşaq", status: "icrada", fiberCount: "FO 24", totalKm: 42.0, doneKm: 28.5, contractor: "", coords: [[40.3890, 49.9520], [40.3690, 50.0850], [40.3640, 50.2910]] }
                 ]
             };
             const azc2 = {
@@ -3870,8 +3960,8 @@ document.addEventListener("DOMContentLoaded", init);
                 type: "lines",
                 status: "icrada",
                 items: [
-                    { id: "AZC-03", name: "Hacıqabul – Kürdəmir – Ucar – Yevlax xətti", pointA: "Hacıqabul Qovşaq", pointB: "Yevlax Qovşaq", status: "icrada", fiberCount: "FO 48", totalKm: 168.0, doneKm: 119.5, contractor: "KaspianTelekom", coords: [[40.0394, 48.9356], [40.3425, 48.1564], [40.5180, 47.6500], [40.6172, 47.1500]] },
-                    { id: "AZC-04", name: "Yevlax – Gəncə – Şəmkir xətti", pointA: "Yevlax Qovşaq", pointB: "Şəmkir Stansiya", status: "tehvil", fiberCount: "FO 12", totalKm: 104.5, doneKm: 104.5, contractor: "BCG (Öz briqadamız)", coords: [[40.6172, 47.1500], [40.6828, 46.3606], [40.8297, 46.0178]] }
+                    { id: "AZC-03", name: "Hacıqabul – Kürdəmir – Ucar – Yevlax xətti", pointA: "Hacıqabul Qovşaq", pointB: "Yevlax Qovşaq", status: "icrada", fiberCount: "FO 48", totalKm: 168.0, doneKm: 119.5, contractor: "", coords: [[40.0394, 48.9356], [40.3425, 48.1564], [40.5180, 47.6500], [40.6172, 47.1500]] },
+                    { id: "AZC-04", name: "Yevlax – Gəncə – Şəmkir xətti", pointA: "Yevlax Qovşaq", pointB: "Şəmkir Stansiya", status: "tehvil", fiberCount: "FO 12", totalKm: 104.5, doneKm: 104.5, contractor: "", coords: [[40.6172, 47.1500], [40.6828, 46.3606], [40.8297, 46.0178]] }
                 ]
             };
             state.projects.push(azc1, azc2);
@@ -3896,18 +3986,20 @@ document.addEventListener("DOMContentLoaded", init);
         }
         card.hidden = false;
 
-        // 🗂️ Digər bölməsi üçün ultra-yığcam 1-sətirlik pəncərə
+        // 🗂️ Digər bölməsi üçün yığcam pəncərə (Admin redaktə və xəritədə sürüşdürmə dəstəyi ilə)
         if (proj.category === "other") {
             card.classList.add("compact-other");
             const labelText = entry ? entry.item.name : proj.name;
             card.innerHTML = `
-                <div class="info-card-head" style="border-radius:24px;padding:7px 14px">
-                    <strong style="display:flex;align-items:center;gap:8px">
+                <div class="info-card-head" style="border-radius:24px;padding:7px 14px;gap:10px">
+                    <strong style="display:flex;align-items:center;gap:8px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
                         <span class="dot" style="background:#38BDF8"></span>
                         ${esc(labelText)}
                     </strong>
-                    <div style="display:flex;align-items:center;gap:4px">
+                    <div style="display:flex;align-items:center;gap:4px;flex-shrink:0">
                         <button class="icon-btn" data-card-act="zoom" title="${t("zoomTo")}"><i class="fa-solid fa-crosshairs"></i></button>
+                        ${isAdmin() ? `<button class="icon-btn" data-card-act="geomEdit" title="Xəritədə sürüşdür / Redaktə et"><i class="fa-solid fa-bezier-curve"></i></button>` : ""}
+                        ${isAdmin() ? `<button class="icon-btn" data-card-act="edit" title="Adı / Koordinatı redaktə et"><i class="fa-solid fa-pen"></i></button>` : ""}
                         <button class="icon-btn" data-card-act="close" title="${t("close")}"><i class="fa-solid fa-xmark"></i></button>
                     </div>
                 </div>
@@ -3951,7 +4043,7 @@ document.addEventListener("DOMContentLoaded", init);
                     <div class="info-sub-list">
                         ${items.map(r => {
                             const rTone = statusTone(r.status);
-                            const cInfo = state.contractors[r.contractor || "BCG (Öz briqadamız)"] || { workers: "—", engineer: "—" };
+                            const cInfo = findContractorInfo(r.contractor) || { workers: "—", machinery: "—", engineer: "—" };
                             return `
                                 <div class="info-sub-item" data-pick-seg="${esc(proj.id)}:${esc(r.id)}" style="border-color:${entry?.item === r ? rTone : "var(--line)"}">
                                     <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
@@ -3967,17 +4059,15 @@ document.addEventListener("DOMContentLoaded", init);
                                             ${STATUSES.map(s => `<option value="${s}" ${r.status === s ? "selected" : ""}>${t(`status${s}`)}</option>`).join("")}
                                         </select>
                                     </div>
-                                    ${r.contractor ? `
                                     <div class="info-exec-row">
                                         <span class="muted">İcraçı:</span>
                                         ${executorOptionsHtml(r.contractor)}
                                     </div>
-                                    <div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;color:var(--ink-2)">
-                                        <span>👷 İşçi: <b>${esc(cInfo.workers)} nəfər</b></span>
+                                    <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;font-size:11px;color:var(--ink-2)">
+                                        ${r.contractor ? `
+                                        <span>👷 İşçi: <b>${esc(cInfo.workers)} nəfər</b> · 🚜 Tex.: <b>${esc(cInfo.machinery ?? 0)}</b></span>
                                         <span>📞 <b>${esc(cInfo.engineer || "—")}</b></span>
-                                    ` : `
-                                    <div style="display:flex;justify-content:flex-end;align-items:center;font-size:11px;color:var(--ink-2)">
-                                    `}
+                                        ` : `<span class="muted">${isAdmin() ? `<a href="admin.html#contractors" target="_blank" style="color:#38BDF8;text-decoration:none">⚙️ Admin Paneldə İcraçı əlavə et</a>` : ""}</span>`}
                                         ${isAdmin() ? `<button class="btn btn-outline" style="height:22px;padding:0 7px;font-size:10.5px" data-geom-edit="${esc(proj.id)}:${esc(r.id)}" title="Nöqtəni xəritədə sürüşdür"><i class="fa-solid fa-arrows-up-down-left-right"></i> Sürüşdür</button>` : ""}
                                     </div>
                                 </div>
@@ -4023,7 +4113,7 @@ document.addEventListener("DOMContentLoaded", init);
                             const rLeft = Math.max(0, r.totalKm - r.doneKm);
                             const rPct = percent(r.doneKm, r.totalKm);
                             const cleanName = String(r.name || "").replace(/\s*\(?\bFaz[-\s]*[12]\b\)?/gi, "").replace(/\s*rayon(u)?\b/gi, "").trim();
-                            const cInfo = state.contractors[r.contractor || "BCG (Öz briqadamız)"] || { workers: "—", engineer: "—" };
+                            const cInfo = findContractorInfo(r.contractor) || { workers: "—", machinery: "—", engineer: "—" };
                             return `
                                 <div class="info-sub-item" data-pick-seg="${esc(proj.id)}:${esc(r.id)}" style="border-color:${entry?.item === r ? rTone : "var(--line)"}">
                                     <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
@@ -4036,17 +4126,15 @@ document.addEventListener("DOMContentLoaded", init);
                                     <div style="color:var(--ink-2);font-size:11.5px">
                                         Plan: <b>${formatKm(r.totalKm)} m</b> · Faktiki: <b style="color:${rTone}">${formatKm(r.doneKm)} m (${rPct}%)</b> · Qalıb: <b>${formatKm(rLeft)} m</b>
                                     </div>
-                                    ${r.contractor ? `
                                     <div class="info-exec-row">
                                         <span class="muted">İcraçı:</span>
                                         ${executorOptionsHtml(r.contractor)}
                                     </div>
-                                    <div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;color:var(--ink-2)">
-                                        <span>👷 İşçi: <b>${esc(cInfo.workers)} nəfər</b></span>
+                                    <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;font-size:11px;color:var(--ink-2)">
+                                        ${r.contractor ? `
+                                        <span>👷 İşçi: <b>${esc(cInfo.workers)} nəfər</b> · 🚜 Tex.: <b>${esc(cInfo.machinery ?? 0)}</b></span>
                                         <span>📞 <b>${esc(cInfo.engineer || "—")}</b></span>
-                                    ` : `
-                                    <div style="display:flex;justify-content:flex-end;align-items:center;font-size:11px;color:var(--ink-2)">
-                                    `}
+                                        ` : `<span class="muted">${isAdmin() ? `<a href="admin.html#contractors" target="_blank" style="color:#38BDF8;text-decoration:none">⚙️ Admin Paneldə İcraçı əlavə et</a>` : ""}</span>`}
                                         ${isAdmin() ? `<button class="btn btn-outline" style="height:22px;padding:0 7px;font-size:10.5px" data-geom-edit="${esc(proj.id)}:${esc(r.id)}" title="Nöqtəni xəritədə sürüşdür"><i class="fa-solid fa-arrows-up-down-left-right"></i> Sürüşdür</button>` : ""}
                                     </div>
                                 </div>
@@ -4092,7 +4180,7 @@ document.addEventListener("DOMContentLoaded", init);
                             const rPct = percent(r.doneKm, r.totalKm);
                             const foLabel = getSegmentFiber(r);
                             const ends = resolveLineEndNames(r);
-                            const cInfo = state.contractors[r.contractor || "BCG (Öz briqadamız)"] || { workers: "—", engineer: "—" };
+                            const cInfo = findContractorInfo(r.contractor) || { workers: "—", machinery: "—", engineer: "—" };
                             return `
                                 <div class="info-sub-item" data-pick-seg="${esc(proj.id)}:${esc(r.id)}" style="border-color:${entry?.item === r ? rTone : "var(--line)"}">
                                     <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
@@ -4118,11 +4206,11 @@ document.addEventListener("DOMContentLoaded", init);
                                         <span class="muted">İcraçı:</span>
                                         ${executorOptionsHtml(r.contractor)}
                                     </div>
-                                    <div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;color:var(--ink-2)">
+                                    <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;font-size:11px;color:var(--ink-2)">
                                         ${r.contractor ? `
-                                        <span>👷 İşçi: <b>${esc(cInfo.workers)} nəfər</b></span>
+                                        <span>👷 İşçi: <b>${esc(cInfo.workers)} nəfər</b> · 🚜 Tex.: <b>${esc(cInfo.machinery ?? 0)}</b></span>
                                         <span>📞 <b>${esc(cInfo.engineer || "—")}</b></span>
-                                        ` : `<span></span>`}
+                                        ` : `<span class="muted">${isAdmin() ? `<a href="admin.html#contractors" target="_blank" style="color:#38BDF8;text-decoration:none">⚙️ Admin Paneldə İcraçı əlavə et</a>` : ""}</span>`}
                                         ${isAdmin() ? `<button class="btn btn-outline" style="height:22px;padding:0 7px;font-size:10.5px" data-geom-edit="${esc(proj.id)}:${esc(r.id)}" title="Xəttin qırılma nöqtələrini xəritədə sürüşdür"><i class="fa-solid fa-bezier-curve"></i> Xətti sürüşdür</button>` : ""}
                                     </div>
                                 </div>
@@ -4412,6 +4500,13 @@ document.addEventListener("DOMContentLoaded", init);
     document.addEventListener("DOMContentLoaded", () => {
         ensureMapWidgets();
         initRightTools();
+
+        window.addEventListener("storage", e => {
+            if (e.key === ADMIN_CONTRACTORS_KEY) {
+                syncAdminContractors();
+                renderAll();
+            }
+        });
 
         // Sol dibdə Yarım Dairə üzərində 4 Qovluq (🏢 BCG, 🚦 NİM, 🌐 Azconnect, 🗂️ Digər)
         // 1x Sol klik: Qovluğu aktiv/deaktiv et · 2x Sol klik: Bütün qovluqları və layihələri söndür

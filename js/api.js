@@ -78,10 +78,13 @@ const api = (() => {
             ].map(query => query.then(unwrap)));
 
             const own = profiles.find(p => p.id === userId);
-            const contractorMap = {
-                "BCG (Öz briqadamız)": { name: "BCG (Öz briqadamız)", workers: 38, machinery: 10, engineer: "BCG Daxili Briqada (+994 50 200 10 10)", isOwn: true },
-                ...Object.fromEntries(contractors.map(c => [c.name, { ...c, isOwn: /bcg/i.test(c.name) }]))
-            };
+            let contractorMap = {};
+            try {
+                const savedAdminContractors = JSON.parse(localStorage.getItem("bcg.admin.contractors.v2") || "{}");
+                if (savedAdminContractors && typeof savedAdminContractors === "object" && !Array.isArray(savedAdminContractors)) {
+                    contractorMap = savedAdminContractors;
+                }
+            } catch {}
             return {
                 role: own ? own.role : "manager",
                 users: profiles.map(p => p.email),

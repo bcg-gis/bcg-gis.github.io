@@ -413,6 +413,10 @@
                 <i class="fa-solid fa-users-gear"></i> 3. İstifadəçilər və Səlahiyyətlər
                 <span class="badge" id="userCountBadge">0</span>
             </button>
+            <button class="nav-tab" data-tab="contractors">
+                <i class="fa-solid fa-helmet-safety"></i> 4. İş İcraçıları (Qovluq)
+                <span class="badge" id="contractorCountBadge">0</span>
+            </button>
         </nav>
 
         <!-- TAB 1: ÜMUMİ SAYT MƏLUMATLARI -->
@@ -618,13 +622,80 @@
                 </div>
             </div>
         </section>
+
+        <!-- TAB 4: İŞ İCRAÇILARI QOVLUĞU (ARCGIS AVTOMATİK UYĞUNLAŞDIRMA İLƏ) -->
+        <section id="tab-contractors" class="tab-pane" hidden>
+            <div class="card">
+                <div class="card-head">
+                    <h2><i class="fa-solid fa-helmet-safety" style="color:var(--amber)"></i> İş İcraçıları Qovluğu (ArcGIS "icraçı" Sütunu ilə Avtomatik Uyğunlaşma)</h2>
+                    <span class="pill green">👑 Yalnız Admin</span>
+                </div>
+                <div class="card-body">
+                    <div style="margin-bottom:14px;padding:11px 14px;border-radius:8px;background:rgba(59,130,246,0.10);border:1px solid rgba(59,130,246,0.28);color:var(--ink-2);font-size:12px">
+                        <i class="fa-solid fa-circle-info" style="color:var(--brand)"></i>
+                        Burada əlavə etdiyiniz <b>İcraçı adı</b> ArcGIS-dəki cədvəldə <code>icraçı</code> (və ya <code>icraci</code> / <code>contractor</code>) sütununa yazdığınız adla eyni olduqda, faylı sayta yükləyən kimi həmin xəttin və ya nöqtənin <b>İşçi sayı, Texnika sayı və Əlaqə nömrəsi</b> avtomatik olaraq doldurulur.
+                    </div>
+                    <form class="user-form-grid" id="adminContractorForm" style="grid-template-columns: 1.4fr 0.8fr 0.8fr 1.3fr auto">
+                        <label>
+                            <span>İcraçı adı (ArcGIS-də yazılan ad) *</span>
+                            <input class="input" type="text" id="cName" placeholder="Məs: AzTelekom MMC və ya BCG Briqada 1" required>
+                        </label>
+                        <label>
+                            <span>👷 İşçi sayı (nəfər) *</span>
+                            <input class="input" type="number" min="0" step="1" id="cWorkers" value="0" required>
+                        </label>
+                        <label>
+                            <span>🚜 Texnika sayı (ədəd) *</span>
+                            <input class="input" type="number" min="0" step="1" id="cMachinery" value="0" required>
+                        </label>
+                        <label>
+                            <span>📞 Məsul şəxs və Əlaqə nömrəsi</span>
+                            <input class="input" type="text" id="cEngineer" placeholder="Məs: Əli Məmmədov (+994 50 000 00 00)">
+                        </label>
+                        <div style="display:flex;gap:6px">
+                            <button class="btn btn-primary" type="submit" id="cSubmitBtn"><i class="fa-solid fa-plus"></i> Əlavə et</button>
+                            <button class="btn" type="button" id="cCancelEditBtn" hidden>Ləğv et</button>
+                        </div>
+                    </form>
+
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>İcraçı Adı (ArcGIS Açar Adı)</th>
+                                    <th>👷 İşçi Sayı</th>
+                                    <th>🚜 Texnika Sayı</th>
+                                    <th>📞 Məsul Şəxs / Əlaqə Nömrəsi</th>
+                                    <th>Əməliyyat</th>
+                                </tr>
+                            </thead>
+                            <tbody id="adminContractorsBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </section>
     </main>
 
     <script>
         const USERS_KEY = "bcg.admin.users.v1";
         const LOGS_KEY = "bcg.audit.logs.v1";
+        const CONTRACTORS_KEY = "bcg.admin.contractors.v2";
+        let editingContractorKey = null;
         const $ = id => document.getElementById(id);
         const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+        function getContractors() {
+            try {
+                const raw = JSON.parse(localStorage.getItem(CONTRACTORS_KEY));
+                if (raw && typeof raw === "object" && !Array.isArray(raw)) return raw;
+            } catch {}
+            return {};
+        }
+
+        function saveContractors(map) {
+            localStorage.setItem(CONTRACTORS_KEY, JSON.stringify(map || {}));
+        }
 
         function toast(msg) {
             const old = document.querySelector(".toast");
@@ -782,17 +853,47 @@
                     </td>
                 </tr>
             `).join("");
+
+            // Contractors table (İş İcraçıları qovluğu)
+            const contractorsMap = getContractors();
+            const contractorEntries = Object.values(contractorsMap);
+            if ($("contractorCountBadge")) $("contractorCountBadge").textContent = contractorEntries.length;
+            if ($("adminContractorsBody")) {
+                $("adminContractorsBody").innerHTML = contractorEntries.length === 0
+                    ? `<tr><td colspan="5" style="text-align:center;color:var(--ink-3);padding:22px">Heç bir iş icraçısı əlavə edilməyib. Yuxarıdakı formadan yeni icraçı əlavə edin.</td></tr>`
+                    : contractorEntries.map(c => `
+                        <tr>
+                            <td><b>👷 ${esc(c.name)}</b></td>
+                            <td class="mono"><b>${Number(c.workers) || 0}</b> nəfər</td>
+                            <td class="mono"><b>${Number(c.machinery) || 0}</b> ədəd</td>
+                            <td>${esc(c.engineer || "—")}</td>
+                            <td style="display:flex;gap:6px">
+                                <button class="btn" style="height:28px;padding:0 10px" data-edit-contractor="${esc(c.name)}"><i class="fa-solid fa-pen"></i> Redaktə</button>
+                                <button class="btn btn-danger" style="height:28px;padding:0 10px" data-del-contractor="${esc(c.name)}"><i class="fa-solid fa-trash"></i> Sil</button>
+                            </td>
+                        </tr>
+                    `).join("");
+            }
         }
 
         // Tab switching
+        function activateTab(tabName) {
+            document.querySelectorAll(".nav-tab").forEach(b => b.classList.toggle("active", b.dataset.tab === tabName));
+            ["overview", "activity", "users", "contractors"].forEach(id => {
+                const el = $(`tab-${id}`);
+                if (el) el.hidden = id !== tabName;
+            });
+        }
+
         $("adminTabs").addEventListener("click", e => {
             const btn = e.target.closest("[data-tab]");
             if (!btn) return;
-            document.querySelectorAll(".nav-tab").forEach(b => b.classList.toggle("active", b === btn));
-            ["overview", "activity", "users"].forEach(id => {
-                $(`tab-${id}`).hidden = id !== btn.dataset.tab;
-            });
+            activateTab(btn.dataset.tab);
         });
+
+        if (location.hash === "#contractors") {
+            activateTab("contractors");
+        }
 
         $("jumpToLogsBtn").addEventListener("click", () => {
             document.querySelector('[data-tab="activity"]').click();
@@ -921,6 +1022,72 @@
             saveUsers(users);
             renderAll();
             toast("🗑️ İstifadəçi silindi");
+        });
+
+        // 👷 İş İcraçıları İdarəetməsi (Əlavə et / Redaktə et / Sil)
+        $("adminContractorForm")?.addEventListener("submit", e => {
+            e.preventDefault();
+            const name = $("cName").value.trim();
+            const workers = Math.max(0, Number($("cWorkers").value) || 0);
+            const machinery = Math.max(0, Number($("cMachinery").value) || 0);
+            const engineer = $("cEngineer").value.trim();
+            if (!name) return;
+
+            const map = getContractors();
+            if (editingContractorKey && editingContractorKey !== name) {
+                delete map[editingContractorKey];
+            }
+            map[name] = { name, workers, machinery, engineer };
+            saveContractors(map);
+
+            editingContractorKey = null;
+            $("cName").value = "";
+            $("cWorkers").value = 0;
+            $("cMachinery").value = 0;
+            $("cEngineer").value = "";
+            $("cSubmitBtn").innerHTML = `<i class="fa-solid fa-plus"></i> Əlavə et`;
+            $("cCancelEditBtn").hidden = true;
+
+            renderAll();
+            toast(`✅ İş icraçısı yadda saxlanıldı: ${name}`);
+        });
+
+        $("cCancelEditBtn")?.addEventListener("click", () => {
+            editingContractorKey = null;
+            $("cName").value = "";
+            $("cWorkers").value = 0;
+            $("cMachinery").value = 0;
+            $("cEngineer").value = "";
+            $("cSubmitBtn").innerHTML = `<i class="fa-solid fa-plus"></i> Əlavə et`;
+            $("cCancelEditBtn").hidden = true;
+        });
+
+        $("adminContractorsBody")?.addEventListener("click", e => {
+            const editBtn = e.target.closest("[data-edit-contractor]");
+            if (editBtn) {
+                const key = editBtn.dataset.editContractor;
+                const map = getContractors();
+                const c = map[key];
+                if (!c) return;
+                editingContractorKey = key;
+                $("cName").value = c.name || key;
+                $("cWorkers").value = Number(c.workers) || 0;
+                $("cMachinery").value = Number(c.machinery) || 0;
+                $("cEngineer").value = c.engineer || "";
+                $("cSubmitBtn").innerHTML = `<i class="fa-solid fa-check"></i> Yadda saxla`;
+                $("cCancelEditBtn").hidden = false;
+                $("cName").focus();
+                return;
+            }
+            const delBtn = e.target.closest("[data-del-contractor]");
+            if (delBtn) {
+                const key = delBtn.dataset.delContractor;
+                const map = getContractors();
+                delete map[key];
+                saveContractors(map);
+                renderAll();
+                toast(`🗑️ İş icraçısı silindi: ${key}`);
+            }
         });
 
         // 🔒 Admin Parol Yoxlaması (Admin giriş etdiyi parol ilə eyni olmalıdır)
