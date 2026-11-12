@@ -1023,7 +1023,7 @@ function drawRoutes() {
             const cleanName = String(r.name || "").trim();
             const stText = t(`status${r.status}`);
             const label = `${cleanName}\n${stText}`;
-            const tip = `<b>${shape.symbol} 🚦 ${esc(r.name)}</b><small>Layihə: <b>${esc(project.name)}</b><br>Status: <b style="color:${color}">${esc(stText)}</b><br>👷 İcraçı: ${esc(cName)} · 👥 İşçi: <b>${esc(cInfo.workers)} nəfər</b><br>📞 <b>${esc(cInfo.engineer || "—")}</b></small>`;
+            const tip = `<b>${shape.symbol} 🚦 ${esc(r.name)}</b><small>Layihə: <b>${esc(project.name)}</b><br>Status: <b style="color:${color}">${esc(stText)}</b><br>${r.contractor ? `👷 İcraçı: ${esc(r.contractor)} · 👥 İşçi: <b>${esc(cInfo.workers)} nəfər</b><br>📞 <b>${esc(cInfo.engineer || "—")}</b>` : ""}</small>`;
             const nimProps = {
                 isRayonPoint: true,
                 isNim: true,
@@ -1055,7 +1055,7 @@ function drawRoutes() {
             const antPart = antCount ? `${antCount} antena · ` : "";
             const label = `${cleanName}\n${antPart}Kabel: ${formatKm(r.totalKm)} / ${formatKm(r.doneKm)} m`;
             const shortLabel = `${cleanName}\n${antCount ? `${antCount} ant · ` : ""}${formatKm((Number(r.totalKm) || 0) / 1000)} km`;
-            const tip = `<b>${shape.symbol} ${esc(cleanName)}</b><small>Layihə: <b>${esc(project.name)}</b><br>📡 ${r.antennas || 0} antena · Plan: ${formatKm(r.totalKm)} m / Faktiki: ${formatKm(r.doneKm)} m (${percent(r.doneKm, r.totalKm)}%)<br>👷 İcraçı: ${esc(cName)}<br>👥 İşçi sayı: <b>${esc(cInfo.workers)} nəfər</b> · 📞 İcraçı: <b>${esc(cInfo.engineer || "—")}</b></small>`;
+            const tip = `<b>${shape.symbol} ${esc(cleanName)}</b><small>Layihə: <b>${esc(project.name)}</b><br>📡 ${r.antennas || 0} antena · Plan: ${formatKm(r.totalKm)} m / Faktiki: ${formatKm(r.doneKm)} m (${percent(r.doneKm, r.totalKm)}%)<br>${r.contractor ? `👷 İcraçı: ${esc(r.contractor)}<br>👥 İşçi sayı: <b>${esc(cInfo.workers)} nəfər</b> · 📞 İcraçı: <b>${esc(cInfo.engineer || "—")}</b>` : ""}</small>`;
 
             const ptProps = {
                 isRayonPoint: true,
@@ -1081,7 +1081,7 @@ function drawRoutes() {
                     sel: Boolean(selected?.item === r),
                     projectId: project.id,
                     itemId: r.id,
-                    tip: `<b>${esc(r.name)}</b><small>📏 Plan: ${formatKm(r.totalKm)} km / Faktiki: ${formatKm(r.doneKm)} km (${percent(r.doneKm, r.totalKm)}%)<br>👷 İcraçı: ${esc(cName)}<br>👥 İşçi sayı: <b>${esc(cInfo.workers)} nəfər</b> · 📞 İcraçı: <b>${esc(cInfo.engineer || "—")}</b></small>`
+                    tip: `<b>${esc(r.name)}</b><small>📏 Plan: ${formatKm(r.totalKm)} km / Faktiki: ${formatKm(r.doneKm)} km (${percent(r.doneKm, r.totalKm)}%)<br>${r.contractor ? `👷 İcraçı: ${esc(r.contractor)}<br>👥 İşçi sayı: <b>${esc(cInfo.workers)} nəfər</b> · 📞 İcraçı: <b>${esc(cInfo.engineer || "—")}</b>` : ""}</small>`
                 }
             });
             // Magistral uclarında nöqtə dairəsi və varsa nöqtənin öz adı göstərilir
@@ -1665,6 +1665,20 @@ function normalizeStatus(val) {
     return STATUSES.includes(s) ? s : "layihe";
 }
 
+function cleanAttrVal(val) {
+    if (val === undefined || val === null) return undefined;
+    const s = String(val).trim();
+    if (s === "" || /^(?:<null>|null|none|yoxdur|n\/a|-+|—+)$/i.test(s)) return undefined;
+    return s;
+}
+
+function parseAttrNumber(val, fallback = 0) {
+    const s = cleanAttrVal(val);
+    if (!s) return fallback;
+    const num = Number(s.replace(/,/g, ".").replace(/[^\d.-]/g, ""));
+    return isNaN(num) ? fallback : num;
+}
+
 function getPropCaseInsensitive(props, ...aliases) {
     if (!props) return undefined;
     const normMap = {};
@@ -1672,10 +1686,8 @@ function getPropCaseInsensitive(props, ...aliases) {
         normMap[normalizeKey(k)] = v;
     }
     for (const a of aliases) {
-        const val = normMap[normalizeKey(a)];
-        if (val !== undefined && val !== null && String(val).trim() !== "" && String(val).trim() !== "<Null>") {
-            return String(val).trim();
-        }
+        const cleaned = cleanAttrVal(normMap[normalizeKey(a)]);
+        if (cleaned !== undefined) return cleaned;
     }
     return undefined;
 }
@@ -1707,45 +1719,88 @@ function linesFromKml(text) {
     const doc = new DOMParser().parseFromString(text, "application/xml");
     if (doc.querySelector("parsererror")) throw new Error("Invalid KML");
 
+    function findPlacemark(node) {
+        let curr = node ? node.parentNode : null;
+        while (curr && curr.nodeType === 1) {
+            const tag = (curr.localName || curr.nodeName || "").toLowerCase();
+            if (tag === "placemark" || tag.endsWith(":placemark")) return curr;
+            curr = curr.parentNode;
+        }
+        return null;
+    }
+
     function parseProps(placemark) {
         const props = {};
         if (!placemark) return props;
 
-        // 1. ExtendedData -> Data name/value & SimpleData
-        Array.from(placemark.getElementsByTagName("Data")).forEach(d => {
-            const k = d.getAttribute("name");
-            const v = d.getElementsByTagName("value")[0]?.textContent?.trim();
-            if (k && v !== undefined) props[k] = v;
-        });
-        Array.from(placemark.getElementsByTagName("SimpleData")).forEach(sd => {
-            const k = sd.getAttribute("name");
-            const v = sd.textContent?.trim();
-            if (k && v !== undefined) props[k] = v;
-        });
+        // 1. ExtendedData daxilində SimpleData və Data teqlərini oxu
+        const allEls = placemark.getElementsByTagName("*");
+        for (let i = 0; i < allEls.length; i++) {
+            const el = allEls[i];
+            const tag = (el.localName || el.nodeName || "").toLowerCase();
+            if (tag === "simpledata" || tag.endsWith(":simpledata")) {
+                const k = el.getAttribute("name");
+                const v = el.textContent?.trim();
+                if (k && v !== undefined && props[k] === undefined) props[k] = v;
+            } else if (tag === "data" || tag.endsWith(":data")) {
+                const k = el.getAttribute("name");
+                let v = "";
+                const valNode = el.getElementsByTagName("value")[0] || Array.from(el.childNodes).find(n => /(^|:)value$/i.test(n.nodeName || ""));
+                if (valNode) v = valNode.textContent?.trim();
+                if (k && v !== undefined && props[k] === undefined) props[k] = v;
+            }
+        }
 
-        // 2. description HTML table parsing (ArcGIS Pro Layer to KML creates HTML table in <description>)
-        const descNode = placemark.getElementsByTagName("description")[0];
+        // 2. ArcGIS Pro "Layer to KML" zamanı <description> daxilində yaranan cədvəli oxu
+        const descNode = placemark.getElementsByTagName("description")[0]
+            || Array.from(placemark.childNodes).find(n => /(^|:)description$/i.test(n.nodeName || ""));
         if (descNode && descNode.textContent) {
             const descHtml = descNode.textContent;
-            // Match any <td>Key</td> <td>Value</td> or <th>Key</th> <td>Value</td>
-            const rowMatches = descHtml.matchAll(/<tr[^>]*>\s*<(?:td|th)[^>]*>(.*?)<\/(?:td|th)>\s*<td[^>]*>(.*?)<\/td>\s*<\/tr>/gis);
-            for (const m of rowMatches) {
-                const k = m[1].replace(/<[^>]+>/g, "").trim();
+            // 2a. <tr> daxilində 2 və ya daha çox xana (<th> və ya <td>)
+            const rowMatches = descHtml.matchAll(/<tr[^>]*>(.*?)<\/tr>/gis);
+            for (const r of rowMatches) {
+                const cells = Array.from(r[1].matchAll(/<(?:td|th)[^>]*>(.*?)<\/(?:td|th)>/gis))
+                    .map(c => c[1].replace(/<[^>]+>/g, "").trim());
+                if (cells.length >= 2) {
+                    const k = cells[0];
+                    const v = cells.slice(1).join(" ").trim();
+                    if (k && v && props[k] === undefined) props[k] = v;
+                }
+            }
+            // 2b. Açar: Dəyər və ya <b>Açar:</b> Dəyər formatı
+            const lineMatches = descHtml.matchAll(/(?:^|<br\s*\/?>|\n)\s*(?:<[^>]+>)*([A-Za-z0-9əıöüçşğƏİÖÜÇŞĞ_]+)(?:<\/[^>]+>)*\s*[:=]\s*(?:<[^>]+>)*(.*?)(?:<\/[^>]+>)*(?=(?:<br\s*\/?>|\n|$))/gi);
+            for (const m of lineMatches) {
+                const k = m[1].trim();
                 const v = m[2].replace(/<[^>]+>/g, "").trim();
-                if (k && v) props[k] = v;
+                if (k && v && props[k] === undefined) props[k] = v;
             }
         }
         return props;
     }
 
     function resolveName(placemark, props) {
-        // First try props from ArcGIS table: Name, name, xett_adi, title, ad, rayon
-        const propName = getPropCaseInsensitive(props, "Name", "name", "xett_adi", "xett", "LineName", "title", "ad", "rayon");
+        // 1. ArcGIS atribut cədvəlindən sütun adı (Name, name, xett_adi və s.)
+        const propName = getPropCaseInsensitive(props, "Name", "name", "xett_adi", "xett", "LineName", "title", "ad", "rayon", "label", "layihe_adi");
         if (propName) return propName;
 
-        // Then direct <name> tag inside Placemark
-        const directName = placemark && Array.from(placemark.children).find(el => el.nodeName.toLowerCase() === "name")?.textContent?.trim();
-        if (directName && !/^id[xs]?\d+$/i.test(directName)) return directName;
+        // 2. Placemark daxilində birbaşa <name> teqi
+        let directName = "";
+        if (placemark) {
+            for (let i = 0; i < placemark.childNodes.length; i++) {
+                const ch = placemark.childNodes[i];
+                if (ch.nodeType === 1 && /(^|:)name$/i.test(ch.nodeName || "")) {
+                    directName = ch.textContent?.trim() || "";
+                    break;
+                }
+            }
+            if (!directName) {
+                const nEl = placemark.getElementsByTagName("name")[0];
+                if (nEl) directName = nEl.textContent?.trim() || "";
+            }
+        }
+        if (directName && !/^(?:id[xs]?\d+|line\s*\d+|xett\s*\d+|placemark\s*\d+)$/i.test(directName)) {
+            return directName;
+        }
 
         return directName || "";
     }
@@ -1759,8 +1814,7 @@ function linesFromKml(text) {
             return [lat, lng];
         }).filter(c => !isNaN(c[0]) && !isNaN(c[1]));
 
-        let placemark = node.parentNode;
-        while (placemark && placemark.nodeName.toLowerCase() !== "placemark") placemark = placemark.parentNode;
+        const placemark = findPlacemark(node);
         const props = parseProps(placemark);
         const name = resolveName(placemark, props);
         items.push({ isPoint: false, name, props, coords });
@@ -1772,14 +1826,33 @@ function linesFromKml(text) {
         const [lng, lat] = coordsNode.textContent.trim().split(",").map(Number);
         if (isNaN(lat) || isNaN(lng)) return;
 
-        let placemark = node.parentNode;
-        while (placemark && placemark.nodeName.toLowerCase() !== "placemark") placemark = placemark.parentNode;
+        const placemark = findPlacemark(node);
         const props = parseProps(placemark);
         const name = resolveName(placemark, props).replace(/\s*rayon(u)?\b/gi, "").trim();
         items.push({ isPoint: true, name, props, coords: [[lat, lng]] });
     });
 
     return items;
+}
+
+/* KMZ, KML və GeoJSON fayllarını oxuyan əsas funksiya */
+async function readLines(file) {
+    const extension = file.name.split(".").pop().toLowerCase();
+    if (extension === "kmz") {
+        if (typeof JSZip === "undefined") {
+            throw new Error("JSZip kitabxanası yüklənməyib");
+        }
+        const zip = await JSZip.loadAsync(file);
+        const kmlFile = Object.values(zip.files).find(f => !f.dir && /\.kml$/i.test(f.name));
+        if (!kmlFile) return [];
+        const kmlText = await kmlFile.async("string");
+        return linesFromKml(kmlText);
+    }
+    const text = await file.text();
+    if (extension === "kml") {
+        return linesFromKml(text);
+    }
+    return linesFromGeoJson(JSON.parse(text));
 }
 
 function projectFromFile(fileName, lines) {
@@ -1795,15 +1868,33 @@ function projectFromFile(fileName, lines) {
             const rawStatus = getPropCaseInsensitive(p, "status", "Status", "STATUS") || line.props?.status || "layihe";
             const status = normalizeStatus(rawStatus);
 
-            // 2. İcraçı: icraçı, icraci, contractor
-            const contractor = getPropCaseInsensitive(p, "icraçı", "icraci", "contractor", "icraci_sirket", "icraci_adi") || "BCG (Öz briqadamız)";
+            // 2. İcraçı: icraçı, icraci, contractor (boşdursa tam boş qalır)
+            const contractor = getPropCaseInsensitive(p, "icraçı", "icraci", "contractor", "icraci_sirket", "icraci_adi", "podratci") || "";
 
             // 3. Name: Ağsu-Şamaxı, Şamaxı-İsmayıllı və s.
-            const nameVal = (line.name && line.name.trim()) || getPropCaseInsensitive(p, "Name", "name", "xett_adi", "title", "ad") || `${t("importedLine")} ${index + 1}`;
+            let nameVal = (line.name && line.name.trim())
+                || getPropCaseInsensitive(p, "Name", "name", "xett_adi", "xett", "LineName", "title", "ad", "rayon", "label", "layihe_adi");
 
             // 4. pointA & pointB
-            const pointA = getPropCaseInsensitive(p, "pointA", "point_a", "pointa", "a", "baslangic") || "A";
-            const pointB = getPropCaseInsensitive(p, "pointB", "point_b", "pointb", "b", "son") || "B";
+            let pointA = getPropCaseInsensitive(p, "pointA", "point_a", "pointa", "a", "baslangic", "from") || "";
+            let pointB = getPropCaseInsensitive(p, "pointB", "point_b", "pointb", "b", "son", "to") || "";
+
+            // Əgər pointA / pointB boşdursa və name-də tire varsa (məs: Ağsu-Şamaxı), avtomatik ayır
+            if ((!pointA || !pointB) && nameVal && /[-–—]/.test(nameVal)) {
+                const parts = nameVal.split(/[-–—]/).map(s => s.trim()).filter(Boolean);
+                if (parts.length >= 2) {
+                    if (!pointA) pointA = parts[0];
+                    if (!pointB) pointB = parts[1];
+                }
+            }
+            if (!nameVal && pointA && pointB) {
+                nameVal = `${pointA} – ${pointB}`;
+            }
+            if (!nameVal) {
+                nameVal = `${t("importedLine")} ${index + 1}`;
+            }
+            if (!pointA) pointA = "A";
+            if (!pointB) pointB = "B";
 
             if (line.isPoint || line.coords.length === 1) {
                 const planM = Number(getPropCaseInsensitive(p, "plan_m", "planM", "total_m", "total_km", "totalKm") || 10000);
@@ -1821,12 +1912,14 @@ function projectFromFile(fileName, lines) {
             }
 
             // Xətt layihəsi: totalKm və doneKm birbaşa ArcGIS sütunlarından
-            const km = tools.length(line.coords) / 1000;
-            const rawTotalKm = getPropCaseInsensitive(p, "totalKm", "total_km", "totalkm", "plan_km", "planKm", "plan");
-            const rawDoneKm = getPropCaseInsensitive(p, "doneKm", "done_km", "donekm", "faktiki_km", "faktiki");
+            const km = Math.round((tools.length(line.coords) / 1000) * 10) / 10;
+            const rawTotalKm = getPropCaseInsensitive(p, "totalKm", "total_km", "totalkm", "plan_km", "planKm", "plan", "uzunluq", "length");
+            const rawDoneKm = getPropCaseInsensitive(p, "doneKm", "done_km", "donekm", "faktiki_km", "faktiki", "icra", "done");
 
-            const totalKm = rawTotalKm !== undefined ? Number(rawTotalKm) : Math.round(km * 10) / 10;
-            const doneKm = rawDoneKm !== undefined ? Math.min(totalKm, Number(rawDoneKm)) : 0;
+            // Əgər totalKm boş və ya "-" olarsa, sayt xəttin GPS koordinatlarından faktiki uzunluğu avtomatik hesablayır
+            const totalKm = rawTotalKm !== undefined ? parseAttrNumber(rawTotalKm, km) : km;
+            // Əgər doneKm boş və ya "-" olarsa, avtomatik 0 qəbul edilir
+            const doneKm = rawDoneKm !== undefined ? parseAttrNumber(rawDoneKm, 0) : 0;
 
             return {
                 id: `IMP-${String(index + 1).padStart(2, "0")}`,
@@ -2125,10 +2218,10 @@ document.addEventListener("DOMContentLoaded", init);
     }
 
     function executorOptionsHtml(currentExec) {
-        const names = [...new Set(["BCG (Öz briqadamız)", ...Object.keys(state.contractors)])];
+        const names = [...new Set(["", "BCG (Öz briqadamız)", ...Object.keys(state.contractors)])];
         return `<select class="input" data-exec-select>${names.map(name => {
             const isOwn = /bcg/i.test(name);
-            return `<option value="${esc(name)}" ${name === (currentExec || "BCG (Öz briqadamız)") ? "selected" : ""}>${isOwn ? "🏢 " + esc(name) : "👷 Podratçı: " + esc(name)}</option>`;
+            return `<option value="${esc(name)}" ${name === currentExec ? "selected" : ""}>${isOwn ? "🏢 " + esc(name) : "👷 Podratçı: " + esc(name)}</option>`;
         }).join("")}</select>`;
     }
 
@@ -3145,6 +3238,7 @@ document.addEventListener("DOMContentLoaded", init);
                                             ${STATUSES.map(s => `<option value="${s}" ${r.status === s ? "selected" : ""}>${t(`status${s}`)}</option>`).join("")}
                                         </select>
                                     </div>
+                                    ${r.contractor ? `
                                     <div class="info-exec-row">
                                         <span class="muted">İcraçı:</span>
                                         ${executorOptionsHtml(r.contractor)}
@@ -3152,6 +3246,9 @@ document.addEventListener("DOMContentLoaded", init);
                                     <div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;color:var(--ink-2)">
                                         <span>👷 İşçi: <b>${esc(cInfo.workers)} nəfər</b></span>
                                         <span>📞 <b>${esc(cInfo.engineer || "—")}</b></span>
+                                    ` : `
+                                    <div style="display:flex;justify-content:flex-end;align-items:center;font-size:11px;color:var(--ink-2)">
+                                    `}
                                         ${isAdmin() ? `<button class="btn btn-outline" style="height:22px;padding:0 7px;font-size:10.5px" data-geom-edit="${esc(proj.id)}:${esc(r.id)}" title="Nöqtəni xəritədə sürüşdür"><i class="fa-solid fa-arrows-up-down-left-right"></i> Sürüşdür</button>` : ""}
                                     </div>
                                 </div>
@@ -3210,6 +3307,7 @@ document.addEventListener("DOMContentLoaded", init);
                                     <div style="color:var(--ink-2);font-size:11.5px">
                                         Plan: <b>${formatKm(r.totalKm)} m</b> · Faktiki: <b style="color:${rTone}">${formatKm(r.doneKm)} m (${rPct}%)</b> · Qalıb: <b>${formatKm(rLeft)} m</b>
                                     </div>
+                                    ${r.contractor ? `
                                     <div class="info-exec-row">
                                         <span class="muted">İcraçı:</span>
                                         ${executorOptionsHtml(r.contractor)}
@@ -3217,6 +3315,9 @@ document.addEventListener("DOMContentLoaded", init);
                                     <div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;color:var(--ink-2)">
                                         <span>👷 İşçi: <b>${esc(cInfo.workers)} nəfər</b></span>
                                         <span>📞 <b>${esc(cInfo.engineer || "—")}</b></span>
+                                    ` : `
+                                    <div style="display:flex;justify-content:flex-end;align-items:center;font-size:11px;color:var(--ink-2)">
+                                    `}
                                         ${isAdmin() ? `<button class="btn btn-outline" style="height:22px;padding:0 7px;font-size:10.5px" data-geom-edit="${esc(proj.id)}:${esc(r.id)}" title="Nöqtəni xəritədə sürüşdür"><i class="fa-solid fa-arrows-up-down-left-right"></i> Sürüşdür</button>` : ""}
                                     </div>
                                 </div>
@@ -3270,6 +3371,7 @@ document.addEventListener("DOMContentLoaded", init);
                                     <div style="color:var(--ink-2);font-size:11.5px">
                                         Plan: <b>${formatKm(r.totalKm)} km</b> · Faktiki: <b style="color:${rTone}">${formatKm(r.doneKm)} km (${rPct}%)</b> · Qalıb: <b>${formatKm(rLeft)} km</b>
                                     </div>
+                                    ${r.contractor ? `
                                     <div class="info-exec-row">
                                         <span class="muted">İcraçı:</span>
                                         ${executorOptionsHtml(r.contractor)}
@@ -3277,6 +3379,9 @@ document.addEventListener("DOMContentLoaded", init);
                                     <div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;color:var(--ink-2)">
                                         <span>👷 İşçi: <b>${esc(cInfo.workers)} nəfər</b></span>
                                         <span>📞 <b>${esc(cInfo.engineer || "—")}</b></span>
+                                    ` : `
+                                    <div style="display:flex;justify-content:flex-end;align-items:center;font-size:11px;color:var(--ink-2)">
+                                    `}
                                         ${isAdmin() ? `<button class="btn btn-outline" style="height:22px;padding:0 7px;font-size:10.5px" data-geom-edit="${esc(proj.id)}:${esc(r.id)}" title="Xəttin qırılma nöqtələrini xəritədə sürüşdür"><i class="fa-solid fa-bezier-curve"></i> Xətti sürüşdür</button>` : ""}
                                     </div>
                                 </div>
