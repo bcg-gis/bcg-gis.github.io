@@ -560,6 +560,8 @@ function saveSegmentOverride(projectId, item) {
         totalKm: item.totalKm,
         doneKm: item.doneKm,
         antennas: item.antennas,
+        summary: item.summary,
+        rayon: item.rayon,
         fiberCount: item.fiberCount,
         userSetFiber: item.userSetFiber,
         customColor: item.customColor,
@@ -1637,6 +1639,29 @@ function mapStyle() {
                     "icon-ignore-placement": false
                 },
                 paint: { "icon-opacity": ["case", ["get", "dim"], 0.28, 1] } },
+            /* Rayon xülasəsi: uzaqdan yalnız status rəngli rayon adı, yaxınlaşanda tam kart (antena, kabel, faiz, icraçı) */
+            { id: "routes-summary-name", type: "symbol", source: "route-labels", minzoom: 3.5, maxzoom: 7.6, filter: ["has", "summaryNameImg"],
+                layout: {
+                    "icon-image": ["get", "summaryNameImg"],
+                    "icon-anchor": "top",
+                    "icon-offset": [0, 9],
+                    "icon-size": 0.80,
+                    "icon-padding": 4,
+                    "icon-allow-overlap": false,
+                    "icon-ignore-placement": false
+                },
+                paint: { "icon-opacity": ["case", ["get", "dim"], 0.28, 1] } },
+            { id: "routes-summary-card", type: "symbol", source: "route-labels", minzoom: 7.6, filter: ["has", "summaryCardImg"],
+                layout: {
+                    "icon-image": ["get", "summaryCardImg"],
+                    "icon-anchor": "left",
+                    "icon-offset": [14, 0],
+                    "icon-size": 0.80,
+                    "icon-padding": 6,
+                    "icon-allow-overlap": false,
+                    "icon-ignore-placement": false
+                },
+                paint: { "icon-opacity": ["case", ["get", "dim"], 0.28, 1] } },
             ...tools.layers()
         ]
     };
@@ -1672,7 +1697,7 @@ function initMap() {
     map.on("rotate", () => {
         $("northIcon").style.transform = `rotate(${-45 - map.getBearing()}deg)`;
     });
-    ["routes-poly-fill", "routes-poly-line", "routes-other", "routes-hit", "routes-other-line", "routes-other-points", "routes-fo-points", "routes-ends", "routes-ends-label", "routes-point-overview", "routes-point-halo", "routes-point-shape", "routes-point-name", "routes-point-label", "routes-point-label-near"].forEach(layer => {
+    ["routes-poly-fill", "routes-poly-line", "routes-other", "routes-hit", "routes-other-line", "routes-other-points", "routes-fo-points", "routes-ends", "routes-ends-label", "routes-point-overview", "routes-point-halo", "routes-point-shape", "routes-point-name", "routes-point-label", "routes-point-label-near", "routes-summary-name", "routes-summary-card"].forEach(layer => {
         map.on("mousemove", layer, e => {
             if (tools.isActive()) return;
             window.routeHover = true;
@@ -1834,6 +1859,135 @@ function ensureLabelImage(text) {
         ctx.fillText(ln, W / 2, y);
         y += lineH(sizes[i]);
     });
+    map.addImage(key, ctx.getImageData(0, 0, canvas.width, canvas.height), { pixelRatio: ratio });
+    return key;
+}
+
+/* Rayon xülasə nöqtəsi — uzaqdan baxışda yalnız rayon adı (status rəngində, kontrast haşiyə ilə) */
+function ensureSummaryNameImage(text, color) {
+    if (!map || !text) return null;
+    const light = isLightBaseMap();
+    const key = `sumname_v1:${light ? "l" : "d"}:${color}:${text}`;
+    if (map.hasImage(key)) return key;
+    const ratio = 2;
+    const fontSize = 13;
+    const pad = 4;
+    const measure = document.createElement("canvas").getContext("2d");
+    measure.font = `800 ${fontSize}px ${LABEL_FONT}`;
+    const W = Math.ceil(measure.measureText(text).width + pad * 2);
+    const H = Math.ceil(fontSize * 1.3 + pad * 2);
+    const canvas = document.createElement("canvas");
+    canvas.width = W * ratio;
+    canvas.height = H * ratio;
+    const ctx = canvas.getContext("2d");
+    ctx.scale(ratio, ratio);
+    ctx.font = `800 ${fontSize}px ${LABEL_FONT}`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.lineJoin = "round";
+    ctx.lineWidth = 3.6;
+    ctx.strokeStyle = light ? "rgba(255,255,255,0.98)" : "rgba(3,7,18,0.95)";
+    ctx.strokeText(text, W / 2, H / 2 + 0.5);
+    ctx.fillStyle = color;
+    ctx.fillText(text, W / 2, H / 2 + 0.5);
+    map.addImage(key, ctx.getImageData(0, 0, canvas.width, canvas.height), { pixelRatio: ratio });
+    return key;
+}
+
+/* Rayon xülasə kartı: status rəngli sol zolaq, status rəngli rayon adı, antena / kabel, faiz zolağı və icraçı */
+function ensureSummaryCardImage({ name, color, statusText, antennas, doneKm, totalKm, pct, contractor }) {
+    if (!map || !name) return null;
+    const light = isLightBaseMap();
+    const key = `sumcard_v1:${light ? "l" : "d"}:${color}:${name}:${antennas}:${doneKm}:${totalKm}:${contractor}`;
+    if (map.hasImage(key)) return key;
+
+    const ratio = 2;
+    const padX = 9;
+    const padY = 6;
+    const stripe = 4;
+    const fTitle = `800 13px ${LABEL_FONT}`;
+    const fStatus = `700 10.5px ${LABEL_FONT}`;
+    const fBody = `600 11.5px ${LABEL_FONT}`;
+    const fSmall = `600 10.5px ${LABEL_FONT}`;
+    const bodyText = `${antennas} antena · ${formatKm(doneKm)} / ${formatKm(totalKm)} km`;
+    const statusLabel = ` · ${statusText}`;
+    const contractorText = contractor ? `İcraçı: ${contractor}` : "";
+
+    const m = document.createElement("canvas").getContext("2d");
+    m.font = fTitle; const titleW = m.measureText(name).width;
+    m.font = fStatus; const statusW = m.measureText(statusLabel).width;
+    m.font = fBody; const bodyW = m.measureText(bodyText).width;
+    m.font = fSmall; const pctW = m.measureText("100%").width; const cW = contractorText ? m.measureText(contractorText).width : 0;
+    const innerW = Math.max(titleW + statusW, bodyW, cW, 120);
+    const W = Math.ceil(stripe + padX * 2 + innerW);
+    const rows = [17, 16, 12].concat(contractorText ? [15] : []);
+    const H = Math.ceil(padY * 2 + rows.reduce((a, b) => a + b, 0));
+
+    const canvas = document.createElement("canvas");
+    canvas.width = W * ratio;
+    canvas.height = H * ratio;
+    const ctx = canvas.getContext("2d");
+    ctx.scale(ratio, ratio);
+
+    // Kartın fonu (peyk/tünd xəritədə tünd, açıq xəritədə ağ)
+    const r = 6;
+    ctx.beginPath();
+    ctx.moveTo(r, 0); ctx.lineTo(W - r, 0); ctx.quadraticCurveTo(W, 0, W, r);
+    ctx.lineTo(W, H - r); ctx.quadraticCurveTo(W, H, W - r, H);
+    ctx.lineTo(r, H); ctx.quadraticCurveTo(0, H, 0, H - r);
+    ctx.lineTo(0, r); ctx.quadraticCurveTo(0, 0, r, 0);
+    ctx.closePath();
+    ctx.fillStyle = light ? "rgba(255,255,255,0.94)" : "rgba(10,16,28,0.82)";
+    ctx.fill();
+    ctx.save();
+    ctx.clip();
+    ctx.fillStyle = color;
+    ctx.fillRect(0, 0, stripe, H);
+    ctx.restore();
+
+    const x0 = stripe + padX;
+    const mainColor = light ? "#0F172A" : "#FFFFFF";
+    const subColor = light ? "#334155" : "#CBD5E1";
+    ctx.textBaseline = "middle";
+    ctx.textAlign = "left";
+    let y = padY;
+
+    // 1. Rayon adı (status rəngində) + status adı
+    ctx.font = fTitle;
+    ctx.fillStyle = color;
+    ctx.fillText(name, x0, y + rows[0] / 2);
+    ctx.font = fStatus;
+    ctx.fillText(statusLabel, x0 + titleW, y + rows[0] / 2 + 0.5);
+    y += rows[0];
+
+    // 2. Antena və kabel (çəkilən / verilən)
+    ctx.font = fBody;
+    ctx.fillStyle = mainColor;
+    ctx.fillText(bodyText, x0, y + rows[1] / 2);
+    y += rows[1];
+
+    // 3. Faiz zolağı (status rəngində)
+    const barW = innerW - pctW - 6;
+    const barH = 5;
+    const barY = y + (rows[2] - barH) / 2;
+    ctx.fillStyle = light ? "rgba(15,23,42,0.12)" : "rgba(255,255,255,0.18)";
+    ctx.fillRect(x0, barY, barW, barH);
+    ctx.fillStyle = color;
+    ctx.fillRect(x0, barY, Math.max(0, Math.min(1, pct / 100)) * barW, barH);
+    ctx.font = fSmall;
+    ctx.fillStyle = mainColor;
+    ctx.textAlign = "right";
+    ctx.fillText(`${pct}%`, x0 + innerW, y + rows[2] / 2);
+    ctx.textAlign = "left";
+    y += rows[2];
+
+    // 4. İcraçı
+    if (contractorText) {
+        ctx.font = fSmall;
+        ctx.fillStyle = subColor;
+        ctx.fillText(contractorText, x0, y + rows[3] / 2 + 1);
+    }
+
     map.addImage(key, ctx.getImageData(0, 0, canvas.width, canvas.height), { pixelRatio: ratio });
     return key;
 }
@@ -2021,6 +2175,13 @@ function sampleSegmentsAtFractions(segs, totalLen, fractions) {
         pts.push({ coord: [lng, lat], angle, seg });
     });
     return pts;
+}
+
+function isSummaryItem(r) {
+    if (!r) return false;
+    if (r.summary) return true;
+    const p = r.props || {};
+    return Object.keys(p).some(k => /^(kabel_?verilen|kabel_?cekilen|antena_?say)/i.test(k.replace(/[\s_\-\.]+/g, "_")));
 }
 
 function drawRoutes() {
@@ -2299,6 +2460,37 @@ function drawRoutes() {
             return;
         }
 
+        if (isPointItem && isSummaryItem(r)) {
+            // Rayon xülasə nöqtəsi: status rəngli nöqtə + status rəngli rayon adı + antena / kabel kartı
+            const [lat, lng] = coords[0];
+            const stColor = statusTone(r.status);
+            const stText = t(`status${r.status}`);
+            const rayonName = String(r.name || r.rayon || "").trim();
+            const verilenKm = (Number(r.totalKm) || 0) / 1000;
+            const cekilenKm = (Number(r.doneKm) || 0) / 1000;
+            const pct = percent(cekilenKm, verilenKm);
+            const tip = `<b style="color:${stColor}">${esc(rayonName)}</b><small><b style="color:${stColor}">${esc(stText)}</b> · 📡 ${r.antennas || 0} antena<br>🔌 Kabel: ${formatKm(cekilenKm)} / ${formatKm(verilenKm)} km (${pct}%)${r.contractor ? `<br>👷 İcraçı: <b>${esc(r.contractor)}</b>` : ""}</small>`;
+            const sumProps = {
+                isRayonPoint: true,
+                isSummary: true,
+                color: stColor,
+                shapeIcon,
+                dim,
+                sel: Boolean(selected?.item === r),
+                projectId: project.id,
+                itemId: r.id,
+                tip,
+                summaryNameImg: ensureSummaryNameImage(rayonName, stColor),
+                summaryCardImg: ensureSummaryCardImage({
+                    name: rayonName, color: stColor, statusText: stText,
+                    antennas: r.antennas || 0, doneKm: cekilenKm, totalKm: verilenKm, pct, contractor: r.contractor || ""
+                })
+            };
+            features.push({ type: "Feature", geometry: { type: "Point", coordinates: [lng, lat] }, properties: sumProps });
+            labelFeatures.push({ type: "Feature", geometry: { type: "Point", coordinates: [lng, lat] }, properties: sumProps });
+            return;
+        }
+
         if (isPointItem) {
             const [lat, lng] = coords[0];
             const slotKey = `${lat.toFixed(2)}_${lng.toFixed(2)}`;
@@ -2471,7 +2663,7 @@ function onMapClick(e) {
         setDrawer(false);
     }
     const box = [[e.point.x - 5, e.point.y - 5], [e.point.x + 5, e.point.y + 5]];
-    const hit = map.queryRenderedFeatures(box, { layers: ["routes-point-overview", "routes-point-halo", "routes-point-shape", "routes-point-label", "routes-point-label-near", "routes-point-name", "routes-ends", "routes-ends-label", "routes-other-points", "routes-other-line", "routes-fo-points", "routes-hit", "routes-other", "routes-poly-line", "routes-poly-fill"] })[0];
+    const hit = map.queryRenderedFeatures(box, { layers: ["routes-summary-card", "routes-summary-name", "routes-point-overview", "routes-point-halo", "routes-point-shape", "routes-point-label", "routes-point-label-near", "routes-point-name", "routes-ends", "routes-ends-label", "routes-other-points", "routes-other-line", "routes-fo-points", "routes-hit", "routes-other", "routes-poly-line", "routes-poly-fill"] })[0];
     if (!hit) return;
     const project = state.projects.find(p => p.id === hit.properties.projectId);
     if (project) selectSegment(project, project.items.find(r => r.id === hit.properties.itemId));
@@ -2758,10 +2950,13 @@ function renderProjects() {
             const totalAnt = p.items.reduce((s, r) => s + (r.antennas || 0), 0);
             const cleanProjName = String(p.name || "").replace(/\s*\(?\bFaz[-\s]*[12]\b\)?/gi, "").trim();
             const donePts = p.items.filter(i => i.status === "bitmis" || i.status === "tehvil").length;
+            const isHasSum = isPoints && p.items.some(isSummaryItem);
             const subTitle = isNim
                 ? `${p.items.length} svetofor kəsişməsi · Hazır: ${donePts}/${p.items.length}`
                 : (isPoints
-                    ? `📡 ${totalAnt} ant · ${formatKm(sum.plan)} m / ${formatKm(sum.done)} m`
+                    ? (isHasSum
+                        ? `📡 ${totalAnt} ant · ${formatKm(sum.done / 1000)} / ${formatKm(sum.plan / 1000)} km`
+                        : `📡 ${totalAnt} ant · ${formatKm(sum.plan)} m / ${formatKm(sum.done)} m`)
                     : `〰️ ${formatKm(sum.plan)} / ${formatKm(sum.done)} km · Qalıb: ${formatKm(Math.max(0, sum.plan - sum.done))} km`);
             const rightPct = isNim ? `${p.items.length ? Math.round(donePts / p.items.length * 100) : 0}%` : `${pct}%`;
 
@@ -2783,10 +2978,14 @@ function renderProjects() {
                         const foBadge = segFo
                             ? `<span style="background:rgba(14,165,233,0.16);color:#38BDF8;border:1px solid rgba(56,189,248,0.38);border-radius:6px;padding:1px 5px;font-size:10px;font-weight:700;margin-right:4px">${esc(segFo)}</span>`
                             : "";
+                        const isSum = isPoints && isSummaryItem(r);
+                        const cBrief = r.contractor ? ` · 👷 ${esc(r.contractor)}` : "";
                         const rightText = isNim
                             ? t(`status${r.status}`)
                             : (isPoints
-                                ? `${r.antennas || 0} ant · ${formatKm(r.totalKm)} / ${formatKm(r.doneKm)} m`
+                                ? (isSum
+                                    ? `${r.antennas || 0} ant · ${formatKm(r.doneKm / 1000)} / ${formatKm(r.totalKm / 1000)} km${cBrief}`
+                                    : `${r.antennas || 0} ant · ${formatKm(r.totalKm)} / ${formatKm(r.doneKm)} m${cBrief}`)
                                 : `${formatKm(r.totalKm)} / ${formatKm(r.doneKm)} km (${percent(r.doneKm, r.totalKm)}%)`);
                         return `
                         <button class="segment ${state.selected?.itemId === r.id && state.selected?.projectId === p.id ? "selected" : ""}" data-action="focus" data-item="${esc(r.id)}">
@@ -3467,6 +3666,30 @@ function projectFromFile(fileName, lines, polyFillMode = "auto") {
             if (!pointB) pointB = "B";
 
             if (line.isPoint || line.coords.length === 1) {
+                // Rayon xülasə nöqtəsi: Rayon, Antena_say, Kabel_verilen_km, Kabel_cekilen_km, Status, Icraci
+                const rawVerilenKm = getPropCaseInsensitive(p, "Kabel_verilen_km", "kabel_verilen", "verilen_km", "kabel_plan_km");
+                const rawCekilenKm = getPropCaseInsensitive(p, "Kabel_cekilen_km", "kabel_çəkilən_km", "kabel_cekilen", "cekilen_km", "kabel_faktiki_km");
+                const rawAntenaSay = getPropCaseInsensitive(p, "Antena_say", "antena_sayi", "antenna_count");
+                if (rawVerilenKm !== undefined || rawCekilenKm !== undefined || rawAntenaSay !== undefined) {
+                    const rayonName = getPropCaseInsensitive(p, "Rayon", "rayon_adi") || nameVal;
+                    const verilenKm = parseAttrNumber(rawVerilenKm, 0);
+                    const cekilenKm = parseAttrNumber(rawCekilenKm, 0);
+                    return {
+                        id: `RS-${String(index + 1).padStart(2, "0")}`,
+                        name: String(rayonName || nameVal).replace(/\s*rayon(u)?(?![a-zəçşğıöü])/gi, "").trim(),
+                        rayon: rayonName,
+                        summary: true,
+                        pointA: rayonName || "Mərkəz", pointB: "Şəbəkə",
+                        startDate: "", endDate: "", contractor,
+                        // Saytın daxili qaydası: nöqtələrdə kabel metr ilə saxlanılır (km × 1000)
+                        totalKm: Math.round(verilenKm * 1000),
+                        doneKm: Math.round(cekilenKm * 1000),
+                        status, customColor: "", lineWidth, isPolygon: false, closures: 0, manholes: 0,
+                        antennas: Math.round(parseAttrNumber(rawAntenaSay, 0)),
+                        props: p,
+                        coords: line.coords
+                    };
+                }
                 const planM = Number(getPropCaseInsensitive(p, "plan_m", "planM", "total_m", "total_km", "totalKm") || 10000);
                 const doneM = Math.min(planM, Number(getPropCaseInsensitive(p, "done_m", "doneM", "done_km", "doneKm") || 0));
                 const antennas = Number(getPropCaseInsensitive(p, "antennas", "antena", "antenna", "say") || 10);
@@ -4999,6 +5222,9 @@ document.addEventListener("DOMContentLoaded", init);
         // A) NÖQTƏ / ANTENA LAYİHƏSİ
         if (isPoints) {
             const totalAnt = proj.items.reduce((s, i) => s + (i.antennas || 0), 0);
+            const isHasSum = proj.items.some(isSummaryItem);
+            const pUnit = isHasSum ? "km" : "m";
+            const pDiv = isHasSum ? 1000 : 1;
             card.innerHTML = `
                 <div class="info-card-head">
                     <div>
@@ -5015,15 +5241,18 @@ document.addEventListener("DOMContentLoaded", init);
                 </div>
                 <div class="info-card-body">
                     ${!entry ? `<div class="info-grid">
-                        <div class="info-stat"><small>1. Nəzərdə tutulan</small><b>${formatKm(sum.plan)} m</b></div>
-                        <div class="info-stat"><small>2. Faktiki (${pct}%)</small><b>${formatKm(sum.done)} m</b></div>
-                        <div class="info-stat"><small>Qalıb</small><b>${formatKm(leftVal)} m</b></div>
+                        <div class="info-stat"><small>1. Nəzərdə tutulan</small><b>${formatKm(sum.plan / pDiv)} ${pUnit}</b></div>
+                        <div class="info-stat"><small>2. Faktiki (${pct}%)</small><b>${formatKm(sum.done / pDiv)} ${pUnit}</b></div>
+                        <div class="info-stat"><small>Qalıb</small><b>${formatKm(leftVal / pDiv)} ${pUnit}</b></div>
                     </div>` : ""}
                     <div class="info-sub-list">
                         ${items.map(r => {
                             const rTone = statusTone(r.status);
                             const rLeft = Math.max(0, r.totalKm - r.doneKm);
                             const rPct = percent(r.doneKm, r.totalKm);
+                            const rSum = isSummaryItem(r);
+                            const rUnit = rSum ? "km" : "m";
+                            const rDiv = rSum ? 1000 : 1;
                             const cleanName = String(r.name || "").replace(/\s*\(?\bFaz[-\s]*[12]\b\)?/gi, "").replace(/\s*rayon(u)?\b/gi, "").trim();
                             const cInfo = findContractorInfo(r.contractor) || { workers: "—", machinery: "—", engineer: "—" };
                             return `
@@ -5036,7 +5265,7 @@ document.addEventListener("DOMContentLoaded", init);
                                         <span class="pill" style="--tone:${rTone}">${t(`status${r.status}`)}</span>
                                     </div>
                                     <div style="color:var(--ink-2);font-size:11.5px">
-                                        Plan: <b>${formatKm(r.totalKm)} m</b> · Faktiki: <b style="color:${rTone}">${formatKm(r.doneKm)} m (${rPct}%)</b> · Qalıb: <b>${formatKm(rLeft)} m</b>
+                                        Kabel: Verilən <b>${formatKm(r.totalKm / rDiv)} ${rUnit}</b> · Çəkilən: <b style="color:${rTone}">${formatKm(r.doneKm / rDiv)} ${rUnit} (${rPct}%)</b> · Qalıb: <b>${formatKm(rLeft / rDiv)} ${rUnit}</b>
                                     </div>
                                     <div class="info-exec-row">
                                         <span class="muted">İcraçı:</span>
