@@ -78,9 +78,9 @@ function toast(message, isError = false) {
     setTimeout(() => el.remove(), 3000);
 }
 
-/* Seçilmiş status filtrinə və axtarışa uyğun seqmentlər */
+/* Seçilmiş status filtrinə və axtarışa uyğun seqmentlər (Digər qovluğu status filtrindən təsirlənmir, açıq qalır) */
 function matchesFilters(project, item) {
-    if (state.statusFilter !== "all" && item.status !== state.statusFilter) return false;
+    if (project.category !== "other" && state.statusFilter !== "all" && item.status !== state.statusFilter) return false;
     if (!state.query) return true;
     const haystack = [project.name, item.id, item.name, item.pointA, item.pointB, item.contractor].join(" ");
     return haystack.toLocaleLowerCase("az").includes(state.query);
@@ -480,7 +480,9 @@ function saveProjectOverride(project) {
         status: project.status,
         type: project.type,
         startDate: project.startDate,
-        endDate: project.endDate
+        endDate: project.endDate,
+        customColor: project.customColor,
+        lineWidth: project.lineWidth
     };
     writeStore(PROJ_META_STORE_KEY, map);
 }
@@ -646,6 +648,12 @@ function fieldHtml(field, value) {
         control = `<select ${attrs}>${options}</select>`;
     } else if (field.type === "textarea") {
         control = `<textarea ${attrs} rows="5" placeholder="${esc(field.placeholder || "")}">${esc(value)}</textarea>`;
+    } else if (field.type === "color") {
+        const hexVal = normalizeColorCode(value, "#38BDF8");
+        control = `<div style="display:flex;align-items:center;gap:8px">
+            <input type="color" data-color-picker="${esc(field.key)}" value="${esc(hexVal)}" style="width:42px;height:34px;padding:2px;border-radius:8px;border:1px solid var(--line);background:var(--surface-2);cursor:pointer;flex-shrink:0">
+            <input ${attrs} type="text" value="${esc(value || hexVal)}" placeholder="#38BDF8" style="flex:1">
+        </div>`;
     } else {
         const step = field.type === "number" ? 'step="any" min="0"' : "";
         control = `<input ${attrs} type="${field.type || "text"}" ${step} value="${esc(value)}">`;
@@ -659,6 +667,18 @@ function openEditor(config) {
     $("editTitle").textContent = config.title;
     $("editError").textContent = "";
     $("editFields").innerHTML = config.fields.map(f => fieldHtml(f, config.values[f.key] ?? "")).join("");
+    $("editFields").querySelectorAll("[data-color-picker]").forEach(picker => {
+        const key = picker.dataset.colorPicker;
+        const textInp = $("editFields").querySelector(`input[name="${key}"]`);
+        if (!textInp) return;
+        picker.addEventListener("input", () => {
+            textInp.value = picker.value.toUpperCase();
+        });
+        textInp.addEventListener("input", () => {
+            const norm = normalizeColorCode(textInp.value, "");
+            if (norm) picker.value = norm;
+        });
+    });
     $("editDelete").hidden = !config.onDelete;
     $("editModal").showModal();
 }
@@ -705,10 +725,32 @@ async function deleteFromEditor() {
 }
 
 function editProject(project) {
+    const isOther = (project?.category || state.sidebarCategory) === "other";
+    const firstItem = project?.items?.[0];
+    const defaultOtherColor = normalizeColorCode(project?.customColor || firstItem?.customColor, firstItem?.isPolygon ? "#94A3B8" : "#38BDF8");
+    const defaultOtherWidth = normalizeLineWidth(project?.lineWidth || firstItem?.lineWidth, firstItem?.isPolygon ? 1.4 : 1.8);
+
     openEditor({
         title: t(project ? "editProject" : "addProject"),
-        values: project ? { name: project.name, status: project.status, project_type: project.type || "lines", start_date: project.startDate, end_date: project.endDate } : { status: "layihe", project_type: "lines" },
-        fields: [
+        values: project ? {
+            name: project.name,
+            status: project.status,
+            project_type: project.type || "lines",
+            start_date: project.startDate,
+            end_date: project.endDate,
+            custom_color: defaultOtherColor,
+            line_width: defaultOtherWidth
+        } : {
+            status: "layihe",
+            project_type: "lines",
+            custom_color: "#38BDF8",
+            line_width: 1.8
+        },
+        fields: isOther ? [
+            { key: "name", label: t("fieldName"), required: true, wide: true },
+            { key: "custom_color", label: "🎨 Xəttin / Sərhədin rəngi", type: "color", wide: true },
+            { key: "line_width", label: "📏 Xəttin qalınlığı (px)", type: "number", wide: true }
+        ] : [
             { key: "name", label: t("fieldName"), required: true, wide: true },
             { key: "project_type", label: "Layihə növü", type: "select", options: [["lines", "〰️ Magistral Xətt layihəsi"], ["points", "📍 Nöqtə / Antena layihəsi"]], wide: true },
             { key: "status", label: t("thStatus"), type: "select", options: statusOptions(), wide: true },
@@ -718,12 +760,26 @@ function editProject(project) {
         onSave: async row => {
             if (project) {
                 project.name = row.name;
-                project.status = row.status || project.status;
-                project.type = row.project_type || project.type;
-                project.startDate = row.start_date || "";
-                project.endDate = row.end_date || "";
+                if (isOther) {
+                    const col = normalizeColorCode(row.custom_color, defaultOtherColor);
+                    const wid = normalizeLineWidth(row.line_width, defaultOtherWidth);
+                    project.customColor = col;
+                    project.lineWidth = wid;
+                    (project.items || []).forEach(it => {
+                        it.customColor = col;
+                        it.lineWidth = wid;
+                        saveSegmentOverride(project.id, it);
+                    });
+                } else {
+                    project.status = row.status || project.status;
+                    project.type = row.project_type || project.type;
+                    project.startDate = row.start_date || "";
+                    project.endDate = row.end_date || "";
+                }
             } else {
                 const newId = `proj_local_${Date.now()}`;
+                const col = isOther ? normalizeColorCode(row.custom_color, "#38BDF8") : "";
+                const wid = isOther ? normalizeLineWidth(row.line_width, 1.8) : 0;
                 const newProj = {
                     id: newId,
                     name: row.name,
@@ -732,6 +788,8 @@ function editProject(project) {
                     category: state.sidebarCategory || "project",
                     startDate: row.start_date || "",
                     endDate: row.end_date || "",
+                    customColor: col,
+                    lineWidth: wid,
                     items: [],
                     isLocal: true
                 };
@@ -742,7 +800,10 @@ function editProject(project) {
             saveProjectOverride(project);
             saveImportedProjects();
             try {
-                await api.saveProjectRow(project.id, row);
+                const dbRow = { ...row };
+                delete dbRow.custom_color;
+                delete dbRow.line_width;
+                await api.saveProjectRow(project.id, dbRow);
             } catch (e) {
                 console.warn("api.saveProjectRow xətası (lokal qorunur):", e);
             }
@@ -809,13 +870,13 @@ function editSegment(project, item) {
             contractor: ""
         },
         fields: [
-            { key: "code", label: t("fieldCode"), required: true },
-            { key: "status", label: t("thStatus"), type: "select", options: statusOptions() },
+            { key: "code", label: t("fieldCode"), required: true, wide: isOther },
+            ...(!isOther ? [{ key: "status", label: t("thStatus"), type: "select", options: statusOptions() }] : []),
             ...(!isPoints && !isOther ? [{ key: "fiber_count", label: "🔌 Kabelin lif sayı (FO)", type: "select", wide: true, options: fiberOpts.map(fo => [fo, `🔌 ${fo}`]) }] : []),
             { key: "name", label: t("fieldName"), required: true, wide: true },
             ...(isOther ? [
-                { key: "custom_color", label: "🎨 Rəng kodu (məs: #38BDF8 və ya #94A3B8)", placeholder: "#38BDF8" },
-                { key: "line_width", label: "📏 Xətt qalınlığı (px)", type: "number" }
+                { key: "custom_color", label: "🎨 Rəng seçimi (və ya rəng kodu)", type: "color", wide: true },
+                { key: "line_width", label: "📏 Xətt qalınlığı (px)", type: "number", wide: true }
             ] : []),
             ...(!isOther ? [
                 { key: "point_a", label: `📍 ${t("pointA")}`, required: true },
@@ -1295,17 +1356,18 @@ function mapStyle() {
                 paint: {
                     "icon-opacity": ["case", ["get", "dim"], 0.28, 1]
                 } },
-            /* Kabel üzərində lif sayı (FO 48, FO 24, FO 12): ümumi baxışda və yaxınlaşdıqda sadə ağ mətn ilə kabelə paralel göstərilir */
+            /* Kabel üzərində lif sayı (FO 48, FO 24, FO 12): yalnız 2-3 hissədə, kiçik ölçüdə xəritədə yer tutmadan göstərilir */
             { id: "routes-fo-points", type: "symbol", source: "route-labels", minzoom: 4, filter: ["has", "foPointImg"],
                 layout: {
                     "icon-image": ["get", "foPointImg"],
                     "icon-rotate": ["get", "iconRotate"],
                     "icon-rotation-alignment": "map",
                     "icon-keep-upright": true,
-                    "icon-offset": [0, -7],
-                    "icon-size": ["interpolate", ["linear"], ["zoom"], 4, 0.78, 7, 0.88, 12, 0.96],
-                    "icon-allow-overlap": true,
-                    "icon-ignore-placement": true
+                    "icon-offset": [0, -5],
+                    "icon-size": ["interpolate", ["linear"], ["zoom"], 4, 0.55, 7, 0.66, 12, 0.76],
+                    "icon-padding": 26,
+                    "icon-allow-overlap": false,
+                    "icon-ignore-placement": false
                 },
                 paint: {
                     "icon-opacity": ["case", ["get", "dim"], 0.28, 1]
@@ -1468,7 +1530,7 @@ function toLngLatBounds(latLngPairs) {
     const valid = (latLngPairs || []).filter(p => Array.isArray(p) && p.length === 2);
     if (valid.length === 1) {
         const [lat, lng] = valid[0];
-        return new maplibregl.LngLatBounds([lng - 0.08, lat - 0.08], [lng + 0.08, lat + 0.08]);
+        return new maplibregl.LngLatBounds([lng - 0.015, lat - 0.015], [lng + 0.015, lat + 0.015]);
     }
     return valid.reduce((b, [lat, lng]) => b.extend([lng, lat]), new maplibregl.LngLatBounds());
 }
@@ -1478,8 +1540,14 @@ function fitHome(animate = true) {
 }
 
 function flyToCoords(coords) {
-    if (!coords || coords.length === 0) return;
-    map.fitBounds(toLngLatBounds(coords), { padding: MAP_PADDING, maxZoom: 13 });
+    if (!coords || coords.length === 0 || !map) return;
+    const valid = coords.filter(p => Array.isArray(p) && p.length >= 2 && !isNaN(p[0]) && !isNaN(p[1]));
+    if (valid.length === 0) return;
+    map.fitBounds(toLngLatBounds(valid), {
+        padding: { top: 65, left: 65, right: 90, bottom: 65 },
+        maxZoom: 15,
+        duration: 850
+    });
 }
 
 function switchBaseLayer(name) {
@@ -1641,20 +1709,20 @@ function ensureEndLabelImage(text) {
     return key;
 }
 
-/* Kabelin üzərində yazılan lif sayı (FO 48, FO 24, FO 12 və s.) — arxa fonsuz sadə ağ mətn */
+/* Kabelin üzərində yazılan lif sayı (FO 48, FO 24, FO 12 və s.) — kiçik ölçüdə arxa fonsuz sadə ağ mətn */
 function ensureFoBadgeImage(foText) {
     if (!map || !foText) return null;
     const cleanFo = normalizeFiberCount(foText, "FO 48");
     const light = currentBase === "street" || currentBase === "blank";
-    const key = `fo_plain:${light ? "l" : "d"}:${cleanFo}`;
+    const key = `fo_sm:${light ? "l" : "d"}:${cleanFo}`;
     if (map.hasImage(key)) return key;
 
     const ratio = 2;
-    const fontSize = 11.5;
-    const padX = 4;
-    const padY = 2.5;
+    const fontSize = 10;
+    const padX = 3;
+    const padY = 2;
     const measure = document.createElement("canvas").getContext("2d");
-    measure.font = `700 ${fontSize}px ${LABEL_FONT}`;
+    measure.font = `600 ${fontSize}px ${LABEL_FONT}`;
     const textW = measure.measureText(cleanFo).width;
     const W = Math.ceil(textW + padX * 2 + 2);
     const H = Math.ceil(fontSize + padY * 2 + 2);
@@ -1665,14 +1733,14 @@ function ensureFoBadgeImage(foText) {
     const ctx = canvas.getContext("2d");
     ctx.scale(ratio, ratio);
 
-    ctx.font = `700 ${fontSize}px ${LABEL_FONT}`;
+    ctx.font = `600 ${fontSize}px ${LABEL_FONT}`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.lineJoin = "round";
 
-    // Arxa fon qutusu yoxdur — sadə ağ mətn (kabelə paralel oxunsun deyə)
-    ctx.lineWidth = 3.2;
-    ctx.strokeStyle = light ? "rgba(255, 255, 255, 0.94)" : "rgba(4, 10, 20, 0.92)";
+    // Arxa fon qutusu yoxdur — sadə ağ mətn (kiçik və səliqəli)
+    ctx.lineWidth = 2.6;
+    ctx.strokeStyle = light ? "rgba(255, 255, 255, 0.94)" : "rgba(4, 10, 20, 0.90)";
     ctx.strokeText(cleanFo, W / 2, H / 2 + 0.5);
 
     ctx.fillStyle = light ? "#0f172a" : "#ffffff";
@@ -2072,41 +2140,17 @@ function drawRoutes() {
                 }
             });
 
-            // Hər kabel xəttinin öz üzərində paralel sadə ağ mətnlə lif sayı (FO 48, FO 24, FO 12 və s.)
+            // Hər seqmentin parçalarını ümumi marşrut qrupuna əlavə et ki, FO adı yalnız 2-3 hissədə çıxsın (qarışıqlıq yaratmasın)
             const itemSegs = [];
-            let itemLen = 0;
             for (let i = 0; i < line.length - 1; i++) {
                 const [x1, y1] = line[i];
                 const [x2, y2] = line[i + 1];
                 const len = Math.hypot(x2 - x1, y2 - y1);
                 if (len > 0) {
-                    itemSegs.push({ x1, y1, x2, y2, len, start: itemLen, item: r, tip: lineTip, color, dim, foImg });
-                    itemLen += len;
+                    itemSegs.push({ x1, y1, x2, y2, len, item: r, tip: lineTip, color, dim, foImg });
                 }
             }
-            if (foImg && itemSegs.length > 0 && itemLen > 0) {
-                const itemFracs = itemLen > 0.45 ? [0.25, 0.50, 0.75] : (itemLen > 0.16 ? [0.35, 0.68] : [0.50]);
-                sampleSegmentsAtFractions(itemSegs, itemLen, itemFracs).forEach(({ coord, angle }) => {
-                    const tooCloseFo = placedFoPoints.some(p => Math.hypot(p.lng - coord[0], p.lat - coord[1]) < 0.022);
-                    if (tooCloseFo) return;
-                    placedFoPoints.push({ lng: coord[0], lat: coord[1] });
-                    labelFeatures.push({
-                        type: "Feature",
-                        geometry: { type: "Point", coordinates: coord },
-                        properties: {
-                            color,
-                            dim,
-                            foPointImg: foImg,
-                            iconRotate: angle,
-                            projectId: project.id,
-                            itemId: r.id,
-                            tip: lineTip
-                        }
-                    });
-                });
-            }
 
-            // Çoxseqmentli KML xətləri üçün də qrup məlumatını saxla
             const groupKey = `${project.id}:${foLabel}`;
             if (!projectCableGroups[groupKey]) {
                 projectCableGroups[groupKey] = {
@@ -2145,14 +2189,14 @@ function drawRoutes() {
         }
     });
 
-    // Çoxseqmentli KML xətlərində əgər ayrı-ayrı seqmentlər çox qısadırsa, ümumi marşrut üzrə də FO lif sayını və başlanğıc/son nöqtələri təmin et
+    // Hər marşrut üzrə FO kabel adını yalnız 2-3 hissədə göstər (qarışıqlıq yaratmasın)
     Object.values(projectCableGroups).forEach(grp => {
         const { project, segs, totalLen, firstPoint, lastPoint, firstItem, lastItem, firstNameA, lastNameB, color, dim } = grp;
         if (segs.length === 0 || totalLen <= 0) return;
 
-        const foFractions = totalLen < 0.08 ? [0.50] : [0.25, 0.50, 0.75];
+        const foFractions = totalLen < 0.12 ? [0.50] : (totalLen < 0.45 ? [0.32, 0.68] : [0.22, 0.50, 0.78]);
         sampleSegmentsAtFractions(segs, totalLen, foFractions).forEach(({ coord, angle, seg }) => {
-            const tooCloseFo = placedFoPoints.some(p => Math.hypot(p.lng - coord[0], p.lat - coord[1]) < 0.022);
+            const tooCloseFo = placedFoPoints.some(p => Math.hypot(p.lng - coord[0], p.lat - coord[1]) < 0.085);
             if (tooCloseFo) return;
             placedFoPoints.push({ lng: coord[0], lat: coord[1] });
             labelFeatures.push({
@@ -2409,7 +2453,7 @@ function renderChips() {
 }
 
 function renderKpis() {
-    const sum = totals(visibleEntries().map(e => e.item));
+    const sum = totals(visibleEntries().filter(e => e.project.category !== "other").map(e => e.item));
     const left = Math.max(0, sum.plan - sum.done);
     const pct = percent(sum.done, sum.plan);
     const kpi = (label, value, unit) => `<div class="kpi"><small>${label}</small><b>${value}<em>${unit}</em></b></div>`;
@@ -2443,7 +2487,8 @@ function renderProjects() {
     $("foStatusCoupler")?.classList.toggle("active", state.activeFolders.size > 0);
     document.querySelector("#listView .filters")?.classList.toggle("fo-fed", state.activeFolders.size > 0);
 
-    if ($("statusChips")) $("statusChips").hidden = false;
+    const onlyOtherActive = state.activeFolders.size === 1 && state.activeFolders.has("other");
+    if ($("statusChips")) $("statusChips").hidden = onlyOtherActive;
     if ($("addProjectBtn")) $("addProjectBtn").hidden = !isAdmin() || state.activeFolders.size === 0;
 
     const folderMeta = {
@@ -2635,7 +2680,7 @@ function renderDetail() {
 }
 
 function renderTable() {
-    const entries = visibleEntries();
+    const entries = visibleEntries().filter(e => e.project.category !== "other");
     const selected = selectedEntry();
     $("drawerCount").textContent = entries.length;
     $("tableHead").innerHTML = `<tr>
@@ -3383,21 +3428,50 @@ function bindEvents() {
         renderAll();
     });
 
+    let lastListClickKey = "";
+    let lastListClickTime = 0;
+
     $("projectList").addEventListener("click", async e => {
         const button = e.target.closest("[data-action]");
         if (!button) return;
-        const project = state.projects.find(p => p.id === button.closest(".project").dataset.id);
+        const projEl = button.closest(".project");
+        if (!projEl) return;
+        const project = state.projects.find(p => p.id === projEl.dataset.id);
+        if (!project) return;
         const action = button.dataset.action;
+        const now = Date.now();
 
         if (action === "toggle") {
             if (state.visibleIds.has(project.id)) state.visibleIds.delete(project.id);
             else state.visibleIds.add(project.id);
         } else if (action === "expand") {
+            const clickKey = `expand:${project.id}`;
+            if (now - lastListClickTime < 450 && lastListClickKey === clickKey) {
+                lastListClickTime = 0;
+                state.expandedIds.add(project.id);
+                state.visibleIds.add(project.id);
+                renderAll();
+                flyToCoords(project.items.flatMap(i => i.coords));
+                return;
+            }
+            lastListClickKey = clickKey;
+            lastListClickTime = now;
             if (state.expandedIds.has(project.id)) state.expandedIds.delete(project.id);
             else state.expandedIds.add(project.id);
         } else if (action === "focus") {
-            // 1x Sol klik: Xəritədə yaxınlaşdırmadan yalnız status pəncərəsini aç
             const item = project.items.find(r => r.id === button.dataset.item);
+            if (!item) return;
+            const clickKey = `focus:${project.id}:${item.id}`;
+            if (now - lastListClickTime < 450 && lastListClickKey === clickKey) {
+                // 2x Sol klik: Xəritədə həmin xəttə / nöqtəyə yaxınlaş və göstər
+                lastListClickTime = 0;
+                state.visibleIds.add(project.id);
+                selectSegment(project, item, true);
+                return;
+            }
+            // 1x Sol klik: Xəritədə yaxınlaşdırmadan yalnız status pəncərəsini aç
+            lastListClickKey = clickKey;
+            lastListClickTime = now;
             selectSegment(project, item, false);
             return;
         } else if (action === "editSeg") {
@@ -3416,30 +3490,12 @@ function bindEvents() {
         renderAll();
     });
 
-    // 2x Sol klik (Double click): Sol siyahıda xəttin və ya layihənin üzərinə 2 dəfə sol klik edəndə xəritədə göstər (zoom et)
-    $("projectList").addEventListener("dblclick", e => {
-        const projEl = e.target.closest(".project");
-        if (!projEl) return;
-        const project = state.projects.find(p => p.id === projEl.dataset.id);
-        if (!project) return;
-        state.visibleIds.add(project.id);
-        const focusBtn = e.target.closest('[data-action="focus"]');
-        if (focusBtn) {
-            const item = project.items.find(r => r.id === focusBtn.dataset.item);
-            if (item) {
-                selectSegment(project, item, true);
-                return;
-            }
-        }
-        renderAll();
-        flyToCoords(project.items.flatMap(i => i.coords));
-    });
-
     $("tableBody").addEventListener("click", e => {
         const row = e.target.closest("tr");
         if (!row) return;
-        const { project, item } = visibleEntries()[Number(row.dataset.index)];
-        selectSegment(project, item);
+        const entries = visibleEntries().filter(ent => ent.project.category !== "other");
+        const entry = entries[Number(row.dataset.index)];
+        if (entry) selectSegment(entry.project, entry.item);
     });
 
     $("zoomInBtn").addEventListener("click", () => map.zoomIn());
@@ -3620,11 +3676,11 @@ document.addEventListener("DOMContentLoaded", init);
                             <span>Adı (Name / Məntəqə və ya Xətt adı) *</span>
                             <input class="input" type="text" id="mmItemName" required placeholder="Məs: Göyçay Mərkəz əlavə xətt / Svetofor #12">
                         </label>
-                        <label>
+                        <label id="mmStatusWrap">
                             <span>Status *</span>
                             <select class="input" id="mmStatusSelect"></select>
                         </label>
-                        <label>
+                        <label id="mmContractorWrap">
                             <span>İş icraçısı</span>
                             <select class="input" id="mmContractorSelect"></select>
                         </label>
@@ -3632,6 +3688,19 @@ document.addEventListener("DOMContentLoaded", init);
                             <span>🔌 Kabelin lif sayı (FO 48, FO 24, FO 12...) *</span>
                             <select class="input" id="mmFiberSelect"></select>
                         </label>
+                        <div class="wide" id="mmOtherStyleWrap" style="grid-column:1 / -1;display:grid;grid-template-columns:1fr 1fr;gap:10px" hidden>
+                            <label>
+                                <span>🎨 Rəng seçimi</span>
+                                <span style="display:flex;align-items:center;gap:6px">
+                                    <input type="color" id="mmColorPicker" value="#38BDF8" style="width:38px;height:34px;padding:2px;border-radius:8px;border:1px solid var(--line);background:var(--surface-2);cursor:pointer;flex-shrink:0">
+                                    <input class="input" type="text" id="mmCustomColor" value="#38BDF8" placeholder="#38BDF8">
+                                </span>
+                            </label>
+                            <label>
+                                <span>📏 Xətt qalınlığı (px)</span>
+                                <input class="input" type="number" step="0.2" min="0.5" max="12" id="mmLineWidth" value="1.8">
+                            </label>
+                        </div>
                         <label id="mmPointAWrap">
                             <span>📍 Başlanğıc nöqtə (A Konum)</span>
                             <input class="input" type="text" id="mmPointA" value="Mərkəz">
@@ -3640,11 +3709,11 @@ document.addEventListener("DOMContentLoaded", init);
                             <span>📍 Son nöqtə (B Konum)</span>
                             <input class="input" type="text" id="mmPointB" value="Şəbəkə">
                         </label>
-                        <label>
+                        <label id="mmPlanWrap">
                             <span id="mmPlanLabel">1. Nəzərdə tutulan məsafə (km)</span>
                             <input class="input" type="number" step="any" min="0" id="mmPlanVal" value="0">
                         </label>
-                        <label>
+                        <label id="mmDoneWrap">
                             <span id="mmDoneLabel">2. Faktiki çəkilən məsafə (km)</span>
                             <input class="input" type="number" step="any" min="0" id="mmDoneVal" value="0">
                         </label>
@@ -3677,6 +3746,13 @@ document.addEventListener("DOMContentLoaded", init);
                 toast("Xəritədə nöqtələri sürüşdürün və ya əlavə edin, sonra '✔ Tamamla' basın");
             });
             $("mmProjectSelect")?.addEventListener("change", syncMmFormForProject);
+            $("mmColorPicker")?.addEventListener("input", () => {
+                if ($("mmCustomColor")) $("mmCustomColor").value = $("mmColorPicker").value.toUpperCase();
+            });
+            $("mmCustomColor")?.addEventListener("input", () => {
+                const norm = normalizeColorCode($("mmCustomColor").value, "");
+                if (norm && $("mmColorPicker")) $("mmColorPicker").value = norm;
+            });
             $("mmStatusSelect")?.addEventListener("change", () => {
                 const st = $("mmStatusSelect").value;
                 if (st === "bitmis" || st === "tehvil") {
@@ -4206,13 +4282,20 @@ document.addEventListener("DOMContentLoaded", init);
         if ($("mmNewProjWrap")) $("mmNewProjWrap").hidden = !isNewProj;
 
         const proj = state.projects.find(p => p.id === val);
+        const activeCat = [...state.activeFolders][0] || "project";
+        const isOther = proj ? proj.category === "other" : (isNewProj && activeCat === "other");
         const isPointMode = mmCreateState.mode === "point" || (proj && (proj.type === "points" || proj.category === "nim"));
         const isNim = proj?.category === "nim";
 
-        if ($("mmPointAWrap")) $("mmPointAWrap").hidden = mmCreateState.mode === "point";
-        if ($("mmPointBWrap")) $("mmPointBWrap").hidden = mmCreateState.mode === "point";
-        if ($("mmFiberWrap")) $("mmFiberWrap").hidden = mmCreateState.mode === "point";
-        if ($("mmAntennasWrap")) $("mmAntennasWrap").hidden = !(isPointMode && !isNim);
+        if ($("mmStatusWrap")) $("mmStatusWrap").hidden = isOther;
+        if ($("mmContractorWrap")) $("mmContractorWrap").hidden = isOther;
+        if ($("mmOtherStyleWrap")) $("mmOtherStyleWrap").hidden = !isOther;
+        if ($("mmPlanWrap")) $("mmPlanWrap").hidden = isOther;
+        if ($("mmDoneWrap")) $("mmDoneWrap").hidden = isOther;
+        if ($("mmPointAWrap")) $("mmPointAWrap").hidden = isOther || mmCreateState.mode === "point";
+        if ($("mmPointBWrap")) $("mmPointBWrap").hidden = isOther || mmCreateState.mode === "point";
+        if ($("mmFiberWrap")) $("mmFiberWrap").hidden = isOther || mmCreateState.mode === "point";
+        if ($("mmAntennasWrap")) $("mmAntennasWrap").hidden = isOther || !(isPointMode && !isNim);
 
         const lenM = calcCoordsMeters(mmCreateState.coords);
         if (isPointMode) {
@@ -4338,18 +4421,23 @@ document.addEventListener("DOMContentLoaded", init);
 
         const newItemId = `${mmCreateState.mode === "point" ? "PT" : "LN"}-${Date.now().toString().slice(-4)}`;
         const fiberCount = normalizeFiberCount($("mmFiberSelect")?.value || "FO 48");
+        const isTargetOther = targetProj.category === "other";
+        const customColor = isTargetOther ? normalizeColorCode($("mmCustomColor")?.value || $("mmColorPicker")?.value, "#38BDF8") : "";
+        const lineWidth = isTargetOther ? normalizeLineWidth($("mmLineWidth")?.value, 1.8) : 0;
         const newItem = {
             id: newItemId,
             name: itemName,
-            pointA,
-            pointB,
+            pointA: isTargetOther ? "" : pointA,
+            pointB: isTargetOther ? "" : pointB,
             startDate: new Date().toISOString().slice(0, 10),
             endDate: "",
-            contractor,
+            contractor: isTargetOther ? "" : contractor,
             totalKm: planVal,
             doneKm: doneVal,
             status,
             fiberCount,
+            customColor,
+            lineWidth,
             closures: 0,
             manholes: 0,
             antennas: mmCreateState.mode === "point" ? Math.max(1, antennas) : antennas,
