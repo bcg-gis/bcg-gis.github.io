@@ -1863,18 +1863,19 @@ function ensureLabelImage(text) {
     return key;
 }
 
-/* Rayon xülasə nöqtəsi — uzaqdan baxışda yalnız rayon adı (status rəngində, kontrast haşiyə ilə) */
-function ensureSummaryNameImage(text, color) {
+/* Rayon xülasə nöqtəsi — uzaqdan baxışda rayon adı və statusu (məs: Şəki · İcrada — status rəngində, kontrast haşiyə ilə) */
+function ensureSummaryNameImage(text, statusText, color) {
     if (!map || !text) return null;
+    const displayText = statusText ? `${text} · ${statusText}` : text;
     const light = isLightBaseMap();
-    const key = `sumname_v1:${light ? "l" : "d"}:${color}:${text}`;
+    const key = `sumname_v2:${light ? "l" : "d"}:${color}:${displayText}`;
     if (map.hasImage(key)) return key;
     const ratio = 2;
-    const fontSize = 13;
+    const fontSize = 12.5;
     const pad = 4;
     const measure = document.createElement("canvas").getContext("2d");
     measure.font = `800 ${fontSize}px ${LABEL_FONT}`;
-    const W = Math.ceil(measure.measureText(text).width + pad * 2);
+    const W = Math.ceil(measure.measureText(displayText).width + pad * 2);
     const H = Math.ceil(fontSize * 1.3 + pad * 2);
     const canvas = document.createElement("canvas");
     canvas.width = W * ratio;
@@ -1887,9 +1888,9 @@ function ensureSummaryNameImage(text, color) {
     ctx.lineJoin = "round";
     ctx.lineWidth = 3.6;
     ctx.strokeStyle = light ? "rgba(255,255,255,0.98)" : "rgba(3,7,18,0.95)";
-    ctx.strokeText(text, W / 2, H / 2 + 0.5);
+    ctx.strokeText(displayText, W / 2, H / 2 + 0.5);
     ctx.fillStyle = color;
-    ctx.fillText(text, W / 2, H / 2 + 0.5);
+    ctx.fillText(displayText, W / 2, H / 2 + 0.5);
     map.addImage(key, ctx.getImageData(0, 0, canvas.width, canvas.height), { pixelRatio: ratio });
     return key;
 }
@@ -2180,8 +2181,10 @@ function sampleSegmentsAtFractions(segs, totalLen, fractions) {
 function isSummaryItem(r) {
     if (!r) return false;
     if (r.summary) return true;
+    if ((r.antennas || 0) > 0) return true;
+    if (r.totalKm > 0 || r.doneKm > 0) return true;
     const p = r.props || {};
-    return Object.keys(p).some(k => /^(kabel_?verilen|kabel_?cekilen|antena_?say)/i.test(k.replace(/[\s_\-\.]+/g, "_")));
+    return Object.keys(p).some(k => /^(kabel_?verilen|kabel_?cekilen|antena|verilen|cekilen|plan|faktiki|m$)/i.test(k.replace(/[\s_\-\.]+/g, "_")));
 }
 
 function drawRoutes() {
@@ -2480,7 +2483,7 @@ function drawRoutes() {
                 projectId: project.id,
                 itemId: r.id,
                 tip,
-                summaryNameImg: ensureSummaryNameImage(rayonName, stColor),
+                summaryNameImg: ensureSummaryNameImage(rayonName, stText, stColor),
                 summaryCardImg: ensureSummaryCardImage({
                     name: rayonName, color: stColor, statusText: stText,
                     antennas: r.antennas || 0, doneKm: cekilenKm, totalKm: verilenKm, pct, contractor: r.contractor || ""
@@ -2501,10 +2504,12 @@ function drawRoutes() {
 
             const cleanName = String(r.name || "").replace(/\s*\(?\bFaz[-\s]*[12]\b\)?/gi, "").replace(/\s*rayon(u)?(?![a-zəçşğıöü])/gi, "").trim();
             const antCount = Number(r.antennas || 0);
-            const antPart = antCount ? `${antCount} antena · ` : "";
-            const label = `${cleanName}\n${antPart}Kabel: ${formatKm(r.totalKm)} / ${formatKm(r.doneKm)} m`;
-            const shortLabel = `${cleanName}\n${antCount ? `${antCount} ant · ` : ""}${formatKm((Number(r.totalKm) || 0) / 1000)} km`;
-            const tip = `<b>${shape.symbol} ${esc(cleanName)}</b><small>Layihə: <b>${esc(project.name)}</b><br>📡 ${r.antennas || 0} antena · Plan: ${formatKm(r.totalKm)} m / Faktiki: ${formatKm(r.doneKm)} m (${percent(r.doneKm, r.totalKm)}%)${cExtra ? `<br>${cExtra}` : ""}</small>`;
+            const antPart = antCount ? `${antCount} ant · ` : "";
+            const stText = t(`status${r.status}`);
+            const distPart = r.totalKm ? `Kabel: ${formatKm(r.doneKm / 1000)} / ${formatKm(r.totalKm / 1000)} km` : "";
+            const label = `${cleanName} · ${stText}\n${antPart}${distPart}`.trim();
+            const shortLabel = `${cleanName} · ${stText}${antCount ? ` (${antCount} ant)` : ""}`;
+            const tip = `<b>${shape.symbol} ${esc(cleanName)}</b><small>Layihə: <b>${esc(project.name)}</b><br><b style="color:${color}">${esc(stText)}</b>${antCount ? ` · 📡 ${antCount} antena` : ""} · Plan: ${formatKm(r.totalKm)} m / Faktiki: ${formatKm(r.doneKm)} m (${percent(r.doneKm, r.totalKm)}%)${cExtra ? `<br>${cExtra}` : ""}</small>`;
 
             const ptProps = {
                 isRayonPoint: true,
@@ -3224,6 +3229,81 @@ function getPropCaseInsensitive(props, ...aliases) {
     return undefined;
 }
 
+function parseDistanceMeters(rawVal, colName = "") {
+    if (rawVal === undefined || rawVal === null) return null;
+    const str = String(rawVal).trim();
+    if (!str || /^(?:<null>|null|none|n\/a|-+|—+)$/i.test(str)) return null;
+
+    const hasKm = /km/i.test(str) || /_km/i.test(colName);
+    const hasM = !hasKm && (/m\b/i.test(str) || /_m$/i.test(colName) || colName.toLowerCase() === "m");
+
+    const num = Number(str.replace(/,/g, ".").replace(/[^\d.-]/g, ""));
+    if (isNaN(num)) return null;
+
+    if (hasKm) return Math.round(num * 1000);
+    if (hasM) return Math.round(num);
+    // Vahid yazılmayıbsa: 100-dən böyükdürsə metrdir (məs: 6800, 3500), kiçikdirsə km-dir (məs: 6.8, 3.5)
+    return num >= 100 ? Math.round(num) : Math.round(num * 1000);
+}
+
+function parseAntennaCount(p, nameVal = "", rawDesc = "") {
+    const raw = getPropCaseInsensitive(
+        p,
+        "antena_say", "antena_sayi", "antena_sayı", "antenasay", "antenasayi",
+        "antenna_count", "antennas", "antena", "antenna", "say", "sayi", "sayı",
+        "ant_say", "antsay", "ant", "bts"
+    );
+    if (raw !== undefined) {
+        const n = parseInt(String(raw).replace(/[^\d]/g, ""), 10);
+        if (!isNaN(n)) return n;
+    }
+    const combined = `${nameVal || ""} ${rawDesc || ""}`;
+    const m = combined.match(/(?:^|[^\d])(\d+)\s*(?:antena|antenna|ant\b|bts\b)/i);
+    if (m) {
+        const n = parseInt(m[1], 10);
+        if (!isNaN(n)) return n;
+    }
+    return 0;
+}
+
+function parsePointDistances(p, nameVal = "", rawDesc = "") {
+    const rawVerilen = getPropCaseInsensitive(
+        p,
+        "kabel_verilen_m", "kabel_verilen_km", "kabel_verilen", "verilen_m", "verilen_km", "verilen",
+        "kabel_plan_m", "kabel_plan_km", "kabel_plan", "plan_m", "plan_km", "plan",
+        "kabel_m", "kabel_km", "kabel", "mesafe_m", "mesafe_km", "mesafe", "uzunluq_m", "uzunluq_km", "uzunluq",
+        "total_m", "total_km", "totalm", "totalkm", "m", "km"
+    );
+    const rawCekilen = getPropCaseInsensitive(
+        p,
+        "kabel_cekilen_m", "kabel_çəkilən_m", "kabel_cekilen_km", "kabel_çəkilən_km", "kabel_cekilen", "kabel_çəkilən",
+        "cekilen_m", "çəkilən_m", "cekilen_km", "çəkilən_km", "cekilen", "çəkilən",
+        "kabel_faktiki_m", "kabel_faktiki_km", "kabel_faktiki", "faktiki_m", "faktiki_km", "faktiki",
+        "done_m", "done_km", "done", "icra_m", "icra_km", "icra"
+    );
+
+    let planMeters = parseDistanceMeters(rawVerilen);
+    let doneMeters = parseDistanceMeters(rawCekilen);
+
+    if (planMeters === null) {
+        const combined = `${nameVal || ""} ${rawDesc || ""}`;
+        const rangeMatch = combined.match(/(\d+(?:[.,]\d+)?)\s*(km|m)?\s*[-–/]\s*(\d+(?:[.,]\d+)?)\s*(km|m)?/i);
+        if (rangeMatch) {
+            const v1 = rangeMatch[1];
+            const u1 = rangeMatch[2] || rangeMatch[4] || "";
+            const v2 = rangeMatch[3];
+            const u2 = rangeMatch[4] || rangeMatch[2] || "";
+            planMeters = parseDistanceMeters(v1 + u1);
+            doneMeters = parseDistanceMeters(v2 + u2);
+        }
+    }
+
+    return {
+        planMeters: planMeters !== null ? planMeters : 0,
+        doneMeters: doneMeters !== null ? doneMeters : 0
+    };
+}
+
 function linesFromGeoJson(data) {
     const items = [];
     const addGeometry = (geometry, props = {}) => {
@@ -3666,40 +3746,32 @@ function projectFromFile(fileName, lines, polyFillMode = "auto") {
             if (!pointB) pointB = "B";
 
             if (line.isPoint || line.coords.length === 1) {
-                // Rayon xülasə nöqtəsi: Rayon, Antena_say, Kabel_verilen_km, Kabel_cekilen_km, Status, Icraci
-                const rawVerilenKm = getPropCaseInsensitive(p, "Kabel_verilen_km", "kabel_verilen", "verilen_km", "kabel_plan_km");
-                const rawCekilenKm = getPropCaseInsensitive(p, "Kabel_cekilen_km", "kabel_çəkilən_km", "kabel_cekilen", "cekilen_km", "kabel_faktiki_km");
-                const rawAntenaSay = getPropCaseInsensitive(p, "Antena_say", "antena_sayi", "antenna_count");
-                if (rawVerilenKm !== undefined || rawCekilenKm !== undefined || rawAntenaSay !== undefined) {
-                    const rayonName = getPropCaseInsensitive(p, "Rayon", "rayon_adi") || nameVal;
-                    const verilenKm = parseAttrNumber(rawVerilenKm, 0);
-                    const cekilenKm = parseAttrNumber(rawCekilenKm, 0);
-                    return {
-                        id: `RS-${String(index + 1).padStart(2, "0")}`,
-                        name: String(rayonName || nameVal).replace(/\s*rayon(u)?(?![a-zəçşğıöü])/gi, "").trim(),
-                        rayon: rayonName,
-                        summary: true,
-                        pointA: rayonName || "Mərkəz", pointB: "Şəbəkə",
-                        startDate: "", endDate: "", contractor,
-                        // Saytın daxili qaydası: nöqtələrdə kabel metr ilə saxlanılır (km × 1000)
-                        totalKm: Math.round(verilenKm * 1000),
-                        doneKm: Math.round(cekilenKm * 1000),
-                        status, customColor: "", lineWidth, isPolygon: false, closures: 0, manholes: 0,
-                        antennas: Math.round(parseAttrNumber(rawAntenaSay, 0)),
-                        props: p,
-                        coords: line.coords
-                    };
-                }
-                const planM = Number(getPropCaseInsensitive(p, "plan_m", "planM", "total_m", "total_km", "totalKm") || 10000);
-                const doneM = Math.min(planM, Number(getPropCaseInsensitive(p, "done_m", "doneM", "done_km", "doneKm") || 0));
-                const antennas = Number(getPropCaseInsensitive(p, "antennas", "antena", "antenna", "say") || 10);
+                // Rayon / Antena nöqtəsi: Antena_say, Verilən və Çəkilən kabel məsafəsi (metr və ya km), Status, İcraçı
+                const rawDesc = p._rawDescription || "";
+                const antennas = parseAntennaCount(p, nameVal, rawDesc);
+                const { planMeters, doneMeters } = parsePointDistances(p, nameVal, rawDesc);
+                const rayonName = getPropCaseInsensitive(p, "Rayon", "rayon_adi", "rayonu", "sheher", "bolge") || nameVal;
+                const cleanPointName = String(rayonName || nameVal).replace(/\s*rayon(u)?(?![a-zəçşğıöü])/gi, "").trim();
+                const isSummary = Boolean(antennas > 0 || planMeters > 0 || doneMeters > 0);
+
                 return {
-                    id: `PT-${String(index + 1).padStart(2, "0")}`,
-                    name: nameVal,
-                    pointA: pointA !== "A" ? pointA : (nameVal || "Mərkəz"),
-                    pointB: pointB !== "B" ? pointB : "Şəbəkə",
+                    id: `${isSummary ? "RS" : "PT"}-${String(index + 1).padStart(2, "0")}`,
+                    name: cleanPointName,
+                    rayon: rayonName,
+                    summary: isSummary,
+                    pointA: cleanPointName || "Mərkəz",
+                    pointB: "Şəbəkə",
                     startDate: "", endDate: "", contractor,
-                    totalKm: planM, doneKm: doneM, status, customColor, lineWidth, isPolygon: false, closures: 0, manholes: 0, antennas,
+                    totalKm: planMeters,
+                    doneKm: doneMeters,
+                    status,
+                    customColor: "",
+                    lineWidth,
+                    isPolygon: false,
+                    closures: 0,
+                    manholes: 0,
+                    antennas,
+                    props: p,
                     coords: line.coords
                 };
             }
