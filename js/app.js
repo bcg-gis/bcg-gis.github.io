@@ -209,6 +209,121 @@ async function handleLogout() {
 }
 
 const STORAGE_IMPORTED_KEY = "bcg.imported_projects.v2";
+const SEG_META_STORE_KEY = "bcg.seg.meta.v1";
+const PROJ_META_STORE_KEY = "bcg.proj.meta.v1";
+
+/* Kabel lif sayı seçimləri — istəyə uyğun ardıcıllıqla (FO 48, FO 24, FO 12 və s.) */
+const FIBER_OPTIONS = [
+    "FO 48",
+    "FO 24",
+    "FO 12",
+    "FO 96",
+    "FO 72",
+    "FO 36",
+    "FO 16",
+    "FO 8",
+    "FO 4",
+    "FO 144"
+];
+
+function normalizeFiberCount(val, fallback = "") {
+    if (!val) return fallback;
+    const s = String(val).trim().toUpperCase();
+    if (!s || s === "-" || s === "YOXDUR" || s === "NONE") return fallback;
+    const m = s.match(/(\d+)/);
+    if (m) return `FO ${m[1]}`;
+    if (s.startsWith("FO")) return s;
+    return `FO ${s}`;
+}
+
+function getSegmentFiber(r, project) {
+    if (!r) return "FO 48";
+    if (r.fiberCount) return normalizeFiberCount(r.fiberCount, "FO 48");
+    const combined = `${r.name || ""} ${project?.name || ""}`;
+    const match = combined.match(/\b(?:FO[-\s]*(\d+)|(\d+)[-\s]*FO)\b/i);
+    if (match) return `FO ${match[1] || match[2]}`;
+    const defaults = ["FO 48", "FO 24", "FO 12"];
+    let hash = 0;
+    const key = String(r.id || r.name || "");
+    for (let i = 0; i < key.length; i++) hash = (hash + key.charCodeAt(i)) % defaults.length;
+    return defaults[hash];
+}
+
+function resolveLineEndNames(r, project) {
+    if (!r) return { nameA: "", nameB: "", aName: "", bName: "", cleanA: "", cleanB: "" };
+    let rawA = String(r.pointA || "").replace(/^[AB]\s*[:.\-–—]\s*/i, "").trim();
+    let rawB = String(r.pointB || "").replace(/^[AB]\s*[:.\-–—]\s*/i, "").trim();
+    const segName = String(r.name || "").replace(/^[AB]\s*[:.\-–—]\s*/i, "").trim();
+    const projName = String(project?.name || "").replace(/^Digər\s*:\s*/i, "").trim();
+
+    if ((!rawA || /^(a|mərkəz|merkez)$/i.test(rawA) || !rawB || /^(b|şəbəkə|sebeke)$/i.test(rawB)) && /[-–—➔]/.test(segName)) {
+        const parts = segName.split(/[-–—➔]+/).map(s => s.trim()).filter(Boolean);
+        if (parts.length >= 2) {
+            if (!rawA || /^(a|mərkəz|merkez)$/i.test(rawA)) rawA = parts[0];
+            if (!rawB || /^(b|şəbəkə|sebeke)$/i.test(rawB)) rawB = parts[parts.length - 1];
+        }
+    }
+
+    const isGenericSeg = /^(?:idxal\s*x[əe]tti|imported\s*line|x[əe]tt|line|imp)[-\s]*\d*$/i.test(segName);
+    const fallbackName = !isGenericSeg && segName ? segName : projName;
+
+    const nameA = (rawA && !/^[ab]$/i.test(rawA)) ? rawA : (fallbackName || "");
+    const nameB = (rawB && !/^[ab]$/i.test(rawB)) ? rawB : (fallbackName || "");
+    return { nameA, nameB, aName: nameA, bName: nameB, cleanA: nameA, cleanB: nameB };
+}
+
+function saveProjectOverride(project) {
+    if (!project || !project.id) return;
+    const map = readStore(PROJ_META_STORE_KEY, {}) || {};
+    map[project.id] = {
+        name: project.name,
+        status: project.status,
+        type: project.type,
+        startDate: project.startDate,
+        endDate: project.endDate
+    };
+    writeStore(PROJ_META_STORE_KEY, map);
+}
+
+function saveSegmentOverride(projectId, item) {
+    if (!projectId || !item || !item.id) return;
+    const map = readStore(SEG_META_STORE_KEY, {}) || {};
+    map[`${projectId}:${item.id}`] = {
+        name: item.name,
+        pointA: item.pointA,
+        pointB: item.pointB,
+        status: item.status,
+        contractor: item.contractor,
+        totalKm: item.totalKm,
+        doneKm: item.doneKm,
+        antennas: item.antennas,
+        fiberCount: item.fiberCount
+    };
+    writeStore(SEG_META_STORE_KEY, map);
+}
+
+function applySavedMetaOverrides() {
+    try {
+        const pMap = readStore(PROJ_META_STORE_KEY, {}) || {};
+        const sMap = readStore(SEG_META_STORE_KEY, {}) || {};
+        (state.projects || []).forEach(p => {
+            if (pMap[p.id]) {
+                Object.assign(p, pMap[p.id]);
+            }
+            (p.items || []).forEach(r => {
+                const key = `${p.id}:${r.id}`;
+                if (sMap[key]) {
+                    Object.assign(r, sMap[key]);
+                }
+                if (!r.fiberCount && p.type !== "points" && p.category !== "nim") {
+                    r.fiberCount = getSegmentFiber(r, p);
+                }
+            });
+        });
+    } catch (e) {
+        console.warn("applySavedMetaOverrides error:", e);
+    }
+}
 
 function getStoredImportedProjects() {
     return readStore(STORAGE_IMPORTED_KEY, []);
@@ -250,6 +365,7 @@ async function enterApp(user) {
         }
     });
 
+    applySavedMetaOverrides();
     state.projects.forEach(p => state.visibleIds.add(p.id));
     tools.setUser(user.id);
     renderRole();
@@ -298,6 +414,7 @@ async function reloadData() {
         console.warn("api.loadAll xətası, lokal məlumatlar saxlanılır:", err);
     }
 
+    applySavedMetaOverrides();
     state.projects.forEach(p => {
         if (!known.has(p.id) || knownVisible.has(p.id) || p.imported) state.visibleIds.add(p.id);
     });
@@ -410,6 +527,7 @@ function editProject(project) {
                 state.visibleIds.add(newId);
                 project = newProj;
             }
+            saveProjectOverride(project);
             saveImportedProjects();
             try {
                 await api.saveProjectRow(project.id, row);
@@ -452,19 +570,23 @@ function useLastDrawing() {
 function editSegment(project, item) {
     const isPoints = project?.type === "points";
     const contractorNames = [...new Set(["BCG (Öz briqadamız)", ...Object.keys(state.contractors)])];
+    const currentFiber = item ? getSegmentFiber(item, project) : "FO 48";
+    const fiberOpts = FIBER_OPTIONS.includes(currentFiber) ? FIBER_OPTIONS : [currentFiber, ...FIBER_OPTIONS];
     openEditor({
         title: t(item ? "editSegment" : "addSegment"),
         values: item ? {
             code: item.id, name: item.name, point_a: item.pointA, point_b: item.pointB, start_date: item.startDate, end_date: item.endDate,
             contractor: item.contractor, total_km: item.totalKm, done_km: item.doneKm, status: item.status,
+            fiber_count: currentFiber,
             antennas: item.antennas || 0, coords: coordsToText(item.coords)
-        } : { status: "layihe", total_km: 0, done_km: 0, antennas: 0, point_a: "Mərkəz", point_b: "Şəbəkə", contractor: "BCG (Öz briqadamız)" },
+        } : { status: "layihe", fiber_count: "FO 48", total_km: 0, done_km: 0, antennas: 0, point_a: "Mərkəz", point_b: "Şəbəkə", contractor: "BCG (Öz briqadamız)" },
         fields: [
             { key: "code", label: t("fieldCode"), required: true },
             { key: "status", label: t("thStatus"), type: "select", options: statusOptions() },
+            ...(!isPoints ? [{ key: "fiber_count", label: "🔌 Kabelin lif sayı (FO)", type: "select", wide: true, options: fiberOpts.map(fo => [fo, `🔌 ${fo}`]) }] : []),
             { key: "name", label: t("fieldName"), required: true, wide: true },
-            { key: "point_a", label: t("pointA"), required: true },
-            { key: "point_b", label: t("pointB"), required: true },
+            { key: "point_a", label: `📍 ${t("pointA")}`, required: true },
+            { key: "point_b", label: `📍 ${t("pointB")}`, required: true },
             { key: "start_date", label: t("fieldStart"), type: "date" },
             { key: "end_date", label: t("fieldEnd"), type: "date" },
             { key: "total_km", label: isPoints ? "1. Nəzərdə tutulan (m)" : `1. Nəzərdə tutulan (km)`, type: "number" },
@@ -475,12 +597,15 @@ function editSegment(project, item) {
         ],
         onSave: async row => {
             const parsedCoords = textToCoords(row.coords, isPoints ? 1 : 2);
+            const oldCode = item?.id;
+            const foVal = normalizeFiberCount(row.fiber_count || item?.fiberCount || "FO 48");
             if (item) {
                 item.id = row.code;
                 item.name = row.name;
                 item.pointA = row.point_a;
                 item.pointB = row.point_b;
                 item.status = row.status;
+                item.fiberCount = foVal;
                 item.totalKm = Number(row.total_km) || 0;
                 item.doneKm = Number(row.done_km) || 0;
                 item.contractor = row.contractor;
@@ -495,6 +620,7 @@ function editSegment(project, item) {
                     pointA: row.point_a,
                     pointB: row.point_b,
                     status: row.status,
+                    fiberCount: foVal,
                     totalKm: Number(row.total_km) || 0,
                     doneKm: Number(row.done_km) || 0,
                     contractor: row.contractor,
@@ -508,11 +634,14 @@ function editSegment(project, item) {
                 item = newSeg;
             }
 
+            saveSegmentOverride(project.id, item);
             saveImportedProjects();
 
             try {
-                await api.saveSegment(project.id, item?.id, {
-                    ...row,
+                const dbRow = { ...row };
+                delete dbRow.fiber_count;
+                await api.saveSegment(project.id, oldCode || item?.id, {
+                    ...dbRow,
                     antennas: Number(row.antennas || 0),
                     contractor: row.contractor || null,
                     coords: parsedCoords
@@ -761,6 +890,50 @@ function registerPointShapeImages() {
             map.addImage(id, ctx.getImageData(0, 0, size, size), { pixelRatio: 2 });
         });
     });
+
+    // A və B başlanğıc/son nöqtələri üçün zərif, incə Konum (Location Pin) ikonu
+    const pinW = 34;
+    const pinH = 44;
+    const cx = pinW / 2;
+    const cy = 14;
+    const pr = 9.2;
+    colors.forEach(color => {
+        const pinId = `pin-${color.replace("#", "").toLowerCase()}`;
+        if (map.hasImage(pinId)) return;
+        const canvas = document.createElement("canvas");
+        canvas.width = pinW;
+        canvas.height = pinH;
+        const ctx = canvas.getContext("2d");
+
+        ctx.save();
+        // Zərif damla formalı Konum ikonu gövdəsi
+        ctx.beginPath();
+        ctx.arc(cx, cy, pr, Math.PI * 0.84, Math.PI * 0.16, false);
+        ctx.bezierCurveTo(cx + pr * 0.68, cy + pr * 1.02, cx + 1.4, 34, cx, 40);
+        ctx.bezierCurveTo(cx - 1.4, 34, cx - pr * 0.68, cy + pr * 1.02, cx - pr * Math.cos(Math.PI * 0.16), cy + pr * Math.sin(Math.PI * 0.16));
+        ctx.closePath();
+
+        ctx.shadowColor = "rgba(0, 0, 0, 0.45)";
+        ctx.shadowBlur = 3;
+        ctx.shadowOffsetY = 1;
+        ctx.fillStyle = color;
+        ctx.fill();
+
+        ctx.shadowBlur = 0;
+        ctx.shadowOffsetY = 0;
+        ctx.lineWidth = 1.8;
+        ctx.strokeStyle = "#ffffff";
+        ctx.stroke();
+
+        // Konum ikonunun ortasındakı kiçik ağ nöqtə
+        ctx.beginPath();
+        ctx.arc(cx, cy, 3.4, 0, Math.PI * 2);
+        ctx.fillStyle = "#ffffff";
+        ctx.fill();
+        ctx.restore();
+
+        map.addImage(pinId, ctx.getImageData(0, 0, pinW, pinH), { pixelRatio: 2 });
+    });
 }
 
 function mapStyle() {
@@ -784,20 +957,78 @@ function mapStyle() {
             { id: "bg", type: "background", paint: { "background-color": "#1c2a30" } },
             rasterLayer("esri"), rasterLayer("esri-transport"), rasterLayer("esri-places"), rasterLayer("osm"), rasterLayer("carto"),
             { id: "routes-casing", type: "line", source: "routes", filter: ["==", ["geometry-type"], "LineString"], layout: { "line-cap": "round", "line-join": "round" },
-                paint: { "line-color": ["case", ["get", "sel"], "#ffffff", "#04101c"], "line-width": ["case", ["get", "sel"], 10, 7], "line-opacity": ["case", ["get", "dim"], 0.22, ["case", ["get", "sel"], 1, .75]] } },
-            { id: "routes-line", type: "line", source: "routes", filter: ["all", ["==", ["geometry-type"], "LineString"], ["!", ["has", "isOther"]]], layout: { "line-cap": "round", "line-join": "round" },
-                paint: { "line-color": ["get", "color"], "line-width": ["case", ["get", "sel"], 6.5, 4.5], "line-opacity": ["case", ["get", "dim"], 0.25, 1] } },
-            { id: "routes-other", type: "line", source: "routes", filter: ["all", ["==", ["geometry-type"], "LineString"], ["has", "isOther"]], layout: { "line-cap": "round", "line-join": "round" },
-                paint: { "line-color": ["get", "color"], "line-width": ["case", ["get", "sel"], 5.5, 3.6], "line-dasharray": [2, 1.5], "line-opacity": ["case", ["get", "dim"], 0.25, 0.95] } },
-            { id: "routes-hit", type: "line", source: "routes", filter: ["==", ["geometry-type"], "LineString"], paint: { "line-color": "#000", "line-width": 16, "line-opacity": 0 } },
-            { id: "routes-ends", type: "circle", source: "routes", filter: ["all", ["==", ["geometry-type"], "Point"], ["!", ["has", "isRayonPoint"]]],
                 paint: {
-                    "circle-radius": ["interpolate", ["linear"], ["zoom"], 6, 4.2, 14, 5.5],
-                    "circle-color": ["get", "color"],
-                    "circle-stroke-color": "#ffffff",
-                    "circle-stroke-width": 1.8,
-                    "circle-opacity": ["case", ["get", "dim"], 0.28, 1],
-                    "circle-stroke-opacity": ["case", ["get", "dim"], 0.28, 1]
+                    "line-color": ["case", ["get", "sel"], "#ffffff", "#04101c"],
+                    "line-width": ["interpolate", ["linear"], ["zoom"], 6, ["case", ["get", "sel"], 5.2, 3.6], 14, ["case", ["get", "sel"], 7.2, 5.0]],
+                    "line-opacity": ["case", ["get", "dim"], 0.22, ["case", ["get", "sel"], 1, .75]]
+                } },
+            { id: "routes-line", type: "line", source: "routes", filter: ["all", ["==", ["geometry-type"], "LineString"], ["!", ["has", "isOther"]]], layout: { "line-cap": "round", "line-join": "round" },
+                paint: {
+                    "line-color": ["get", "color"],
+                    "line-width": ["interpolate", ["linear"], ["zoom"], 6, ["case", ["get", "sel"], 3.4, 2.1], 14, ["case", ["get", "sel"], 4.6, 3.1]],
+                    "line-opacity": ["case", ["get", "dim"], 0.25, 1]
+                } },
+            { id: "routes-other", type: "line", source: "routes", filter: ["all", ["==", ["geometry-type"], "LineString"], ["has", "isOther"]], layout: { "line-cap": "round", "line-join": "round" },
+                paint: {
+                    "line-color": ["get", "color"],
+                    "line-width": ["interpolate", ["linear"], ["zoom"], 6, ["case", ["get", "sel"], 3.0, 1.9], 14, ["case", ["get", "sel"], 4.0, 2.7]],
+                    "line-dasharray": [2, 1.5],
+                    "line-opacity": ["case", ["get", "dim"], 0.25, 0.95]
+                } },
+            { id: "routes-hit", type: "line", source: "routes", filter: ["==", ["geometry-type"], "LineString"], paint: { "line-color": "#000", "line-width": 16, "line-opacity": 0 } },
+            /* Digər (RM və köməkçi xətlər): adları xətt boyu (paralel bucaqla) çıxır */
+            { id: "routes-other-line", type: "symbol", source: "routes", minzoom: 6, filter: ["all", ["==", ["geometry-type"], "LineString"], ["has", "otherLineImg"]],
+                layout: {
+                    "symbol-placement": "line",
+                    "symbol-spacing": 340,
+                    "icon-image": ["get", "otherLineImg"],
+                    "icon-rotation-alignment": "map",
+                    "icon-keep-upright": true,
+                    "icon-size": ["interpolate", ["linear"], ["zoom"], 6, 0.72, 9, 0.86, 13, 0.92],
+                    "icon-allow-overlap": false,
+                    "icon-ignore-placement": false
+                },
+                paint: {
+                    "icon-opacity": ["case", ["get", "dim"], 0.28, 1]
+                } },
+            { id: "routes-other-points", type: "symbol", source: "route-labels", minzoom: 6, filter: ["has", "otherPointImg"],
+                layout: {
+                    "icon-image": ["get", "otherPointImg"],
+                    "icon-rotate": ["get", "iconRotate"],
+                    "icon-rotation-alignment": "map",
+                    "icon-size": ["interpolate", ["linear"], ["zoom"], 6, 0.72, 9, 0.86, 13, 0.92],
+                    "icon-padding": 16,
+                    "icon-allow-overlap": false,
+                    "icon-ignore-placement": false
+                },
+                paint: {
+                    "icon-opacity": ["case", ["get", "dim"], 0.28, 1]
+                } },
+            /* Kabel üzərində lif sayı (FO 48, FO 24, FO 12): ümumi marşrut üzrə yalnız 3-4 yerdə göstərilir */
+            { id: "routes-fo-points", type: "symbol", source: "route-labels", minzoom: 6, filter: ["has", "foPointImg"],
+                layout: {
+                    "icon-image": ["get", "foPointImg"],
+                    "icon-rotate": ["get", "iconRotate"],
+                    "icon-rotation-alignment": "map",
+                    "icon-size": ["interpolate", ["linear"], ["zoom"], 6, 0.68, 9, 0.84, 14, 0.88],
+                    "icon-padding": ["interpolate", ["linear"], ["zoom"], 6, 28, 9, 14, 13, 6],
+                    "icon-allow-overlap": false,
+                    "icon-ignore-placement": false
+                },
+                paint: {
+                    "icon-opacity": ["case", ["get", "dim"], 0.28, 1]
+                } },
+            /* A və B nöqtələri: İncə Konum (Location Pin) ikonu — sabit və yığcam miqyasda */
+            { id: "routes-ends", type: "symbol", source: "routes", minzoom: 5, filter: ["all", ["==", ["geometry-type"], "Point"], ["!", ["has", "isRayonPoint"]], ["has", "pinIcon"]],
+                layout: {
+                    "icon-image": ["get", "pinIcon"],
+                    "icon-anchor": "bottom",
+                    "icon-size": ["interpolate", ["linear"], ["zoom"], 5, 0.54, 7.2, 0.66],
+                    "icon-allow-overlap": true,
+                    "icon-ignore-placement": true
+                },
+                paint: {
+                    "icon-opacity": ["case", ["get", "dim"], 0.28, 1]
                 } },
             /* Mərhələ 1 (Azərbaycan ümumi baxış: zoom < 7.8): yalnız təmiz rəng statusu nöqtəsi */
             { id: "routes-point-overview", type: "circle", source: "routes", maxzoom: 7.8, filter: ["all", ["==", ["geometry-type"], "Point"], ["has", "isRayonPoint"]],
@@ -828,24 +1059,34 @@ function mapStyle() {
                 paint: {
                     "icon-opacity": ["case", ["get", "dim"], 0.28, 1]
                 } },
-            /* Mərhələ 3 (Yaxın miqyas: zoom >= 9.6): sadə, qalın olmayan, bir-birinə qarışmayan oxunaqlı adlar */
-            { id: "routes-ends-label", type: "symbol", source: "route-labels", minzoom: 9.6, filter: ["has", "endName"],
+            /* A və B nöqtə adları (yalnız ad, A/B olmadan):
+               - İncə və yığcam ölçüdə (0.72 sabit miqyas)
+               - Kiçik miqyasda adlar bir-birinə qarışmasın deyə toqquşma qorunması aktivdir */
+            { id: "routes-ends-label", type: "symbol", source: "route-labels", minzoom: 5.5, maxzoom: 10.5, filter: ["has", "endLabelImg"],
                 layout: {
-                    "text-field": ["get", "endName"],
-                    "text-font": ["Noto Sans Regular"],
-                    "text-size": ["interpolate", ["linear"], ["zoom"], 9.6, 10.8, 14, 11.8],
-                    "text-anchor": "bottom",
-                    "text-offset": [0, -0.6],
-                    "text-padding": 3,
-                    "text-allow-overlap": false,
-                    "text-ignore-placement": false
+                    "icon-image": ["get", "endLabelImg"],
+                    "icon-anchor": "bottom",
+                    "icon-offset": ["get", "endOffset"],
+                    "icon-size": ["interpolate", ["linear"], ["zoom"], 5.5, 0.64, 7.5, 0.74],
+                    "icon-padding": 5,
+                    "icon-allow-overlap": false,
+                    "icon-ignore-placement": false
                 },
                 paint: {
-                    "text-color": "#f1f5f9",
-                    "text-halo-color": "rgba(15, 23, 42, 0.88)",
-                    "text-halo-width": 1.25,
-                    "text-halo-blur": 0.2,
-                    "text-opacity": ["case", ["get", "dim"], 0.28, 1]
+                    "icon-opacity": ["case", ["get", "dim"], 0.28, 1]
+                } },
+            { id: "routes-ends-label-fixed", type: "symbol", source: "route-labels", minzoom: 10.5, filter: ["has", "endLabelImg"],
+                layout: {
+                    "icon-image": ["get", "endLabelImg"],
+                    "icon-anchor": "bottom",
+                    "icon-offset": ["get", "endOffset"],
+                    "icon-size": 0.74,
+                    "icon-padding": 2,
+                    "icon-allow-overlap": true,
+                    "icon-ignore-placement": true
+                },
+                paint: {
+                    "icon-opacity": ["case", ["get", "dim"], 0.28, 1]
                 } },
             /* Nöqtə adları brauzer şrifti ilə şəkil kimi çəkilir: Azərbaycan hərfləri (ə, ş, ç, ğ, ı, ö, ü) düzgün görünür */
             { id: "routes-point-name", type: "symbol", source: "route-labels", minzoom: 8, maxzoom: 9.6, filter: ["has", "nameImg"],
@@ -912,7 +1153,7 @@ function initMap() {
     map.on("rotate", () => {
         $("northIcon").style.transform = `rotate(${-45 - map.getBearing()}deg)`;
     });
-    ["routes-hit", "routes-ends", "routes-ends-label", "routes-point-overview", "routes-point-halo", "routes-point-shape", "routes-point-name", "routes-point-label", "routes-point-label-near"].forEach(layer => {
+    ["routes-hit", "routes-other-line", "routes-other-points", "routes-fo-points", "routes-ends", "routes-ends-label", "routes-ends-label-fixed", "routes-point-overview", "routes-point-halo", "routes-point-shape", "routes-point-name", "routes-point-label", "routes-point-label-near"].forEach(layer => {
         map.on("mousemove", layer, e => {
             if (tools.isActive()) return;
             window.routeHover = true;
@@ -954,17 +1195,6 @@ function switchBaseLayer(name) {
     currentBase = name;
     ["esri", "osm", "carto"].forEach(id => map.setLayoutProperty(id, "visibility", id === base.raster ? "visible" : "none"));
     map.setPaintProperty("bg", "background-color", base.bg);
-
-    // Xəritə qatına uyğun (küçə/ağ fonda tünd sadə mətn, peyk/tünd fonda açıq sadə mətn) rəng tonu
-    const isLightLayer = name === "street" || name === "blank";
-    const textColor = isLightLayer ? "#0f172a" : "#f8fafc";
-    const haloColor = isLightLayer ? "rgba(255, 255, 255, 0.96)" : "rgba(15, 23, 42, 0.92)";
-    ["routes-ends-label"].forEach(layerId => {
-        if (map.getLayer(layerId)) {
-            map.setPaintProperty(layerId, "text-color", textColor);
-            map.setPaintProperty(layerId, "text-halo-color", haloColor);
-        }
-    });
 
     applyNames();
     renderLayerOptions();
@@ -1079,6 +1309,155 @@ function ensureLabelImage(text) {
     return key;
 }
 
+/* A və B Konum nöqtələrinin incə, yığcam ad etiketi */
+function ensureEndLabelImage(text, color = "#38BDF8") {
+    if (!map || !text) return null;
+    const light = currentBase === "street" || currentBase === "blank";
+    const key = `endlbl2:${light ? "l" : "d"}:${color}:${text}`;
+    if (map.hasImage(key)) return key;
+
+    const ratio = 2;
+    const fontSize = 10.5;
+    const padX = 4.5;
+    const padY = 2;
+    const measure = document.createElement("canvas").getContext("2d");
+    measure.font = `600 ${fontSize}px ${LABEL_FONT}`;
+    const textW = measure.measureText(text).width;
+    const W = Math.ceil(textW + padX * 2 + 2);
+    const H = Math.ceil(fontSize + padY * 2 + 2);
+
+    const canvas = document.createElement("canvas");
+    canvas.width = W * ratio;
+    canvas.height = H * ratio;
+    const ctx = canvas.getContext("2d");
+    ctx.scale(ratio, ratio);
+
+    const rx = 1, ry = 1, rw = W - 2, rh = H - 2, rad = 4;
+    ctx.beginPath();
+    ctx.roundRect(rx, ry, rw, rh, rad);
+    ctx.fillStyle = light ? "rgba(255, 255, 255, 0.90)" : "rgba(11, 19, 34, 0.84)";
+    ctx.fill();
+    ctx.lineWidth = 1.1;
+    ctx.strokeStyle = color;
+    ctx.stroke();
+
+    ctx.font = `600 ${fontSize}px ${LABEL_FONT}`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = light ? "#0f172a" : "#f8fafc";
+    ctx.fillText(text, W / 2, H / 2 + 0.5);
+
+    map.addImage(key, ctx.getImageData(0, 0, canvas.width, canvas.height), { pixelRatio: ratio });
+    return key;
+}
+
+/* Kabelin üzərində yazılan lif sayı nişanı (FO 48, FO 24, FO 12 və s.) */
+function ensureFoBadgeImage(foText, color = "#38BDF8") {
+    if (!map || !foText) return null;
+    const cleanFo = normalizeFiberCount(foText, "FO 48");
+    const key = `fobadge:${color}:${cleanFo}`;
+    if (map.hasImage(key)) return key;
+
+    const ratio = 2;
+    const fontSize = 11;
+    const padX = 6;
+    const padY = 2.5;
+    const measure = document.createElement("canvas").getContext("2d");
+    measure.font = `700 ${fontSize}px ${LABEL_FONT}`;
+    const textW = measure.measureText(cleanFo).width;
+    const W = Math.ceil(textW + padX * 2 + 4);
+    const H = Math.ceil(fontSize + padY * 2 + 4);
+
+    const canvas = document.createElement("canvas");
+    canvas.width = W * ratio;
+    canvas.height = H * ratio;
+    const ctx = canvas.getContext("2d");
+    ctx.scale(ratio, ratio);
+
+    ctx.beginPath();
+    ctx.roundRect(1.5, 1.5, W - 3, H - 3, 5);
+    ctx.fillStyle = "rgba(8, 15, 28, 0.92)";
+    ctx.fill();
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = color;
+    ctx.stroke();
+
+    ctx.font = `700 ${fontSize}px ${LABEL_FONT}`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "#ffffff";
+    ctx.fillText(cleanFo, W / 2, H / 2 + 0.5);
+
+    map.addImage(key, ctx.getImageData(0, 0, canvas.width, canvas.height), { pixelRatio: ratio });
+    return key;
+}
+
+/* Digər qovluğundakı RM və köməkçi xətlərin üzərində (xətt boyu) çıxan ad etiketi */
+function ensureOtherLineNameImage(text, color = "#38BDF8") {
+    if (!map || !text) return null;
+    const light = currentBase === "street" || currentBase === "blank";
+    const key = `otherln:${light ? "l" : "d"}:${color}:${text}`;
+    if (map.hasImage(key)) return key;
+
+    const ratio = 2;
+    const fontSize = 11.5;
+    const padX = 6;
+    const padY = 2.5;
+    const measure = document.createElement("canvas").getContext("2d");
+    measure.font = `700 ${fontSize}px ${LABEL_FONT}`;
+    const textW = measure.measureText(text).width;
+    const W = Math.ceil(textW + padX * 2 + 4);
+    const H = Math.ceil(fontSize + padY * 2 + 4);
+
+    const canvas = document.createElement("canvas");
+    canvas.width = W * ratio;
+    canvas.height = H * ratio;
+    const ctx = canvas.getContext("2d");
+    ctx.scale(ratio, ratio);
+
+    ctx.beginPath();
+    ctx.roundRect(1.5, 1.5, W - 3, H - 3, 5);
+    ctx.fillStyle = light ? "rgba(255, 255, 255, 0.92)" : "rgba(8, 17, 32, 0.88)";
+    ctx.fill();
+    ctx.lineWidth = 1.4;
+    ctx.strokeStyle = color;
+    ctx.stroke();
+
+    ctx.font = `700 ${fontSize}px ${LABEL_FONT}`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = light ? "#0f172a" : "#38BDF8";
+    ctx.fillText(text, W / 2, H / 2 + 0.5);
+
+    map.addImage(key, ctx.getImageData(0, 0, canvas.width, canvas.height), { pixelRatio: ratio });
+    return key;
+}
+
+function computeLineAngleDeg(lng1, lat1, lng2, lat2) {
+    const dx = (lng2 - lng1) * Math.cos(((lat1 + lat2) * 0.5 * Math.PI) / 180);
+    const dy = lat2 - lat1;
+    let deg = Math.atan2(-dy, dx) * (180 / Math.PI);
+    if (deg > 90) deg -= 180;
+    if (deg < -90) deg += 180;
+    return Math.round(deg);
+}
+
+/* Xəttin qırılmaları boyunca verilmiş nisbətlərdə (məs: 3-4 yerdə) nöqtə və xətt bucağını çıxarır */
+function sampleSegmentsAtFractions(segs, totalLen, fractions) {
+    if (!Array.isArray(segs) || segs.length === 0 || totalLen <= 0) return [];
+    const pts = [];
+    fractions.forEach(f => {
+        const target = totalLen * f;
+        const seg = segs.find(s => target >= s.start && target <= s.start + s.len) || segs[segs.length - 1];
+        const t = seg.len > 0 ? Math.max(0, Math.min(1, (target - seg.start) / seg.len)) : 0.5;
+        const lng = seg.x1 + (seg.x2 - seg.x1) * t;
+        const lat = seg.y1 + (seg.y2 - seg.y1) * t;
+        const angle = computeLineAngleDeg(seg.x1, seg.y1, seg.x2, seg.y2);
+        pts.push({ coord: [lng, lat], angle, seg });
+    });
+    return pts;
+}
+
 function drawRoutes() {
     if (!map) return;
     const source = map.getSource("routes");
@@ -1093,6 +1472,46 @@ function drawRoutes() {
     const features = [];
     const labelFeatures = [];
     const pointSlots = {};
+    const placedEndPoints = [];
+    const endNameRegistry = new Set();
+    const projectCableGroups = {};
+
+    function pushLineEndpoint(coordinates, labelText, color, dim, project, r, tipHtml) {
+        if (!Array.isArray(coordinates) || coordinates.length < 2) return;
+        const lng = Number(coordinates[0]);
+        const lat = Number(coordinates[1]);
+        if (isNaN(lng) || isNaN(lat)) return;
+
+        // Yaxın məsafədə (< ~4.5 km) artıq Konum ikonu varsa təkrar üst-üstə qoyma (məs: Quba, Gəncə, Şuşa, Bakı daxili)
+        const tooClose = placedEndPoints.some(p => Math.hypot(p.lng - lng, p.lat - lat) < 0.042);
+        if (tooClose) return;
+        placedEndPoints.push({ lng, lat });
+
+        const cleanText = cleanGlText(String(labelText || "").replace(/^[AB]\s*[:.\-–—]\s*/i, "").trim());
+        const pinIcon = `pin-${color.replace("#", "").toLowerCase()}`;
+        const nameKey = cleanText ? cleanText.toLocaleLowerCase("az") : "";
+        let endLabelImg = null;
+        if (cleanText && !/^[ab]$/i.test(cleanText) && !endNameRegistry.has(nameKey)) {
+            endNameRegistry.add(nameKey);
+            endLabelImg = ensureEndLabelImage(cleanText, color);
+        }
+        const endOffset = [0, -16];
+
+        const props = {
+            color,
+            dim,
+            pinIcon,
+            endLabelImg,
+            endOffset,
+            projectId: project.id,
+            itemId: r.id,
+            tip: tipHtml
+        };
+        features.push({ type: "Feature", geometry: { type: "Point", coordinates: [lng, lat] }, properties: props });
+        if (endLabelImg) {
+            labelFeatures.push({ type: "Feature", geometry: { type: "Point", coordinates: [lng, lat] }, properties: props });
+        }
+    }
 
     visibleEntries().forEach(({ project, item: r }) => {
         const rawCoords = Array.isArray(r.coords) ? r.coords : [];
@@ -1110,9 +1529,14 @@ function drawRoutes() {
         const isPointItem = project.type === "points" || isSingleCoord || (r.antennas || 0) > 0;
 
         if (isOther) {
-            // 🗂️ Digər bölməsi: Name hissəsində olan adlar həm xəritə üzərinə çıxır, həm də üzərinə gələndə göstərilir
-            const cleanOtherName = cleanGlText(r.name);
-            const onlyNameTip = `<b>${esc(r.name)}</b>`;
+            // 🗂️ Digər bölməsi (RM-lər və s.): adları xətt boyu çıxır
+            const rawOtherName = String(r.name || "").trim();
+            const isGenericOther = /^(?:idxal\s*x[əe]tti|imported\s*line|x[əe]tt|line|imp)[-\s]*\d*$/i.test(rawOtherName);
+            const projCleanName = String(project.name || "").replace(/^Digər\s*:\s*/i, "").trim();
+            const displayOtherName = (!isGenericOther && rawOtherName) ? rawOtherName : (projCleanName || rawOtherName);
+            const cleanOtherName = cleanGlText(displayOtherName);
+            const onlyNameTip = `<b>${esc(displayOtherName)}</b>`;
+
             if (isPointItem) {
                 const [lat, lng] = coords[0];
                 const ptProps = {
@@ -1131,6 +1555,7 @@ function drawRoutes() {
                 if (cleanOtherName) labelFeatures.push({ type: "Feature", geometry: { type: "Point", coordinates: [lng, lat] }, properties: ptProps });
             } else {
                 const line = coords.map(([lat, lng]) => [lng, lat]);
+                const otherLineImg = ensureOtherLineNameImage(cleanOtherName, color);
                 features.push({
                     type: "Feature",
                     geometry: { type: "LineString", coordinates: line },
@@ -1138,29 +1563,41 @@ function drawRoutes() {
                         isOther: true,
                         color,
                         dim,
+                        otherLineImg,
                         sel: Boolean(selected?.item === r),
                         projectId: project.id,
                         itemId: r.id,
                         tip: onlyNameTip
                     }
                 });
-                // Xəttin orta nöqtəsində Name-də olan adını birbaşa xəritə üzərinə çıxar
-                const midCoords = line[Math.floor(line.length / 2)];
-                if (midCoords && cleanOtherName) {
-                    const lblProps = {
-                        isRayonPoint: true,
-                        isOther: true,
-                        color,
-                        shapeIcon,
-                        dim,
-                        sel: Boolean(selected?.item === r),
-                        projectId: project.id,
-                        itemId: r.id,
-                        label: cleanOtherName,
-                        tip: onlyNameTip
-                    };
-                    features.push({ type: "Feature", geometry: { type: "Point", coordinates: midCoords }, properties: lblProps });
-                    labelFeatures.push({ type: "Feature", geometry: { type: "Point", coordinates: midCoords }, properties: lblProps });
+                if (otherLineImg) {
+                    const segs = [];
+                    let totalLen = 0;
+                    for (let i = 0; i < line.length - 1; i++) {
+                        const [x1, y1] = line[i];
+                        const [x2, y2] = line[i + 1];
+                        const len = Math.hypot(x2 - x1, y2 - y1);
+                        if (len > 0) {
+                            segs.push({ x1, y1, x2, y2, len, start: totalLen });
+                            totalLen += len;
+                        }
+                    }
+                    const fracs = totalLen > 0.12 ? [0.25, 0.5, 0.75] : [0.5];
+                    sampleSegmentsAtFractions(segs, totalLen, fracs).forEach(({ coord, angle }) => {
+                        labelFeatures.push({
+                            type: "Feature",
+                            geometry: { type: "Point", coordinates: coord },
+                            properties: {
+                                color,
+                                dim,
+                                otherPointImg: otherLineImg,
+                                iconRotate: angle,
+                                projectId: project.id,
+                                itemId: r.id,
+                                tip: onlyNameTip
+                            }
+                        });
+                    });
                 }
             }
             return;
@@ -1224,6 +1661,12 @@ function drawRoutes() {
             labelFeatures.push({ type: "Feature", geometry: { type: "Point", coordinates: [adjLng, adjLat] }, properties: ptProps });
         } else if (coords.length >= 2) {
             const line = coords.map(([lat, lng]) => [lng, lat]);
+            const foLabel = getSegmentFiber(r, project);
+            const foImg = ensureFoBadgeImage(foLabel, color);
+            const { nameA, nameB } = resolveLineEndNames(r, project);
+            const stText = t(`status${r.status}`);
+            const lineTip = `<b>${esc(r.name)}</b><small>📍 <b>${esc(nameA || r.name)}</b> ➔ <b>${esc(nameB || r.name)}</b><br>🔌 Kabel: <b style="color:#38BDF8">${esc(foLabel)}</b> · Status: <b style="color:${color}">${esc(stText)}</b><br>📏 Plan: ${formatKm(r.totalKm)} km / Faktiki: ${formatKm(r.doneKm)} km (${percent(r.doneKm, r.totalKm)}%)<br>${r.contractor ? `👷 İcraçı: ${esc(r.contractor)}<br>👥 İşçi sayı: <b>${esc(cInfo.workers)} nəfər</b> · 📞 İcraçı: <b>${esc(cInfo.engineer || "—")}</b>` : ""}</small>`;
+
             features.push({
                 type: "Feature", geometry: { type: "LineString", coordinates: line },
                 properties: {
@@ -1232,25 +1675,81 @@ function drawRoutes() {
                     sel: Boolean(selected?.item === r),
                     projectId: project.id,
                     itemId: r.id,
-                    tip: `<b>${esc(r.name)}</b><small>📏 Plan: ${formatKm(r.totalKm)} km / Faktiki: ${formatKm(r.doneKm)} km (${percent(r.doneKm, r.totalKm)}%)<br>${r.contractor ? `👷 İcraçı: ${esc(r.contractor)}<br>👥 İşçi sayı: <b>${esc(cInfo.workers)} nəfər</b> · 📞 İcraçı: <b>${esc(cInfo.engineer || "—")}</b>` : ""}</small>`
+                    tip: lineTip
                 }
             });
-            // Magistral uclarında nöqtə dairəsi və varsa nöqtənin öz adı göstərilir
-            [[line[0], r.pointA], [line[line.length - 1], r.pointB]].forEach(([coordinates, rawPtName]) => {
-                const ptName = cleanGlText(String(rawPtName || "").replace(/^[AB]\s*:\s*/i, ""));
-                const hasRealName = ptName && !/^[AB]$/i.test(ptName);
-                const props = {
+
+            // Kabel üzərində lif sayı (FO 48, FO 24, FO 12) üçün layihə/kabel qrupu üzrə seqmentləri topla (ümumi 3-4 yerdə göstərmək üçün)
+            const groupKey = `${project.id}:${foLabel}`;
+            if (!projectCableGroups[groupKey]) {
+                projectCableGroups[groupKey] = {
+                    project,
+                    foImg,
                     color,
                     dim,
-                    projectId: project.id,
-                    itemId: r.id,
-                    tip: hasRealName ? `📍 <b>${esc(ptName)}</b>` : `📍 Məntəqə`
+                    segs: [],
+                    totalLen: 0,
+                    firstPoint: line[0],
+                    lastPoint: line[line.length - 1],
+                    firstItem: r,
+                    lastItem: r,
+                    firstTip: lineTip,
+                    lastTip: lineTip,
+                    firstNameA: nameA,
+                    lastNameB: nameB
                 };
-                if (hasRealName) props.endName = ptName;
-                features.push({ type: "Feature", geometry: { type: "Point", coordinates }, properties: props });
-                if (hasRealName) labelFeatures.push({ type: "Feature", geometry: { type: "Point", coordinates }, properties: props });
-            });
+            }
+            const grp = projectCableGroups[groupKey];
+            grp.lastPoint = line[line.length - 1];
+            grp.lastItem = r;
+            grp.lastTip = lineTip;
+            grp.lastNameB = nameB;
+
+            for (let i = 0; i < line.length - 1; i++) {
+                const [x1, y1] = line[i];
+                const [x2, y2] = line[i + 1];
+                const len = Math.hypot(x2 - x1, y2 - y1);
+                if (len > 0) {
+                    grp.segs.push({ x1, y1, x2, y2, len, start: grp.totalLen, item: r, tip: lineTip, color, dim, foImg });
+                    grp.totalLen += len;
+                }
+            }
+
+            // Əgər seqmentin öz fərqli A və B qovşaq adları varsa (məs: Ağsu - Şamaxı), uclarında Konum ikonu və təkcə adı göstər
+            const hasDistinctEnds = nameA && nameB && nameA !== nameB;
+            if (hasDistinctEnds) {
+                pushLineEndpoint(line[0], nameA, color, dim, project, r, `📍 <b>${esc(nameA)}</b><small>Xətt: <b>${esc(r.name)}</b><br>🔌 Kabel: <b>${esc(foLabel)}</b> · Status: <b style="color:${color}">${esc(stText)}</b></small>`);
+                pushLineEndpoint(line[line.length - 1], nameB, color, dim, project, r, `📍 <b>${esc(nameB)}</b><small>Xətt: <b>${esc(r.name)}</b><br>🔌 Kabel: <b>${esc(foLabel)}</b> · Status: <b style="color:${color}">${esc(stText)}</b></small>`);
+            }
         }
+    });
+
+    // Hər kabel marşrutu üzrə lif sayını (FO 48, FO 24, FO 12) ümumi yalnız 3-4 yerdə yerləşdir və ümumi başlanğıc/son nöqtələri təmin et
+    Object.values(projectCableGroups).forEach(grp => {
+        const { project, segs, totalLen, firstPoint, lastPoint, firstItem, lastItem, firstNameA, lastNameB, color, dim } = grp;
+        if (segs.length === 0 || totalLen <= 0) return;
+
+        // Ümumi kabel boyu yalnız 3 və ya 4 nöqtədə FO lif sayı
+        const foFractions = totalLen < 0.08 ? [0.25, 0.50, 0.75] : [0.18, 0.40, 0.62, 0.84];
+        sampleSegmentsAtFractions(segs, totalLen, foFractions).forEach(({ coord, angle, seg }) => {
+            labelFeatures.push({
+                type: "Feature",
+                geometry: { type: "Point", coordinates: coord },
+                properties: {
+                    color: seg.color,
+                    dim: seg.dim,
+                    foPointImg: seg.foImg,
+                    iconRotate: angle,
+                    projectId: project.id,
+                    itemId: seg.item.id,
+                    tip: seg.tip
+                }
+            });
+        });
+
+        // Çoxseqmentli KML xətlərində ümumi marşrutun başlanğıc və son Konum nöqtələri
+        pushLineEndpoint(firstPoint, firstNameA, color, dim, project, firstItem, grp.firstTip);
+        pushLineEndpoint(lastPoint, lastNameB, color, dim, project, lastItem, grp.lastTip);
     });
     if (Array.isArray(window.__mmDraftCoords) && window.__mmDraftCoords.length >= 2) {
         features.push({
@@ -1309,7 +1808,7 @@ function onMapClick(e) {
         setDrawer(false);
     }
     const box = [[e.point.x - 5, e.point.y - 5], [e.point.x + 5, e.point.y + 5]];
-    const hit = map.queryRenderedFeatures(box, { layers: ["routes-point-overview", "routes-point-halo", "routes-point-shape", "routes-point-label", "routes-point-label-near", "routes-point-name", "routes-ends", "routes-ends-label", "routes-hit"] })[0];
+    const hit = map.queryRenderedFeatures(box, { layers: ["routes-point-overview", "routes-point-halo", "routes-point-shape", "routes-point-label", "routes-point-label-near", "routes-point-name", "routes-ends", "routes-ends-label", "routes-ends-label-fixed", "routes-other-points", "routes-other-line", "routes-fo-points", "routes-hit"] })[0];
     if (!hit) return;
     const project = state.projects.find(p => p.id === hit.properties.projectId);
     if (project) selectSegment(project, project.items.find(r => r.id === hit.properties.itemId));
@@ -1613,6 +2112,9 @@ function renderProjects() {
                     </div>
                     ${expanded ? `<div class="segments">${filteredItems(p).map(r => {
                         const cleanName = String(r.name || "").replace(/\s*\(?\bFaz[-\s]*[12]\b\)?/gi, "").replace(/\s*rayon(u)?\b/gi, "").trim();
+                        const foBadge = (!isNim && !isPoints && Array.isArray(r.coords) && r.coords.length >= 2)
+                            ? `<span style="background:rgba(14,165,233,0.16);color:#38BDF8;border:1px solid rgba(56,189,248,0.38);border-radius:6px;padding:1px 5px;font-size:10px;font-weight:700;margin-right:4px">${esc(getSegmentFiber(r))}</span>`
+                            : "";
                         const rightText = isNim
                             ? t(`status${r.status}`)
                             : (isPoints
@@ -1621,7 +2123,7 @@ function renderProjects() {
                         return `
                         <button class="segment ${state.selected?.itemId === r.id && state.selected?.projectId === p.id ? "selected" : ""}" data-action="focus" data-item="${esc(r.id)}">
                             <span class="dot" style="background:${statusTone(r.status)}"></span>
-                            <span class="segment-name" title="${esc(cleanName)}">${isNim ? "🚦 " : ""}${esc(cleanName)}</span>
+                            <span class="segment-name" title="${esc(cleanName)}">${isNim ? "🚦 " : ""}${foBadge}${esc(cleanName)}</span>
                             <span style="color:${statusTone(r.status)};font-weight:600;white-space:nowrap">${rightText}</span>
                         </button>`;
                     }).join("")}${isAdmin() ? `<button class="link add-seg" data-action="addSegment">+ ${t("addSegment")}</button>` : ""}</div>` : ""}
@@ -1643,6 +2145,9 @@ function renderDetail() {
     const tone = statusTone(r.status);
     const pct = percent(r.doneKm, r.totalKm);
     const info = state.contractors[r.contractor];
+    const isLineSeg = Array.isArray(r.coords) && r.coords.length >= 2 && project.type !== "points" && project.category !== "nim";
+    const foText = isLineSeg ? getSegmentFiber(r) : "";
+    const ends = resolveLineEndNames(r);
     const row = (label, value) => `<dt>${label}</dt><dd>${value}</dd>`;
 
     $("detailView").innerHTML = `
@@ -1654,18 +2159,22 @@ function renderDetail() {
             <div class="detail-title">
                 <small>${esc(r.id)} · ${esc(project.name)}</small>
                 <h2>${esc(r.name)}</h2>
-                <span class="pill" style="--tone:${tone}"><span class="dot" style="background:${tone}"></span>${t(`status${r.status}`)}</span>
+                <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+                    <span class="pill" style="--tone:${tone}"><span class="dot" style="background:${tone}"></span>${t(`status${r.status}`)}</span>
+                    ${foText ? `<span class="pill" style="--tone:#0EA5E9;background:rgba(14,165,233,0.16);color:#38BDF8;border:1px solid rgba(56,189,248,0.45)">🔌 ${esc(foText)}</span>` : ""}
+                </div>
             </div>
             <div class="route">
-                <i class="fa-solid fa-circle"></i><strong>${esc(r.pointA)}</strong>
+                <i class="fa-solid fa-location-dot" style="color:${tone}"></i><strong>${esc(ends.aName || r.name)}</strong>
                 <span class="stem"></span><span></span>
-                <i class="fa-solid fa-circle"></i><strong>${esc(r.pointB)}</strong>
+                <i class="fa-solid fa-location-dot" style="color:${tone}"></i><strong>${esc(ends.bName || r.name)}</strong>
             </div>
             <div>
                 <div class="meter-row"><b>${pct}%</b><span class="muted">${formatKm(r.doneKm)} / ${formatKm(r.totalKm)} km</span></div>
                 <div class="progress"><span style="width:${pct}%;background:${tone}"></span></div>
             </div>
             <dl class="spec">
+                ${foText ? row("Kabelin lif sayı", `<b>🔌 ${esc(foText)}</b>`) : ""}
                 ${row(t("thLeft"), `${formatKm(Math.max(0, r.totalKm - r.doneKm))} km`)}
                 ${row(t("thDates"), `${formatDate(r.startDate)} – ${formatDate(r.endDate)}`)}
                 ${row(t("closures"), r.closures || 0)}
@@ -1691,9 +2200,13 @@ function renderTable() {
         <th>${t("thAssets")}</th><th>${t("thStatus")}</th>
     </tr>`;
 
-    $("tableBody").innerHTML = entries.map(({ project, item: r }, index) => `
+    $("tableBody").innerHTML = entries.map(({ project, item: r }, index) => {
+        const ends = resolveLineEndNames(r);
+        const isLineSeg = Array.isArray(r.coords) && r.coords.length >= 2 && project.type !== "points" && project.category !== "nim";
+        const foBadge = isLineSeg ? ` · <b style="color:#38BDF8">🔌 ${esc(getSegmentFiber(r))}</b>` : "";
+        return `
         <tr data-index="${index}" class="${selected?.item === r ? "selected" : ""}">
-            <td><b>${esc(r.pointA)} ➔ ${esc(r.pointB)}</b><small>${esc(project.name)} · ${esc(r.name)}</small></td>
+            <td><b>📍 ${esc(ends.aName)} ➔ 📍 ${esc(ends.bName)}</b><small>${esc(project.name)} · ${esc(r.name)}${foBadge}</small></td>
             <td>${formatDate(r.startDate)} – ${formatDate(r.endDate)}</td>
             <td>${esc(r.contractor || t("notAssigned"))}</td>
             <td class="num">${formatKm(r.totalKm)} km</td>
@@ -1701,8 +2214,8 @@ function renderTable() {
             <td class="num">${formatKm(Math.max(0, r.totalKm - r.doneKm))} km</td>
             <td>${r.closures || 0} / ${r.manholes || 0}</td>
             <td><span class="pill" style="--tone:${statusTone(r.status)}">${t(`status${r.status}`)}</span></td>
-        </tr>
-    `).join("");
+        </tr>`;
+    }).join("");
 
     const sum = totals(entries.map(e => e.item));
     $("tableFoot").innerHTML = entries.length === 0 ? "" : `<tr>
@@ -2072,11 +2585,17 @@ function projectFromFile(fileName, lines) {
             // Əgər doneKm boş və ya "-" olarsa, avtomatik 0 qəbul edilir
             const doneKm = rawDoneKm !== undefined ? parseAttrNumber(rawDoneKm, 0) : 0;
 
+            // Kabelin lif sayı (FO 48, FO 24, FO 12 və s.)
+            const rawFiber = getPropCaseInsensitive(p, "fiber_count", "fiberCount", "fiber", "fo", "lif", "lif_sayi", "lif_sayı", "kabel", "cable")
+                || (/\bfo[-\s_]*\d+\b/i.exec(nameVal)?.[0])
+                || "FO 48";
+            const fiberCount = normalizeFiberCount(rawFiber);
+
             return {
                 id: `IMP-${String(index + 1).padStart(2, "0")}`,
                 name: nameVal,
                 pointA, pointB, startDate: "", endDate: "", contractor,
-                totalKm, doneKm, status, closures: 0, manholes: 0, antennas: 0,
+                totalKm, doneKm, status, fiberCount, closures: 0, manholes: 0, antennas: 0,
                 coords: line.coords
             };
         })
@@ -2100,11 +2619,23 @@ async function handleImportFiles(fileList, targetCategory) {
             project.id = project.id || (`imp_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`);
             project.imported = true;
             project.category = cat;
+            const forcedType = $("importGeomType")?.value;
             if (cat === "nim") project.type = "points";
             else if (cat === "azconnect" || cat === "other") project.type = "lines";
+            else if (forcedType === "lines" || forcedType === "points") project.type = forcedType;
             if (cat === "other") {
                 project.name = `Digər: ${project.name.replace(/^Digər:\s*/i, "")}`;
             }
+            const customA = $("impPointAName")?.value.trim();
+            const customB = $("impPointBName")?.value.trim();
+            const customFo = $("impFiberSelect")?.value;
+            project.items.forEach(it => {
+                if (customA) it.pointA = customA;
+                if (customB) it.pointB = customB;
+                if (customFo && Array.isArray(it.coords) && it.coords.length >= 2) {
+                    it.fiberCount = normalizeFiberCount(customFo);
+                }
+            });
             try {
                 await api.saveProject(project);
             } catch (err) {
@@ -2379,8 +2910,14 @@ document.addEventListener("DOMContentLoaded", init);
         const names = [...new Set(["", "BCG (Öz briqadamız)", ...Object.keys(state.contractors)])];
         return `<select class="input" data-exec-select>${names.map(name => {
             const isOwn = /bcg/i.test(name);
-            return `<option value="${esc(name)}" ${name === currentExec ? "selected" : ""}>${isOwn ? "🏢 " + esc(name) : "👷 Podratçı: " + esc(name)}</option>`;
+            return `<option value="${esc(name)}" ${name === currentExec ? "selected" : ""}>${isOwn ? "🏢 " + esc(name) : (name ? "👷 Podratçı: " + esc(name) : "— İcraçı seçilməyib —")}</option>`;
         }).join("")}</select>`;
+    }
+
+    function fiberOptionsHtml(currentFo) {
+        const norm = normalizeFiberCount(currentFo || "FO 48");
+        const opts = FIBER_OPTIONS.includes(norm) ? FIBER_OPTIONS : [norm, ...FIBER_OPTIONS];
+        return `<select class="input" data-fo-select>${opts.map(fo => `<option value="${esc(fo)}" ${fo === norm ? "selected" : ""}>🔌 ${esc(fo)}</option>`).join("")}</select>`;
     }
 
     function ensureMapWidgets() {
@@ -2481,12 +3018,16 @@ document.addEventListener("DOMContentLoaded", init);
                             <span>İş icraçısı</span>
                             <select class="input" id="mmContractorSelect"></select>
                         </label>
+                        <label class="wide" id="mmFiberWrap" style="grid-column:1 / -1">
+                            <span>🔌 Kabelin lif sayı (FO 48, FO 24, FO 12...) *</span>
+                            <select class="input" id="mmFiberSelect"></select>
+                        </label>
                         <label id="mmPointAWrap">
-                            <span>Başlanğıc nöqtə (A)</span>
+                            <span>📍 Başlanğıc nöqtə (A Konum)</span>
                             <input class="input" type="text" id="mmPointA" value="Mərkəz">
                         </label>
                         <label id="mmPointBWrap">
-                            <span>Son nöqtə (B)</span>
+                            <span>📍 Son nöqtə (B Konum)</span>
                             <input class="input" type="text" id="mmPointB" value="Şəbəkə">
                         </label>
                         <label>
@@ -2623,12 +3164,30 @@ document.addEventListener("DOMContentLoaded", init);
                 const item = proj?.items.find(r => r.id === itemId);
                 if (!proj || !item) return;
                 item.status = nimSt.value;
+                saveSegmentOverride(proj.id, item);
+                saveImportedProjects();
                 if (isAdmin() && api.configured) {
                     try { await api.saveSegment(proj.id, item.id, { status: item.status }); } catch {}
                 }
                 recordAuditLog("Status Dəyişikliyi", "🚦 NİM", item.name, `Svetofor nöqtəsinin statusu '${t("status" + item.status)}' olaraq yeniləndi`);
                 renderAll();
                 toast(`🚦 ${item.name} statusu yeniləndi: ${t("status" + item.status)}`);
+                return;
+            }
+            const foSel = e.target.closest("[data-fo-select]");
+            if (foSel) {
+                const rowEl = foSel.closest("[data-pick-seg]");
+                if (!rowEl) return;
+                const [projectId, itemId] = rowEl.dataset.pickSeg.split(":");
+                const proj = state.projects.find(p => p.id === projectId);
+                const item = proj?.items.find(r => r.id === itemId);
+                if (!proj || !item) return;
+                item.fiberCount = normalizeFiberCount(foSel.value);
+                saveSegmentOverride(proj.id, item);
+                saveImportedProjects();
+                recordAuditLog("Kabel Lif Sayı", proj.category === "azconnect" ? "🌐 Azconnect" : "🏢 BCG", item.name, `Kabelin lif sayı dəyişdirildi: ${item.fiberCount}`);
+                renderAll();
+                toast(`🔌 ${item.name} kabel lif sayı yeniləndi: ${item.fiberCount}`);
                 return;
             }
             const sel = e.target.closest("[data-exec-select]");
@@ -2640,12 +3199,14 @@ document.addEventListener("DOMContentLoaded", init);
             const item = proj?.items.find(r => r.id === itemId);
             if (!proj || !item) return;
             item.contractor = sel.value;
+            saveSegmentOverride(proj.id, item);
+            saveImportedProjects();
             if (isAdmin() && api.configured) {
                 try {
                     await api.saveSegment(proj.id, item.id, { contractor: item.contractor });
                 } catch { /* lokal olaraq da yenilənir */ }
             }
-            recordAuditLog("İcraçı التəyini", proj.category === "nim" ? "🚦 NİM" : (proj.category === "azconnect" ? "🌐 Azconnect" : "📁 Layihələr"), item.name, `İcraçı dəyişdirildi: ${item.contractor}`);
+            recordAuditLog("İcraçı Təyini", proj.category === "nim" ? "🚦 NİM" : (proj.category === "azconnect" ? "🌐 Azconnect" : "📁 Layihələr"), item.name, `İcraçı dəyişdirildi: ${item.contractor}`);
             renderAll();
             toast(`İş icraçısı yeniləndi: ${item.contractor}`);
         });
@@ -3039,6 +3600,7 @@ document.addEventListener("DOMContentLoaded", init);
 
         if ($("mmPointAWrap")) $("mmPointAWrap").hidden = mmCreateState.mode === "point";
         if ($("mmPointBWrap")) $("mmPointBWrap").hidden = mmCreateState.mode === "point";
+        if ($("mmFiberWrap")) $("mmFiberWrap").hidden = mmCreateState.mode === "point";
         if ($("mmAntennasWrap")) $("mmAntennasWrap").hidden = !(isPointMode && !isNim);
 
         const lenM = calcCoordsMeters(mmCreateState.coords);
@@ -3087,6 +3649,11 @@ document.addEventListener("DOMContentLoaded", init);
 
         $("mmStatusSelect").innerHTML = STATUSES.map(s => `<option value="${s}">${t("status" + s)}</option>`).join("");
         $("mmStatusSelect").value = "icrada";
+
+        if ($("mmFiberSelect")) {
+            $("mmFiberSelect").innerHTML = FIBER_OPTIONS.map(fo => `<option value="${esc(fo)}">🔌 ${esc(fo)}</option>`).join("");
+            $("mmFiberSelect").value = "FO 48";
+        }
 
         const contractorNames = [...new Set(["BCG (Öz briqadamız)", ...Object.keys(state.contractors)])];
         $("mmContractorSelect").innerHTML = contractorNames.map(n => `<option value="${esc(n)}">${/bcg/i.test(n) ? "🏢 " + esc(n) : "👷 Podratçı: " + esc(n)}</option>`).join("");
@@ -3159,6 +3726,7 @@ document.addEventListener("DOMContentLoaded", init);
         if (!targetProj) return;
 
         const newItemId = `${mmCreateState.mode === "point" ? "PT" : "LN"}-${Date.now().toString().slice(-4)}`;
+        const fiberCount = normalizeFiberCount($("mmFiberSelect")?.value || "FO 48");
         const newItem = {
             id: newItemId,
             name: itemName,
@@ -3170,6 +3738,7 @@ document.addEventListener("DOMContentLoaded", init);
             totalKm: planVal,
             doneKm: doneVal,
             status,
+            fiberCount,
             closures: 0,
             manholes: 0,
             antennas: mmCreateState.mode === "point" ? Math.max(1, antennas) : antennas,
@@ -3177,6 +3746,8 @@ document.addEventListener("DOMContentLoaded", init);
         };
 
         targetProj.items.push(newItem);
+        saveSegmentOverride(targetProj.id, newItem);
+        saveImportedProjects();
         state.visibleIds.add(targetProj.id);
         state.expandedIds.add(targetProj.id);
         state.activeFolders.add(targetProj.category || "project");
@@ -3288,8 +3859,8 @@ document.addEventListener("DOMContentLoaded", init);
                 type: "lines",
                 status: "icrada",
                 items: [
-                    { id: "AZC-01", name: "Bakı Mərkəz – Xırdalan – Sumqayıt xətti", pointA: "Bakı Mərkəz Qovşaq", pointB: "Sumqayıt Stansiya", status: "bitmis", totalKm: 36.4, doneKm: 36.4, contractor: "BCG (Öz briqadamız)", coords: [[40.4093, 49.8671], [40.4520, 49.7550], [40.5897, 49.6686]] },
-                    { id: "AZC-02", name: "Bakı – Hövsan – Türkan – Zirə xətti", pointA: "Bakı Şərq Qovşaq", pointB: "Zirə Qovşaq", status: "icrada", totalKm: 42.0, doneKm: 28.5, contractor: "AzFiberTech MMC", coords: [[40.3890, 49.9520], [40.3690, 50.0850], [40.3640, 50.2910]] }
+                    { id: "AZC-01", name: "Bakı Mərkəz – Xırdalan – Sumqayıt xətti", pointA: "Bakı Mərkəz Qovşaq", pointB: "Sumqayıt Stansiya", status: "bitmis", fiberCount: "FO 48", totalKm: 36.4, doneKm: 36.4, contractor: "BCG (Öz briqadamız)", coords: [[40.4093, 49.8671], [40.4520, 49.7550], [40.5897, 49.6686]] },
+                    { id: "AZC-02", name: "Bakı – Hövsan – Türkan – Zirə xətti", pointA: "Bakı Şərq Qovşaq", pointB: "Zirə Qovşaq", status: "icrada", fiberCount: "FO 24", totalKm: 42.0, doneKm: 28.5, contractor: "AzFiberTech MMC", coords: [[40.3890, 49.9520], [40.3690, 50.0850], [40.3640, 50.2910]] }
                 ]
             };
             const azc2 = {
@@ -3299,8 +3870,8 @@ document.addEventListener("DOMContentLoaded", init);
                 type: "lines",
                 status: "icrada",
                 items: [
-                    { id: "AZC-03", name: "Hacıqabul – Kürdəmir – Ucar – Yevlax xətti", pointA: "Hacıqabul Qovşaq", pointB: "Yevlax Qovşaq", status: "icrada", totalKm: 168.0, doneKm: 119.5, contractor: "KaspianTelekom", coords: [[40.0394, 48.9356], [40.3425, 48.1564], [40.5180, 47.6500], [40.6172, 47.1500]] },
-                    { id: "AZC-04", name: "Yevlax – Gəncə – Şəmkir xətti", pointA: "Yevlax Qovşaq", pointB: "Şəmkir Stansiya", status: "tehvil", totalKm: 104.5, doneKm: 104.5, contractor: "BCG (Öz briqadamız)", coords: [[40.6172, 47.1500], [40.6828, 46.3606], [40.8297, 46.0178]] }
+                    { id: "AZC-03", name: "Hacıqabul – Kürdəmir – Ucar – Yevlax xətti", pointA: "Hacıqabul Qovşaq", pointB: "Yevlax Qovşaq", status: "icrada", fiberCount: "FO 48", totalKm: 168.0, doneKm: 119.5, contractor: "KaspianTelekom", coords: [[40.0394, 48.9356], [40.3425, 48.1564], [40.5180, 47.6500], [40.6172, 47.1500]] },
+                    { id: "AZC-04", name: "Yevlax – Gəncə – Şəmkir xətti", pointA: "Yevlax Qovşaq", pointB: "Şəmkir Stansiya", status: "tehvil", fiberCount: "FO 12", totalKm: 104.5, doneKm: 104.5, contractor: "BCG (Öz briqadamız)", coords: [[40.6172, 47.1500], [40.6828, 46.3606], [40.8297, 46.0178]] }
                 ]
             };
             state.projects.push(azc1, azc2);
@@ -3519,27 +4090,39 @@ document.addEventListener("DOMContentLoaded", init);
                             const rTone = statusTone(r.status);
                             const rLeft = Math.max(0, r.totalKm - r.doneKm);
                             const rPct = percent(r.doneKm, r.totalKm);
+                            const foLabel = getSegmentFiber(r);
+                            const ends = resolveLineEndNames(r);
                             const cInfo = state.contractors[r.contractor || "BCG (Öz briqadamız)"] || { workers: "—", engineer: "—" };
                             return `
                                 <div class="info-sub-item" data-pick-seg="${esc(proj.id)}:${esc(r.id)}" style="border-color:${entry?.item === r ? rTone : "var(--line)"}">
-                                    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+                                    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
                                         <b>${esc(r.name)}</b>
-                                        <span class="pill" style="--tone:${rTone}">${t(`status${r.status}`)}</span>
+                                        <div style="display:flex;align-items:center;gap:5px">
+                                            <span class="pill" style="--tone:#0EA5E9;background:rgba(14,165,233,0.16);color:#38BDF8;border:1px solid rgba(56,189,248,0.45)">🔌 ${esc(foLabel)}</span>
+                                            <span class="pill" style="--tone:${rTone}">${t(`status${r.status}`)}</span>
+                                        </div>
+                                    </div>
+                                    <div style="font-size:11.5px;color:var(--ink-2);display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+                                        <span>📍 <b>${esc(ends.aName || r.name)}</b></span>
+                                        <span style="opacity:0.6">➔</span>
+                                        <span>📍 <b>${esc(ends.bName || r.name)}</b></span>
                                     </div>
                                     <div style="color:var(--ink-2);font-size:11.5px">
                                         Plan: <b>${formatKm(r.totalKm)} km</b> · Faktiki: <b style="color:${rTone}">${formatKm(r.doneKm)} km (${rPct}%)</b> · Qalıb: <b>${formatKm(rLeft)} km</b>
                                     </div>
-                                    ${r.contractor ? `
+                                    <div class="info-exec-row">
+                                        <span class="muted">Kabel lif sayı:</span>
+                                        ${fiberOptionsHtml(foLabel)}
+                                    </div>
                                     <div class="info-exec-row">
                                         <span class="muted">İcraçı:</span>
                                         ${executorOptionsHtml(r.contractor)}
                                     </div>
                                     <div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;color:var(--ink-2)">
+                                        ${r.contractor ? `
                                         <span>👷 İşçi: <b>${esc(cInfo.workers)} nəfər</b></span>
                                         <span>📞 <b>${esc(cInfo.engineer || "—")}</b></span>
-                                    ` : `
-                                    <div style="display:flex;justify-content:flex-end;align-items:center;font-size:11px;color:var(--ink-2)">
-                                    `}
+                                        ` : `<span></span>`}
                                         ${isAdmin() ? `<button class="btn btn-outline" style="height:22px;padding:0 7px;font-size:10.5px" data-geom-edit="${esc(proj.id)}:${esc(r.id)}" title="Xəttin qırılma nöqtələrini xəritədə sürüşdür"><i class="fa-solid fa-bezier-curve"></i> Xətti sürüşdür</button>` : ""}
                                     </div>
                                 </div>
@@ -3818,6 +4401,7 @@ document.addEventListener("DOMContentLoaded", init);
         ensureDefaultNimAndAzconnect();
         applySavedCustomItems();
         applySavedGeomOverrides();
+        applySavedMetaOverrides();
         if ($("mapMarkerDock")) $("mapMarkerDock").hidden = !isAdmin();
         origRenderAll();
         updateLegendVisibility();
