@@ -482,7 +482,10 @@ function saveProjectOverride(project) {
         startDate: project.startDate,
         endDate: project.endDate,
         customColor: project.customColor,
-        lineWidth: project.lineWidth
+        lineWidth: project.lineWidth,
+        polyFilled: project.polyFilled,
+        fillColor: project.fillColor,
+        fillOpacity: project.fillOpacity
     };
     writeStore(PROJ_META_STORE_KEY, map);
 }
@@ -502,7 +505,10 @@ function saveSegmentOverride(projectId, item) {
         fiberCount: item.fiberCount,
         customColor: item.customColor,
         lineWidth: item.lineWidth,
-        isPolygon: item.isPolygon
+        isPolygon: item.isPolygon,
+        polyFilled: item.polyFilled,
+        fillColor: item.fillColor,
+        fillOpacity: item.fillOpacity
     };
     writeStore(SEG_META_STORE_KEY, map);
 }
@@ -727,8 +733,11 @@ async function deleteFromEditor() {
 function editProject(project) {
     const isOther = (project?.category || state.sidebarCategory) === "other";
     const firstItem = project?.items?.[0];
-    const defaultOtherColor = normalizeColorCode(project?.customColor || firstItem?.customColor, firstItem?.isPolygon ? "#94A3B8" : "#38BDF8");
+    const defaultOtherColor = normalizeColorCode(project?.customColor || firstItem?.customColor || firstItem?.fillColor, firstItem?.isPolygon ? "#38BDF8" : "#38BDF8");
     const defaultOtherWidth = normalizeLineWidth(project?.lineWidth || firstItem?.lineWidth, firstItem?.isPolygon ? 1.4 : 1.8);
+    const curPolyFill = project?.polyFilled === true || firstItem?.polyFilled === true
+        ? "filled"
+        : (project?.polyFilled === false || firstItem?.polyFilled === false ? "hollow" : "auto");
 
     openEditor({
         title: t(project ? "editProject" : "addProject"),
@@ -739,17 +748,24 @@ function editProject(project) {
             start_date: project.startDate,
             end_date: project.endDate,
             custom_color: defaultOtherColor,
-            line_width: defaultOtherWidth
+            line_width: defaultOtherWidth,
+            poly_fill: curPolyFill
         } : {
             status: "layihe",
             project_type: "lines",
             custom_color: "#38BDF8",
-            line_width: 1.8
+            line_width: 1.8,
+            poly_fill: "auto"
         },
         fields: isOther ? [
             { key: "name", label: t("fieldName"), required: true, wide: true },
-            { key: "custom_color", label: "🎨 Xəttin / Sərhədin rəngi", type: "color", wide: true },
-            { key: "line_width", label: "📏 Xəttin qalınlığı (px)", type: "number", wide: true }
+            { key: "custom_color", label: "🎨 Rəng seçimi (Xətt / Poliqon rəngi)", type: "color", wide: true },
+            { key: "line_width", label: "📏 Sərhəd / Xətt qalınlığı (px)", type: "number", wide: true },
+            { key: "poly_fill", label: "🔷 Poliqon görünüşü (İçi dolu / boş)", type: "select", wide: true, options: [
+                ["auto", "✨ Fayldakı kimi (Avtomatik)"],
+                ["filled", "🟦 İçi dolu (Rəngli sahə — məs: Xəzər dənizi)"],
+                ["hollow", "⬜ İçi boş (Yalnız sərhəd xətti — məs: Rayonlar)"]
+            ] }
         ] : [
             { key: "name", label: t("fieldName"), required: true, wide: true },
             { key: "project_type", label: "Layihə növü", type: "select", options: [["lines", "〰️ Magistral Xətt layihəsi"], ["points", "📍 Nöqtə / Antena layihəsi"]], wide: true },
@@ -765,9 +781,22 @@ function editProject(project) {
                     const wid = normalizeLineWidth(row.line_width, defaultOtherWidth);
                     project.customColor = col;
                     project.lineWidth = wid;
+                    if (row.poly_fill === "filled") {
+                        project.polyFilled = true;
+                        project.fillColor = col;
+                    } else if (row.poly_fill === "hollow") {
+                        project.polyFilled = false;
+                    }
                     (project.items || []).forEach(it => {
                         it.customColor = col;
+                        it.fillColor = col;
                         it.lineWidth = wid;
+                        if (row.poly_fill === "filled") {
+                            it.isPolygon = true;
+                            it.polyFilled = true;
+                        } else if (row.poly_fill === "hollow") {
+                            it.polyFilled = false;
+                        }
                         saveSegmentOverride(project.id, it);
                     });
                 } else {
@@ -790,6 +819,7 @@ function editProject(project) {
                     endDate: row.end_date || "",
                     customColor: col,
                     lineWidth: wid,
+                    polyFilled: row.poly_fill === "filled" ? true : (row.poly_fill === "hollow" ? false : undefined),
                     items: [],
                     isLocal: true
                 };
@@ -803,6 +833,7 @@ function editProject(project) {
                 const dbRow = { ...row };
                 delete dbRow.custom_color;
                 delete dbRow.line_width;
+                delete dbRow.poly_fill;
                 await api.saveProjectRow(project.id, dbRow);
             } catch (e) {
                 console.warn("api.saveProjectRow xətası (lokal qorunur):", e);
@@ -853,8 +884,9 @@ function editSegment(project, item) {
             code: item.id, name: item.name, point_a: item.pointA || "", point_b: item.pointB || "", start_date: item.startDate, end_date: item.endDate,
             contractor: item.contractor || "", total_km: item.totalKm, done_km: item.doneKm, status: item.status || "layihe",
             fiber_count: currentFiber,
-            custom_color: item.customColor || (item.isPolygon ? "#94A3B8" : "#38BDF8"),
+            custom_color: item.customColor || item.fillColor || (item.isPolygon ? "#38BDF8" : "#38BDF8"),
             line_width: item.lineWidth || (item.isPolygon ? 1.4 : 2.0),
+            poly_fill: item.polyFilled === true ? "filled" : (item.polyFilled === false ? "hollow" : "auto"),
             antennas: item.antennas || 0, coords: coordsToText(item.coords)
         } : {
             code: `${isOther ? "RM" : (isPoints ? "PT" : "SEG")}-${Date.now().toString().slice(-4)}`,
@@ -862,6 +894,7 @@ function editSegment(project, item) {
             fiber_count: "FO 48",
             custom_color: "#38BDF8",
             line_width: 1.8,
+            poly_fill: "auto",
             total_km: 0,
             done_km: 0,
             antennas: 0,
@@ -876,7 +909,12 @@ function editSegment(project, item) {
             { key: "name", label: t("fieldName"), required: true, wide: true },
             ...(isOther ? [
                 { key: "custom_color", label: "🎨 Rəng seçimi (və ya rəng kodu)", type: "color", wide: true },
-                { key: "line_width", label: "📏 Xətt qalınlığı (px)", type: "number", wide: true }
+                { key: "line_width", label: "📏 Xətt / Sərhəd qalınlığı (px)", type: "number", wide: true },
+                { key: "poly_fill", label: "🔷 Poliqon görünüşü (İçi dolu / boş)", type: "select", wide: true, options: [
+                    ["auto", "✨ Fayldakı kimi (Avtomatik)"],
+                    ["filled", "🟦 İçi dolu (Rəngli sahə)"],
+                    ["hollow", "⬜ İçi boş (Yalnız sərhəd xətti)"]
+                ] }
             ] : []),
             ...(!isOther ? [
                 { key: "point_a", label: `📍 ${t("pointA")}`, required: true },
@@ -910,11 +948,22 @@ function editSegment(project, item) {
                     if (isPoints) item.antennas = Number(row.antennas || 0);
                 } else {
                     item.status = row.status || item.status || "layihe";
-                    if (row.custom_color) item.customColor = normalizeColorCode(row.custom_color, item.customColor || "#38BDF8");
+                    if (row.custom_color) {
+                        const col = normalizeColorCode(row.custom_color, item.customColor || "#38BDF8");
+                        item.customColor = col;
+                        item.fillColor = col;
+                    }
                     if (row.line_width) item.lineWidth = normalizeLineWidth(row.line_width, item.lineWidth || 1.8);
+                    if (row.poly_fill === "filled") {
+                        item.isPolygon = true;
+                        item.polyFilled = true;
+                    } else if (row.poly_fill === "hollow") {
+                        item.polyFilled = false;
+                    }
                 }
                 item.coords = parsedCoords;
             } else {
+                const col = isOther ? normalizeColorCode(row.custom_color, "#38BDF8") : "";
                 const newSeg = {
                     id: row.code,
                     name: row.name,
@@ -922,8 +971,11 @@ function editSegment(project, item) {
                     pointB: row.point_b || "",
                     status: row.status || "layihe",
                     fiberCount: foVal,
-                    customColor: isOther ? normalizeColorCode(row.custom_color, "#38BDF8") : "",
+                    customColor: col,
+                    fillColor: col,
                     lineWidth: isOther ? normalizeLineWidth(row.line_width, 1.8) : 0,
+                    isPolygon: row.poly_fill === "filled" ? true : false,
+                    polyFilled: row.poly_fill === "filled" ? true : (row.poly_fill === "hollow" ? false : undefined),
                     totalKm: Number(row.total_km) || 0,
                     doneKm: Number(row.done_km) || 0,
                     contractor: row.contractor || "",
@@ -945,6 +997,7 @@ function editSegment(project, item) {
                 delete dbRow.fiber_count;
                 delete dbRow.custom_color;
                 delete dbRow.line_width;
+                delete dbRow.poly_fill;
                 await api.saveSegment(project.id, oldCode || item?.id, {
                     ...dbRow,
                     point_a: item.pointA || "",
@@ -1282,14 +1335,19 @@ function mapStyle() {
         layers: [
             { id: "bg", type: "background", paint: { "background-color": "#1c2a30" } },
             rasterLayer("esri"), rasterLayer("esri-transport"), rasterLayer("esri-places"), rasterLayer("osm"), rasterLayer("carto"),
-            /* ALT QAT (Underlay): Poliqon sərhədləri (rayon sərhədləri) və Digər qovluğunun xətləri — bütün magistral xətlər və nöqtələr bunların üzərinə düşür */
-            { id: "routes-poly-casing", type: "line", source: "routes", filter: ["all", ["==", ["geometry-type"], "LineString"], ["has", "isPolygon"]], layout: { "line-cap": "round", "line-join": "round" },
+            /* ALT QAT (Underlay): Poliqon sahələri (məs: Xəzər dənizi), poliqon sərhədləri (rayon sərhədləri) və Digər qovluğunun xətləri — bütün magistral xətlər və nöqtələr bunların üzərinə düşür */
+            { id: "routes-poly-fill", type: "fill", source: "routes", filter: ["all", ["==", ["geometry-type"], "Polygon"], ["==", ["get", "polyFilled"], true]],
+                paint: {
+                    "fill-color": ["coalesce", ["get", "fillColor"], ["get", "color"]],
+                    "fill-opacity": ["case", ["get", "dim"], 0.14, ["coalesce", ["get", "fillOpacity"], 0.48]]
+                } },
+            { id: "routes-poly-casing", type: "line", source: "routes", filter: ["has", "isPolygon"], layout: { "line-cap": "round", "line-join": "round" },
                 paint: {
                     "line-color": ["case", ["get", "sel"], "#ffffff", "#04101c"],
                     "line-width": ["+", ["coalesce", ["get", "lineWidth"], 1.3], 1.0],
                     "line-opacity": ["case", ["get", "dim"], 0.14, 0.38]
                 } },
-            { id: "routes-poly-line", type: "line", source: "routes", filter: ["all", ["==", ["geometry-type"], "LineString"], ["has", "isPolygon"]], layout: { "line-cap": "round", "line-join": "round" },
+            { id: "routes-poly-line", type: "line", source: "routes", filter: ["has", "isPolygon"], layout: { "line-cap": "round", "line-join": "round" },
                 paint: {
                     "line-color": ["get", "color"],
                     "line-width": ["case", ["get", "sel"], ["+", ["coalesce", ["get", "lineWidth"], 1.3], 0.8], ["coalesce", ["get", "lineWidth"], 1.3]],
@@ -1507,7 +1565,7 @@ function initMap() {
     map.on("rotate", () => {
         $("northIcon").style.transform = `rotate(${-45 - map.getBearing()}deg)`;
     });
-    ["routes-hit", "routes-other-line", "routes-other-points", "routes-fo-points", "routes-ends", "routes-ends-label", "routes-ends-label-fixed", "routes-point-overview", "routes-point-halo", "routes-point-shape", "routes-point-name", "routes-point-label", "routes-point-label-near"].forEach(layer => {
+    ["routes-poly-fill", "routes-poly-line", "routes-other", "routes-hit", "routes-other-line", "routes-other-points", "routes-fo-points", "routes-ends", "routes-ends-label", "routes-ends-label-fixed", "routes-point-overview", "routes-point-halo", "routes-point-shape", "routes-point-name", "routes-point-label", "routes-point-label-near"].forEach(layer => {
         map.on("mousemove", layer, e => {
             if (tools.isActive()) return;
             window.routeHover = true;
@@ -1924,12 +1982,13 @@ function drawRoutes() {
         const isOther = project.category === "other";
         const isClosedRing = coords.length >= 4 && Math.hypot(coords[0][0] - coords[coords.length - 1][0], coords[0][1] - coords[coords.length - 1][1]) < 0.003;
         const isPolyItem = Boolean(r.isPolygon || (isOther && isClosedRing));
+        const isWaterPoly = isPolyItem && /(x[əe]z[əe]r|caspian|d[əe]niz|g[öo]l|su\s*h[öo]vz|sea|lake|water)/i.test(`${r.name || ""} ${project.name || ""}`);
 
-        const defaultOtherColor = isPolyItem ? "#94A3B8" : "#38BDF8";
+        const defaultOtherColor = isWaterPoly ? "#0284C7" : (isPolyItem ? "#94A3B8" : "#38BDF8");
         const color = isOther
-            ? normalizeColorCode(r.customColor, defaultOtherColor)
+            ? normalizeColorCode(r.customColor || project.customColor, defaultOtherColor)
             : (r.customColor ? normalizeColorCode(r.customColor, statusTone(r.status)) : statusTone(r.status));
-        const customLineWidth = normalizeLineWidth(r.lineWidth, isPolyItem ? 1.3 : (isOther ? 1.8 : 0));
+        const customLineWidth = normalizeLineWidth(r.lineWidth || project.lineWidth, isPolyItem ? 1.3 : (isOther ? 1.8 : 0));
 
         const shape = getProjectShape(project);
         const shapeIcon = `pt-${shape.id}-${statusTone(r.status).replace("#", "").toLowerCase()}`;
@@ -1937,7 +1996,7 @@ function drawRoutes() {
         const isSingleCoord = coords.length === 1 || (coords.length === 2 && coords[0][0] === coords[1][0] && coords[0][1] === coords[1][1]);
         const isPointItem = !isPolyItem && (project.type === "points" || isSingleCoord || (r.antennas || 0) > 0);
 
-        // 1) POLİQON (məs: Rayon sərhədləri) — Alt qatda yalnız sərhəd xətti və mərkəzdə sakit rayon adı
+        // 1) POLİQON (məs: Xəzər dənizi — içi dolu və ya Rayon sərhədləri — içi boş sərhəd xətti)
         if (isPolyItem && coords.length >= 3) {
             const rawPolyName = String(r.name || "").trim();
             const isGenericPoly = /^(?:idxal\s*x[əe]tti|imported\s*line|x[əe]tt|line|imp|poly|poliqon)[-\s]*\d*$/i.test(rawPolyName);
@@ -1953,13 +2012,36 @@ function drawRoutes() {
                 ringCoords.push([firstPt[0], firstPt[1]]);
             }
 
+            const polyFilled = r.polyFilled !== undefined
+                ? Boolean(r.polyFilled)
+                : (project.polyFilled !== undefined ? Boolean(project.polyFilled) : Boolean(isWaterPoly));
+            const fillColor = normalizeColorCode(r.fillColor || r.customColor || project.fillColor || project.customColor, color);
+            const fillOpacity = Number(r.fillOpacity || project.fillOpacity) > 0
+                ? Math.max(0.08, Math.min(0.92, Number(r.fillOpacity || project.fillOpacity)))
+                : (isWaterPoly ? 0.52 : 0.45);
+
+            const holeRings = Array.isArray(r.holes)
+                ? r.holes.map(h => {
+                    const hr = h.map(([lat, lng]) => [lng, lat]);
+                    if (hr.length >= 3 && (hr[0][0] !== hr[hr.length - 1][0] || hr[0][1] !== hr[hr.length - 1][1])) {
+                        hr.push([hr[0][0], hr[0][1]]);
+                    }
+                    return hr;
+                }).filter(hr => hr.length >= 4)
+                : [];
+
             features.push({
                 type: "Feature",
-                geometry: { type: "LineString", coordinates: ringCoords },
+                geometry: polyFilled
+                    ? { type: "Polygon", coordinates: [ringCoords, ...holeRings] }
+                    : { type: "LineString", coordinates: ringCoords },
                 properties: {
                     isPolygon: true,
                     isOther: Boolean(isOther),
+                    polyFilled,
                     color,
+                    fillColor,
+                    fillOpacity,
                     lineWidth: customLineWidth || 1.3,
                     dim,
                     sel: Boolean(selected?.item === r),
@@ -2293,7 +2375,7 @@ function onMapClick(e) {
         setDrawer(false);
     }
     const box = [[e.point.x - 5, e.point.y - 5], [e.point.x + 5, e.point.y + 5]];
-    const hit = map.queryRenderedFeatures(box, { layers: ["routes-point-overview", "routes-point-halo", "routes-point-shape", "routes-point-label", "routes-point-label-near", "routes-point-name", "routes-ends", "routes-ends-label", "routes-ends-label-fixed", "routes-other-points", "routes-other-line", "routes-fo-points", "routes-hit"] })[0];
+    const hit = map.queryRenderedFeatures(box, { layers: ["routes-point-overview", "routes-point-halo", "routes-point-shape", "routes-point-label", "routes-point-label-near", "routes-point-name", "routes-ends", "routes-ends-label", "routes-ends-label-fixed", "routes-other-points", "routes-other-line", "routes-fo-points", "routes-hit", "routes-other", "routes-poly-line", "routes-poly-fill"] })[0];
     if (!hit) return;
     const project = state.projects.find(p => p.id === hit.properties.projectId);
     if (project) selectSegment(project, project.items.find(r => r.id === hit.properties.itemId));
@@ -2865,14 +2947,16 @@ function linesFromGeoJson(data) {
             geometry.coordinates.forEach(part => items.push({ isPoint: false, isPolygon: false, name, props, coords: part.map(c => [c[1], c[0]]) }));
         } else if (geometry.type === "Polygon") {
             const outerRing = geometry.coordinates?.[0];
+            const holeRings = (geometry.coordinates || []).slice(1).map(r => r.map(c => [c[1], c[0]]));
             if (Array.isArray(outerRing) && outerRing.length >= 3) {
-                items.push({ isPoint: false, isPolygon: true, name, props, coords: outerRing.map(c => [c[1], c[0]]) });
+                items.push({ isPoint: false, isPolygon: true, name, props, holes: holeRings, coords: outerRing.map(c => [c[1], c[0]]) });
             }
         } else if (geometry.type === "MultiPolygon") {
             (geometry.coordinates || []).forEach(poly => {
                 const outerRing = poly?.[0];
+                const holeRings = (poly || []).slice(1).map(r => r.map(c => [c[1], c[0]]));
                 if (Array.isArray(outerRing) && outerRing.length >= 3) {
-                    items.push({ isPoint: false, isPolygon: true, name, props, coords: outerRing.map(c => [c[1], c[0]]) });
+                    items.push({ isPoint: false, isPolygon: true, name, props, holes: holeRings, coords: outerRing.map(c => [c[1], c[0]]) });
                 }
             });
         } else if (geometry.type === "GeometryCollection") {
@@ -2888,14 +2972,31 @@ function linesFromKml(text) {
     const doc = new DOMParser().parseFromString(text, "application/xml");
     if (doc.querySelector("parsererror")) throw new Error("Invalid KML");
 
-    // KML daxilindəki <Style> və <StyleMap> rəng / qalınlıq məlumatlarını oxu
+    // KML daxilindəki <Style> və <StyleMap> rəng / qalınlıq / poliqon doluluq məlumatlarını oxu
     const styleById = {};
     const styleMapById = {};
 
+    function parseKmlColorAlpha(kmlHex) {
+        if (!kmlHex) return { hex: "", opacity: 0 };
+        const clean = String(kmlHex).trim().replace(/^#/, "");
+        if (/^[0-9a-fA-F]{8}$/.test(clean)) {
+            const aa = parseInt(clean.slice(0, 2), 16) / 255;
+            const bb = clean.slice(2, 4);
+            const gg = clean.slice(4, 6);
+            const rr = clean.slice(6, 8);
+            return { hex: `#${rr}${gg}${bb}`.toUpperCase(), opacity: Math.round(aa * 100) / 100 };
+        }
+        return { hex: normalizeColorCode(kmlHex, ""), opacity: 0.5 };
+    }
+
     function extractStyleFromNode(styleNode) {
-        if (!styleNode) return { color: "", width: 0 };
+        if (!styleNode) return { color: "", width: 0, fillColor: "", fillOpacity: 0, polyFilled: undefined };
         let color = "";
         let width = 0;
+        let fillColor = "";
+        let fillOpacity = 0;
+        let polyFilled = undefined;
+
         const lineStyle = styleNode.getElementsByTagName("LineStyle")[0];
         if (lineStyle) {
             const cNode = lineStyle.getElementsByTagName("color")[0];
@@ -2903,12 +3004,26 @@ function linesFromKml(text) {
             if (cNode?.textContent) color = kmlColorToHex(cNode.textContent.trim());
             if (wNode?.textContent) width = normalizeLineWidth(wNode.textContent.trim(), 0);
         }
-        if (!color) {
-            const polyStyle = styleNode.getElementsByTagName("PolyStyle")[0];
-            const cNode = polyStyle?.getElementsByTagName("color")[0];
-            if (cNode?.textContent) color = kmlColorToHex(cNode.textContent.trim());
+        const polyStyle = styleNode.getElementsByTagName("PolyStyle")[0];
+        if (polyStyle) {
+            const fillNode = polyStyle.getElementsByTagName("fill")[0];
+            const fillTagVal = fillNode?.textContent?.trim();
+            const cNode = polyStyle.getElementsByTagName("color")[0];
+            if (cNode?.textContent) {
+                const parsed = parseKmlColorAlpha(cNode.textContent.trim());
+                fillColor = parsed.hex;
+                fillOpacity = parsed.opacity;
+                if (!color) color = fillColor;
+            }
+            if (fillTagVal === "0" || fillTagVal === "false") {
+                polyFilled = false;
+            } else if (fillTagVal === "1" || fillTagVal === "true") {
+                polyFilled = cNode?.textContent ? fillOpacity > 0.02 : true;
+            } else if (cNode?.textContent) {
+                polyFilled = fillOpacity > 0.02;
+            }
         }
-        return { color, width };
+        return { color, width, fillColor, fillOpacity, polyFilled };
     }
 
     Array.from(doc.getElementsByTagName("Style")).forEach(st => {
@@ -2933,11 +3048,11 @@ function linesFromKml(text) {
     });
 
     function resolvePlacemarkStyle(placemark) {
-        if (!placemark) return { color: "", width: 0 };
+        if (!placemark) return { color: "", width: 0, fillColor: "", fillOpacity: 0, polyFilled: undefined };
         const inlineStyle = Array.from(placemark.childNodes).find(n => n.nodeType === 1 && /(^|:)style$/i.test(n.nodeName || ""));
         if (inlineStyle) {
             const inline = extractStyleFromNode(inlineStyle);
-            if (inline.color || inline.width) return inline;
+            if (inline.color || inline.width || inline.fillColor || inline.polyFilled !== undefined) return inline;
         }
         let sUrl = placemark.getElementsByTagName("styleUrl")[0]?.textContent?.trim() || "";
         if (sUrl && !sUrl.startsWith("#") && sUrl.includes("#")) {
@@ -2947,7 +3062,7 @@ function linesFromKml(text) {
         if (sUrl && !sUrl.startsWith("#") && sUrl.includes("#")) {
             sUrl = sUrl.slice(sUrl.indexOf("#"));
         }
-        return styleById[sUrl] || { color: "", width: 0 };
+        return styleById[sUrl] || { color: "", width: 0, fillColor: "", fillOpacity: 0, polyFilled: undefined };
     }
 
     function findPlacemark(node) {
@@ -3071,7 +3186,7 @@ function linesFromKml(text) {
         items.push({ isPoint: false, isPolygon: false, name, props, styleColor: st.color, styleWidth: st.width, coords });
     });
 
-    // Poliqon dəstəyi (məs: ArcGIS Pro-dan çıxarılan Rayon Sərhədləri)
+    // Poliqon dəstəyi (məs: Xəzər dənizi — içi dolu poliqon və ya Rayon Sərhədləri — sərhəd poliqonu)
     Array.from(doc.getElementsByTagName("Polygon")).forEach(node => {
         const outer = node.getElementsByTagName("outerBoundaryIs")[0] || node;
         const coordsNode = outer.getElementsByTagName("coordinates")[0] || node.getElementsByTagName("coordinates")[0];
@@ -3082,11 +3197,32 @@ function linesFromKml(text) {
         }).filter(c => !isNaN(c[0]) && !isNaN(c[1]));
         if (coords.length < 3) return;
 
+        const holes = Array.from(node.getElementsByTagName("innerBoundaryIs")).map(inner => {
+            const cn = inner.getElementsByTagName("coordinates")[0];
+            if (!cn) return [];
+            return cn.textContent.trim().split(/\s+/).map(tuple => {
+                const [lng, lat] = tuple.split(",").map(Number);
+                return [lat, lng];
+            }).filter(c => !isNaN(c[0]) && !isNaN(c[1]));
+        }).filter(h => h.length >= 3);
+
         const placemark = findPlacemark(node);
         const props = parseProps(placemark);
         const name = resolveName(placemark, props);
         const st = resolvePlacemarkStyle(placemark);
-        items.push({ isPoint: false, isPolygon: true, name, props, styleColor: st.color, styleWidth: st.width, coords });
+        items.push({
+            isPoint: false,
+            isPolygon: true,
+            name,
+            props,
+            styleColor: st.color,
+            styleWidth: st.width,
+            styleFillColor: st.fillColor,
+            styleFillOpacity: st.fillOpacity,
+            styleFilled: st.polyFilled,
+            holes,
+            coords
+        });
     });
 
     Array.from(doc.getElementsByTagName("Point")).forEach(node => {
@@ -3125,12 +3261,14 @@ async function readLines(file) {
     return linesFromGeoJson(JSON.parse(text));
 }
 
-function projectFromFile(fileName, lines) {
+function projectFromFile(fileName, lines, polyFillMode = "auto") {
     const id = `proj_custom_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
     const hasPoints = lines.every(l => l.isPoint || l.coords.length === 1);
+    const cleanFileName = fileName.replace(/\.[^/.]+$/, "");
     return {
         id, imported: true, type: hasPoints ? "points" : "lines", status: "layihe", startDate: "", endDate: "",
-        name: fileName.replace(/\.[^/.]+$/, ""),
+        name: cleanFileName,
+        polyFilled: polyFillMode === "filled" ? true : (polyFillMode === "hollow" ? false : undefined),
         items: lines.map((line, index) => {
             const p = line.props || {};
 
@@ -3143,7 +3281,7 @@ function projectFromFile(fileName, lines) {
             const matchedContractor = findContractorInfo(rawContractor);
             const contractor = matchedContractor ? matchedContractor.name : rawContractor;
 
-            // 3. Name: Ağsu-Şamaxı, Şamaxı-İsmayıllı, Rayon adı və s.
+            // 3. Name: Ağsu-Şamaxı, Şamaxı-İsmayıllı, Rayon adı, Xəzər dənizi və s.
             let nameVal = (line.name && line.name.trim())
                 || getPropCaseInsensitive(
                     p,
@@ -3151,20 +3289,58 @@ function projectFromFile(fileName, lines) {
                     "NAME_1", "NAME_2", "NAME_AZ", "ADM2_AZ", "ADM2_EN", "ADM1_AZ", "sheher", "bolge", "label", "layihe_adi"
                 );
 
-            // 3b. Rəng kodu və Qalınlıq (ArcGIS atribut sütunlarından və ya KML stilindən)
+            // 3b. Rəng kodu, Doluluq (Fill) və Qalınlıq (ArcGIS atribut sütunlarından və ya KML stilindən)
             const rawColorAttr = getPropCaseInsensitive(
                 p,
                 "reng_kodu", "rəng_kodu", "rengkodu", "reng", "rəng", "color", "color_code", "colorcode",
                 "hex", "stroke", "line_color", "linecolor", "xett_rengi", "serhed_rengi", "rgb"
+            );
+            const rawFillColorAttr = getPropCaseInsensitive(
+                p,
+                "fill_color", "fillcolor", "fill", "dolu_reng", "sahe_rengi", "poliqon_rengi"
             );
             const rawWidthAttr = getPropCaseInsensitive(
                 p,
                 "qalinliq", "qalınlıq", "width", "thickness", "line_width", "linewidth",
                 "stroke_width", "strokewidth", "xett_qalinligi", "qalinligi", "size", "weight"
             );
-            const customColor = normalizeColorCode(rawColorAttr, line.styleColor || "");
+            const rawFillModeAttr = getPropCaseInsensitive(
+                p,
+                "ici_dolu", "icidolu", "filled", "poly_fill", "polyfill", "gorunus"
+            );
+
+            const isClosedRing = Array.isArray(line.coords) && line.coords.length >= 4
+                && Math.hypot(line.coords[0][0] - line.coords[line.coords.length - 1][0], line.coords[0][1] - line.coords[line.coords.length - 1][1]) < 0.003;
+            const isPolygon = Boolean(line.isPolygon || (polyFillMode === "filled" && isClosedRing));
+
+            const combinedTitle = `${nameVal || ""} ${cleanFileName}`;
+            const isWaterName = /(x[əe]z[əe]r|caspian|d[əe]niz|g[öo]l|su\s*h[öo]vz|sea|lake|water)/i.test(combinedTitle);
+            const isBorderName = /(s[əe]rh[əe]d|rayon|border|boundary)/i.test(combinedTitle) && !isWaterName;
+
+            let polyFilled = false;
+            if (isPolygon) {
+                if (polyFillMode === "filled") {
+                    polyFilled = true;
+                } else if (polyFillMode === "hollow") {
+                    polyFilled = false;
+                } else if (rawFillModeAttr !== undefined) {
+                    polyFilled = /^(1|true|yes|beli|bəli|dolu|filled)$/i.test(String(rawFillModeAttr).trim());
+                } else if (isWaterName) {
+                    polyFilled = true;
+                } else if (isBorderName) {
+                    polyFilled = false;
+                } else if (line.styleFilled !== undefined) {
+                    polyFilled = Boolean(line.styleFilled);
+                } else {
+                    polyFilled = true;
+                }
+            }
+
+            const defaultWaterColor = isWaterName ? "#0284C7" : "";
+            const customColor = normalizeColorCode(rawColorAttr, line.styleColor || line.styleFillColor || defaultWaterColor);
+            const fillColor = normalizeColorCode(rawFillColorAttr || rawColorAttr, line.styleFillColor || line.styleColor || customColor || defaultWaterColor);
+            const fillOpacity = Number(line.styleFillOpacity) > 0 ? Number(line.styleFillOpacity) : (isWaterName ? 0.52 : 0.45);
             const lineWidth = normalizeLineWidth(rawWidthAttr, line.styleWidth || 0);
-            const isPolygon = Boolean(line.isPolygon);
 
             // 4. pointA & pointB (birbaşa faylın atributlarından oxunur)
             let pointA = getPropCaseInsensitive(p, "pointA", "point_a", "pointa", "a_noqte", "a_noqtesi", "baslangic", "start_point", "from", "a") || "";
@@ -3219,7 +3395,9 @@ function projectFromFile(fileName, lines) {
                 id: `${isPolygon ? "PLY" : "IMP"}-${String(index + 1).padStart(2, "0")}`,
                 name: nameVal,
                 pointA, pointB, startDate: "", endDate: "", contractor,
-                totalKm, doneKm, status, fiberCount, customColor, lineWidth, isPolygon, closures: 0, manholes: 0, antennas: 0,
+                totalKm, doneKm, status, fiberCount, customColor, fillColor, fillOpacity, lineWidth, isPolygon, polyFilled,
+                holes: line.holes || [],
+                closures: 0, manholes: 0, antennas: 0,
                 props: p,
                 coords: line.coords
             };
@@ -3232,6 +3410,7 @@ let pendingImportCategory = "other";
 async function handleImportFiles(fileList, targetCategory) {
     const added = [];
     const cat = isAdmin() ? (targetCategory || pendingImportCategory || "project") : "other";
+    const polyFillMode = $("importPolyFillMode")?.value || "auto";
     const catLabels = { project: "📁 Layihələr", nim: "🚦 NİM", azconnect: "🌐 Azconnect", other: "🗂️ Digər" };
     for (const file of fileList) {
         try {
@@ -3240,7 +3419,7 @@ async function handleImportFiles(fileList, targetCategory) {
                 toast(`${file.name}: ${t("importNoLines")}`, true);
                 continue;
             }
-            const project = projectFromFile(file.name, lines);
+            const project = projectFromFile(file.name, lines, polyFillMode);
             project.id = project.id || (`imp_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`);
             project.imported = true;
             project.category = cat;
