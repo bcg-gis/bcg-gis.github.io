@@ -1384,7 +1384,7 @@ function registerPointShapeImages() {
         });
     });
 
-    // A və B başlanğıc/son nöqtələri üçün Qırmızı Sorma Konfet (Lollipop) ikonu: yuxarısı qırmızı dairə, aşağıya düz xətt
+    // A və B başlanğıc/son nöqtələri üçün Qırmızı Sorma Konfet (Lollipop) ikonu: yuxarısı bütöv qırmızı dairə (içi ağ deyil), aşağıya düz xətt
     const pinW = 30;
     const pinH = 44;
     const cx = pinW / 2;
@@ -1402,43 +1402,29 @@ function registerPointShapeImages() {
         const ctx = canvas.getContext("2d");
 
         ctx.save();
-        // 1. Aşağıya düz şaquli xətt (çubuq) — həm ağ, həm tünd xəritədə aydın görünməsi üçün kənar konturla
+        // 1. Aşağıya düz şaquli xətt (çubuq) — bütöv qırmızı
         ctx.beginPath();
         ctx.moveTo(cx, cy + pr - 1);
         ctx.lineTo(cx, pinH - 2);
         ctx.lineCap = "round";
-        ctx.lineWidth = 4.6;
-        ctx.strokeStyle = "rgba(15, 23, 42, 0.85)";
-        ctx.stroke();
-
-        ctx.beginPath();
-        ctx.moveTo(cx, cy + pr - 1);
-        ctx.lineTo(cx, pinH - 2);
-        ctx.lineCap = "round";
-        ctx.lineWidth = 2.6;
+        ctx.lineWidth = 3.0;
         ctx.strokeStyle = color;
         ctx.stroke();
 
-        // 2. Yuxarı hissədə qırmızı dairə (sorma konfet başlığı)
+        // 2. Yuxarı hissədə bütöv qırmızı dairə (içi və haşiyəsi tam qırmızı, heç bir ağ rəng yoxdur)
         ctx.beginPath();
         ctx.arc(cx, cy, pr, 0, Math.PI * 2);
-        ctx.shadowColor = "rgba(0, 0, 0, 0.45)";
+        ctx.shadowColor = "rgba(0, 0, 0, 0.35)";
         ctx.shadowBlur = 3;
-        ctx.shadowOffsetY = 1;
+        ctx.shadowOffsetY = 1.5;
         ctx.fillStyle = color;
         ctx.fill();
 
         ctx.shadowBlur = 0;
         ctx.shadowOffsetY = 0;
-        ctx.lineWidth = 2.0;
-        ctx.strokeStyle = "#ffffff";
+        ctx.lineWidth = 1.2;
+        ctx.strokeStyle = "#B91C1C";
         ctx.stroke();
-
-        // Dairənin mərkəzində kiçik ağ nöqtə (parıltı)
-        ctx.beginPath();
-        ctx.arc(cx, cy, 2.5, 0, Math.PI * 2);
-        ctx.fillStyle = "#ffffff";
-        ctx.fill();
         ctx.restore();
 
         map.addImage(pinId, ctx.getImageData(0, 0, pinW, pinH), { pixelRatio: 2 });
@@ -1473,9 +1459,9 @@ function mapStyle() {
                 } },
             { id: "routes-poly-casing", type: "line", source: "routes", filter: ["has", "isPolygon"], layout: { "line-cap": "round", "line-join": "round" },
                 paint: {
-                    "line-color": ["case", ["get", "sel"], "#ffffff", "#04101c"],
-                    "line-width": ["+", ["coalesce", ["get", "lineWidth"], 1.3], 1.0],
-                    "line-opacity": ["case", ["get", "dim"], 0.14, 0.38]
+                    "line-color": "#ffffff",
+                    "line-width": ["+", ["coalesce", ["get", "lineWidth"], 1.3], 1.2],
+                    "line-opacity": ["case", ["get", "sel"], 0.95, 0]
                 } },
             { id: "routes-poly-line", type: "line", source: "routes", filter: ["has", "isPolygon"], layout: { "line-cap": "round", "line-join": "round" },
                 paint: {
@@ -1489,12 +1475,12 @@ function mapStyle() {
                     "line-width": ["case", ["get", "sel"], ["+", ["coalesce", ["get", "lineWidth"], 1.8], 0.9], ["coalesce", ["get", "lineWidth"], 1.8]],
                     "line-opacity": ["case", ["get", "dim"], 0.25, 0.88]
                 } },
-            /* Alt qatın mərkəz adları (Rayon adları və Digər qovluğunun mərkəz yazıları — sakit, gözə çarpmayan üslubda) */
-            { id: "routes-poly-label", type: "symbol", source: "route-labels", minzoom: 5.8, filter: ["has", "subtleCenterImg"],
+            /* Alt qatın mərkəz adları (Rayon adları və Digər qovluğunun mərkəz yazıları — sakit, gözə çarpmayan üslubda): 10 km miqyasına qədər qalır */
+            { id: "routes-poly-label", type: "symbol", source: "route-labels", minzoom: 3.5, filter: ["has", "subtleCenterImg"],
                 layout: {
                     "icon-image": ["get", "subtleCenterImg"],
                     "icon-anchor": "center",
-                    "icon-size": ["interpolate", ["linear"], ["zoom"], 5.8, 0.68, 8.5, 0.85, 12, 0.95],
+                    "icon-size": ["interpolate", ["linear"], ["zoom"], 4, 0.52, 6.5, 0.68, 8.8, 0.82],
                     "icon-padding": 6,
                     "icon-allow-overlap": false,
                     "icon-ignore-placement": false
@@ -1503,40 +1489,42 @@ function mapStyle() {
                     "icon-opacity": ["case", ["get", "dim"], 0.22, 0.82]
                 } },
             /* ƏSAS ÜST QAT: Magistral kabellər, FO nişanları, Konum (A/B) ikonları və Layihə nöqtələri */
+            /* Kənarlarında heç bir qara xətt yoxdur: yalnız seçildikdə zərif ağ kontur saçır, normal halda 0 */
             { id: "routes-casing", type: "line", source: "routes", filter: ["all", ["==", ["geometry-type"], "LineString"], ["!", ["has", "isOther"]], ["!", ["has", "isPolygon"]]], layout: { "line-cap": "round", "line-join": "round" },
                 paint: {
-                    "line-color": ["case", ["get", "sel"], "#ffffff", "#04101c"],
-                    "line-width": ["interpolate", ["linear"], ["zoom"], 6, ["case", ["get", "sel"], 5.2, 3.6], 14, ["case", ["get", "sel"], 7.2, 5.0]],
-                    "line-opacity": ["case", ["get", "dim"], 0.22, ["case", ["get", "sel"], 1, .75]]
+                    "line-color": "#ffffff",
+                    "line-width": ["interpolate", ["linear"], ["zoom"], 5, 4.4, 14, 5.8],
+                    "line-opacity": ["case", ["get", "sel"], 0.95, 0]
                 } },
+            /* Xətt özü bütöv rənglidir — kənarlarında qara zolaq olmadan gözü yormayan təmiz rəng */
             { id: "routes-line", type: "line", source: "routes", filter: ["all", ["==", ["geometry-type"], "LineString"], ["!", ["has", "isOther"]], ["!", ["has", "isPolygon"]]], layout: { "line-cap": "round", "line-join": "round" },
                 paint: {
                     "line-color": ["get", "color"],
-                    "line-width": ["interpolate", ["linear"], ["zoom"], 6, ["case", ["get", "sel"], 3.4, 2.1], 14, ["case", ["get", "sel"], 4.6, 3.1]],
+                    "line-width": ["interpolate", ["linear"], ["zoom"], 5, ["case", ["get", "sel"], 4.2, 2.7], 14, ["case", ["get", "sel"], 5.4, 3.5]],
                     "line-opacity": ["case", ["get", "dim"], 0.25, 1]
                 } },
             { id: "routes-hit", type: "line", source: "routes", filter: ["all", ["==", ["geometry-type"], "LineString"], ["!", ["has", "isPolygon"]]], paint: { "line-color": "#000", "line-width": 14, "line-opacity": 0 } },
-            /* Digər (RM və köməkçi xətlər): adları xətt boyu (paralel bucaqla) çıxır */
-            { id: "routes-other-line", type: "symbol", source: "routes", minzoom: 6, filter: ["all", ["==", ["geometry-type"], "LineString"], ["has", "otherLineImg"]],
+            /* Digər (RM və köməkçi xətlər): adları xətt boyu çıxır, 10 km miqyasına qədər qalır və miqyas böyüdükcə normal kiçilir */
+            { id: "routes-other-line", type: "symbol", source: "routes", minzoom: 3.5, filter: ["all", ["==", ["geometry-type"], "LineString"], ["has", "otherLineImg"]],
                 layout: {
                     "symbol-placement": "line",
                     "symbol-spacing": 340,
                     "icon-image": ["get", "otherLineImg"],
                     "icon-rotation-alignment": "map",
                     "icon-keep-upright": true,
-                    "icon-size": ["interpolate", ["linear"], ["zoom"], 6, 0.72, 9, 0.86, 13, 0.92],
+                    "icon-size": ["interpolate", ["linear"], ["zoom"], 4, 0.52, 6.5, 0.68, 8.8, 0.82],
                     "icon-allow-overlap": false,
                     "icon-ignore-placement": false
                 },
                 paint: {
                     "icon-opacity": ["case", ["get", "dim"], 0.28, 1]
                 } },
-            { id: "routes-other-points", type: "symbol", source: "route-labels", minzoom: 6, filter: ["has", "otherPointImg"],
+            { id: "routes-other-points", type: "symbol", source: "route-labels", minzoom: 3.5, filter: ["has", "otherPointImg"],
                 layout: {
                     "icon-image": ["get", "otherPointImg"],
                     "icon-rotate": ["get", "iconRotate"],
                     "icon-rotation-alignment": "map",
-                    "icon-size": ["interpolate", ["linear"], ["zoom"], 6, 0.72, 9, 0.86, 13, 0.92],
+                    "icon-size": ["interpolate", ["linear"], ["zoom"], 4, 0.52, 6.5, 0.68, 8.8, 0.82],
                     "icon-padding": 16,
                     "icon-allow-overlap": false,
                     "icon-ignore-placement": false
@@ -1544,15 +1532,15 @@ function mapStyle() {
                 paint: {
                     "icon-opacity": ["case", ["get", "dim"], 0.28, 1]
                 } },
-            /* Kabel üzərində lif sayı (FO 48, FO 24, FO 12): ümumi xəritəyə baxanda aydın oxunacaq şəkildə */
-            { id: "routes-fo-points", type: "symbol", source: "route-labels", minzoom: 4, filter: ["has", "foPointImg"],
+            /* Kabel üzərində lif sayı (FO 48, FO 24, FO 12): 10 km miqyasında sabit qalır, uzaqlaşdıqda normal kiçilir */
+            { id: "routes-fo-points", type: "symbol", source: "route-labels", minzoom: 3.5, filter: ["has", "foPointImg"],
                 layout: {
                     "icon-image": ["get", "foPointImg"],
                     "icon-rotate": ["get", "iconRotate"],
                     "icon-rotation-alignment": "map",
                     "icon-keep-upright": true,
                     "icon-offset": [0, -6],
-                    "icon-size": ["interpolate", ["linear"], ["zoom"], 4, 0.78, 7, 0.88, 12, 0.96],
+                    "icon-size": ["interpolate", ["linear"], ["zoom"], 4, 0.54, 6.5, 0.70, 8.8, 0.84],
                     "icon-padding": 10,
                     "icon-allow-overlap": false,
                     "icon-ignore-placement": false
@@ -1560,12 +1548,12 @@ function mapStyle() {
                 paint: {
                     "icon-opacity": ["case", ["get", "dim"], 0.28, 1]
                 } },
-            /* A və B nöqtələri: Qırmızı Sorma Konfet (Lollipop) ikonu — sabit və yığcam miqyasda */
-            { id: "routes-ends", type: "symbol", source: "routes", minzoom: 4, filter: ["all", ["==", ["geometry-type"], "Point"], ["!", ["has", "isRayonPoint"]], ["has", "pinIcon"]],
+            /* A və B nöqtələri: Bütöv Qırmızı Sorma Konfet (Lollipop) ikonu */
+            { id: "routes-ends", type: "symbol", source: "routes", minzoom: 3.5, filter: ["all", ["==", ["geometry-type"], "Point"], ["!", ["has", "isRayonPoint"]], ["has", "pinIcon"]],
                 layout: {
                     "icon-image": ["get", "pinIcon"],
                     "icon-anchor": "bottom",
-                    "icon-size": ["interpolate", ["linear"], ["zoom"], 4, 0.62, 7.2, 0.74],
+                    "icon-size": ["interpolate", ["linear"], ["zoom"], 4, 0.52, 6.5, 0.64, 8.8, 0.74],
                     "icon-allow-overlap": true,
                     "icon-ignore-placement": true
                 },
@@ -1601,13 +1589,13 @@ function mapStyle() {
                 paint: {
                     "icon-opacity": ["case", ["get", "dim"], 0.28, 1]
                 } },
-            /* A və B nöqtə adları: ümumi xəritəyə baxanda kabelin haradan haraya getdiyi həmişə aydın oxunsun */
-            { id: "routes-ends-label", type: "symbol", source: "route-labels", minzoom: 4, maxzoom: 10.5, filter: ["has", "endLabelImg"],
+            /* A və B nöqtə adları: 10 km miqyasına qədər qalır, miqyas böyüdükcə normal kiçilir */
+            { id: "routes-ends-label", type: "symbol", source: "route-labels", minzoom: 3.5, maxzoom: 10.5, filter: ["has", "endLabelImg"],
                 layout: {
                     "icon-image": ["get", "endLabelImg"],
                     "icon-anchor": "bottom",
                     "icon-offset": ["get", "endOffset"],
-                    "icon-size": ["interpolate", ["linear"], ["zoom"], 4, 0.76, 7.5, 0.88],
+                    "icon-size": ["interpolate", ["linear"], ["zoom"], 4, 0.54, 6.5, 0.70, 8.8, 0.84],
                     "icon-padding": 2,
                     "icon-allow-overlap": true,
                     "icon-ignore-placement": true
@@ -1620,7 +1608,7 @@ function mapStyle() {
                     "icon-image": ["get", "endLabelImg"],
                     "icon-anchor": "bottom",
                     "icon-offset": ["get", "endOffset"],
-                    "icon-size": 0.88,
+                    "icon-size": 0.84,
                     "icon-padding": 2,
                     "icon-allow-overlap": true,
                     "icon-ignore-placement": true
@@ -1628,12 +1616,13 @@ function mapStyle() {
                 paint: {
                     "icon-opacity": ["case", ["get", "dim"], 0.28, 1]
                 } },
-            /* Nöqtə adları brauzer şrifti ilə şəkil kimi çəkilir: Azərbaycan hərfləri (ə, ş, ç, ğ, ı, ö, ü) düzgün görünür */
-            { id: "routes-point-name", type: "symbol", source: "route-labels", minzoom: 8, maxzoom: 9.6, filter: ["has", "nameImg"],
+            /* Nöqtə adları brauzer şrifti ilə şəkil kimi çəkilir: 10 km miqyasına qədər qalır, miqyas böyüdükcə normal kiçilir */
+            { id: "routes-point-name", type: "symbol", source: "route-labels", minzoom: 6, maxzoom: 9.6, filter: ["has", "nameImg"],
                 layout: {
                     "icon-image": ["get", "nameImg"],
                     "icon-anchor": "top",
                     "icon-offset": [0, 11],
+                    "icon-size": ["interpolate", ["linear"], ["zoom"], 6, 0.66, 8.8, 0.84],
                     "icon-padding": 3,
                     "icon-allow-overlap": false,
                     "icon-ignore-placement": false
@@ -1644,6 +1633,7 @@ function mapStyle() {
                     "icon-image": ["get", "labelImg"],
                     "icon-anchor": "top",
                     "icon-offset": [0, 12],
+                    "icon-size": 0.84,
                     "icon-padding": 1,
                     "icon-allow-overlap": false,
                     "icon-ignore-placement": false
@@ -1654,6 +1644,7 @@ function mapStyle() {
                     "icon-image": ["get", "labelImg"],
                     "icon-anchor": "top",
                     "icon-offset": [0, 12],
+                    "icon-size": 0.84,
                     "icon-allow-overlap": true,
                     "icon-ignore-placement": true
                 },
