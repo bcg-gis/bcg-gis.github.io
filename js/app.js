@@ -1648,8 +1648,8 @@ function mapStyle() {
             { id: "routes-summary-name", type: "symbol", source: "route-labels", minzoom: 3.5, maxzoom: 7.6, filter: ["has", "summaryNameImg"],
                 layout: {
                     "icon-image": ["get", "summaryNameImg"],
-                    "icon-anchor": ["coalesce", ["get", "nameAnchor"], "top"],
-                    "icon-offset": ["coalesce", ["get", "nameOffset"], ["literal", [0, 9]]],
+                    "icon-anchor": ["get", "nameAnchor"],
+                    "icon-offset": ["get", "nameOffset"],
                     "icon-size": 0.80,
                     "icon-padding": 4,
                     "icon-allow-overlap": false,
@@ -1659,8 +1659,8 @@ function mapStyle() {
             { id: "routes-summary-card", type: "symbol", source: "route-labels", minzoom: 7.6, filter: ["has", "summaryCardImg"],
                 layout: {
                     "icon-image": ["get", "summaryCardImg"],
-                    "icon-anchor": ["coalesce", ["get", "cardAnchor"], "left"],
-                    "icon-offset": ["coalesce", ["get", "cardOffset"], ["literal", [14, 0]]],
+                    "icon-anchor": ["get", "cardAnchor"],
+                    "icon-offset": ["get", "cardOffset"],
                     "icon-size": 0.80,
                     "icon-padding": 6,
                     "icon-allow-overlap": false,
@@ -1900,12 +1900,12 @@ function ensureSummaryNameImage(text, color) {
     return key;
 }
 
-/* Rayon xülasə kartı: yığcam qovluq adı, status rəngli sol zolaq və rayon adı (status sözsüz), antena / kabel, faiz zolağı və icraçı */
+/* Rayon xülasə kartı: yığcam layihə adı, status rəngli sol zolaq və rayon adı (status sözsüz), antena / kabel, faiz zolağı və icraçı */
 function ensureSummaryCardImage({ name, color, folderName, antennas, doneKm, totalKm, pct, contractor }) {
     if (!map || !name) return null;
     const light = isLightBaseMap();
     const folder = folderName || "";
-    const key = `sumcard_v3:${light ? "l" : "d"}:${color}:${name}:${folder}:${antennas}:${doneKm}:${totalKm}:${contractor}`;
+    const key = `sumcard_v4:${light ? "l" : "d"}:${color}:${name}:${folder}:${antennas}:${doneKm}:${totalKm}:${contractor}`;
     if (map.hasImage(key)) return key;
 
     const ratio = 2;
@@ -1917,7 +1917,7 @@ function ensureSummaryCardImage({ name, color, folderName, antennas, doneKm, tot
     const fBody = `600 11.5px ${LABEL_FONT}`;
     const fSmall = `600 10px ${LABEL_FONT}`;
     const bodyText = `${antennas} antena · ${formatKm(doneKm)} / ${formatKm(totalKm)} km`;
-    const folderText = folder ? `📁 ${folder}` : "";
+    const folderText = folder ? String(folder).trim() : "";
     const contractorText = contractor ? `İcraçı: ${contractor}` : "";
 
     const m = document.createElement("canvas").getContext("2d");
@@ -2006,10 +2006,6 @@ function ensureSummaryCardImage({ name, color, folderName, antennas, doneKm, tot
         ctx.fillStyle = subColor;
         ctx.fillText(contractorText, x0, y + rows[rIdx] / 2);
     }
-
-    map.addImage(key, ctx.getImageData(0, 0, canvas.width, canvas.height), { pixelRatio: ratio });
-    return key;
-}
 
     map.addImage(key, ctx.getImageData(0, 0, canvas.width, canvas.height), { pixelRatio: ratio });
     return key;
@@ -2528,9 +2524,10 @@ function drawRoutes() {
             const verilenKm = toKmValue(r.totalKm);
             const cekilenKm = toKmValue(r.doneKm);
             const pct = percent(cekilenKm, verilenKm);
-            const folderLabel = { project: "BCG", nim: "NİM", azconnect: "Azconnect", other: "Digər" }[project.category || "project"] || project.name || "Layihə";
+            const rawProjName = String(project.name || "").replace(/\s*\(?\bFaz[-\s]*[12]\b\)?/gi, "").trim();
+            const compactProjName = rawProjName.length > 28 ? `${rawProjName.slice(0, 27).trim()}…` : rawProjName;
 
-            const tip = `<b style="color:${stColor}">${esc(rayonName)}</b><small><span style="opacity:0.8">📁 ${esc(folderLabel)}</span><br>📡 ${r.antennas || 0} antena<br>🔌 Kabel: ${formatKm(cekilenKm)} / ${formatKm(verilenKm)} km (${pct}%)${r.contractor ? `<br>👷 İcraçı: <b>${esc(r.contractor)}</b>` : ""}</small>`;
+            const tip = `<b style="color:${stColor}">${esc(rayonName)}</b><small>${rawProjName ? `<span style="opacity:0.85">${esc(rawProjName)}</span><br>` : ""}📡 ${r.antennas || 0} antena<br>🔌 Kabel: ${formatKm(cekilenKm)} / ${formatKm(verilenKm)} km (${pct}%)${r.contractor ? `<br>👷 İcraçı: <b>${esc(r.contractor)}</b>` : ""}</small>`;
             const sumProps = {
                 isRayonPoint: true,
                 isSummary: true,
@@ -2547,7 +2544,7 @@ function drawRoutes() {
                 nameOffset,
                 summaryNameImg: ensureSummaryNameImage(rayonName, stColor),
                 summaryCardImg: ensureSummaryCardImage({
-                    name: rayonName, color: stColor, folderName: folderLabel,
+                    name: rayonName, color: stColor, folderName: compactProjName,
                     antennas: r.antennas || 0, doneKm: cekilenKm, totalKm: verilenKm, pct, contractor: r.contractor || ""
                 })
             };
@@ -5351,7 +5348,6 @@ document.addEventListener("DOMContentLoaded", init);
             card.innerHTML = `
                 <div class="info-card-head" style="border-radius:20px;padding:6px 12px;gap:10px">
                     <strong style="display:flex;align-items:center;gap:7px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px">
-                        <span class="pill" style="font-size:9.5px;padding:1px 5px;background:rgba(255,255,255,0.12);border-radius:4px;font-weight:600">📁 Digər</span>
                         <span class="dot" style="background:${esc(dotColor)}"></span>
                         ${esc(labelText)}
                     </strong>
@@ -5449,7 +5445,6 @@ document.addEventListener("DOMContentLoaded", init);
         // A) NÖQTƏ / ANTENA LAYİHƏSİ
         if (isPoints) {
             const totalAnt = proj.items.reduce((s, i) => s + (i.antennas || 0), 0);
-            const folderLabel = { project: "BCG", nim: "NİM", azconnect: "Azconnect", other: "Digər" }[proj.category || "project"] || proj.name || "Layihə";
             const planKmVal = toKmValue(sum.plan);
             const doneKmVal = toKmValue(sum.done);
             const leftKmVal = Math.max(0, planKmVal - doneKmVal);
@@ -5458,7 +5453,6 @@ document.addEventListener("DOMContentLoaded", init);
                 <div class="info-card-head">
                     <div>
                         <small style="display:flex;align-items:center;gap:6px">
-                            <span class="pill" style="font-size:10px;padding:1px 6px;background:rgba(255,255,255,0.12);border-radius:4px">📁 ${esc(folderLabel)}</span>
                             <span class="dot" style="background:${tone}"></span>
                             <span>📡 ${totalAnt} antena</span>
                         </small>
@@ -5521,12 +5515,10 @@ document.addEventListener("DOMContentLoaded", init);
         }
         // B) MAGİSTRAL XƏTT LAYİHƏSİ (Yuxarıda ümumi məsafə bloku olmadan, bir xəttin tam məlumatlarını kəsilmədən və yığcam göstərir)
         else {
-            const folderLabel = { project: "BCG", nim: "NİM", azconnect: "Azconnect", other: "Digər" }[proj.category || "project"] || proj.name || "Layihə";
             card.innerHTML = `
                 <div class="info-card-head">
                     <div>
                         <small style="display:flex;align-items:center;gap:6px">
-                            <span class="pill" style="font-size:10px;padding:1px 6px;background:rgba(255,255,255,0.12);border-radius:4px">📁 ${esc(folderLabel)}</span>
                             <span class="dot" style="background:${tone}"></span>
                             <span>${t(`status${proj.status}`)} · 〰️ Magistral layihə</span>
                         </small>
