@@ -148,16 +148,19 @@ function setThemeMenu(open) {
 
 /* GİRİŞ */
 const isAdmin = () => state.role === "admin";
+const isViewer = () => !isAdmin();
 
 function renderRole() {
     const email = state.user?.email || "";
-    const roleLabel = isAdmin() ? t("roleAdmin") : (state.role === "viewer" ? "Baxış" : t("roleManager"));
-    $("roleBadge").textContent = roleLabel;
+    const roleMap = { admin: "Rol: Admin", editor: "Rol: Redaktor", viewer: "Rol: Baxış", manager: "Rol" };
+    $("roleBadge").textContent = roleMap[state.role] || "Rol";
     $("userEmail").textContent = email;
     $("userAvatar").textContent = (state.user?.name || email).charAt(0).toUpperCase();
-    $("importBtn").hidden = false;
+    $("importBtn").hidden = !isAdmin();
     $("addProjectBtn").hidden = !isAdmin();
     if ($("usersBtn")) $("usersBtn").hidden = !isAdmin();
+    if ($("shareBtn")) $("shareBtn").hidden = !isAdmin();
+    if ($("noteForm")) $("noteForm").hidden = !isAdmin();
     tools.refresh();
 }
 
@@ -269,26 +272,73 @@ const FIBER_OPTIONS = [
 ];
 
 function normalizeFiberCount(val, fallback = "") {
-    if (!val) return fallback;
+    if (val === undefined || val === null) return fallback;
     const s = String(val).trim().toUpperCase();
-    if (!s || s === "-" || s === "YOXDUR" || s === "NONE") return fallback;
+    if (!s || s === "-" || s === "—" || s === "YOXDUR" || s === "NONE" || s === "NULL") return fallback;
+    const foExplicit = s.match(/\b(?:FO|OF)[-\s_.:/]*(\d+)\b/i) || s.match(/\b(\d+)[-\s_.:/]*(?:FO|OF|LİF|LIF|FIBER|CORE|DAMAR|F)\b/i);
+    if (foExplicit) return `FO ${foExplicit[1]}`;
+    const numOnly = s.match(/^\s*(\d+)\s*$/);
+    if (numOnly) return `FO ${numOnly[1]}`;
     const m = s.match(/(\d+)/);
     if (m) return `FO ${m[1]}`;
     if (s.startsWith("FO")) return s;
-    return `FO ${s}`;
+    return fallback;
+}
+
+function extractFiberFromProps(props, ...textHints) {
+    if (props && typeof props === "object") {
+        // 1. Birbaşa lif sayı sütun adlarından oxu
+        const direct = getPropCaseInsensitive(
+            props,
+            "fiber_count", "fiberCount", "fibercount", "fiber", "fo", "fo_sayi", "fo_sayı", "fosayi",
+            "lif", "lif_sayi", "lif_sayı", "lifsayi", "kabel", "kabel_lif", "kabel_tipi", "kabel_novu",
+            "optik_lif", "optik_kabel", "optik", "cable", "cable_type", "tutum", "tutumu",
+            "core", "cores", "damar", "damar_sayi", "tip", "type", "marka", "brand"
+        );
+        if (direct) {
+            const norm = normalizeFiberCount(direct, "");
+            if (norm) return norm;
+        }
+        // 2. Sütun adında lif / fo / fiber / kabel / damar / core / tutum sözü varsa
+        for (const [k, v] of Object.entries(props)) {
+            if (v === undefined || v === null) continue;
+            const nk = normalizeKey(k);
+            if (/(^fo$|lif|fiber|kabel|cable|core|damar|tutum)/.test(nk)) {
+                const norm = normalizeFiberCount(v, "");
+                if (norm) return norm;
+            }
+        }
+        // 3. İstənilən atribut dəyərində "FO 48", "24 FO", "48F", "12 lif" kimi yazılış varsa
+        for (const v of Object.values(props)) {
+            if (v === undefined || v === null) continue;
+            const sv = String(v);
+            const m = sv.match(/\b(?:FO|OF)[-\s_.:/]*(\d+)\b/i) || sv.match(/\b(\d+)[-\s_.:/]*(?:FO|OF|LİF|LIF|FIBER|CORE|DAMAR|F)\b/i);
+            if (m) return `FO ${m[1]}`;
+        }
+    }
+    // 4. Xəttin adında, qovluq adında və ya fayl adında yazılıbsa
+    for (const hint of textHints) {
+        if (!hint) continue;
+        const sh = String(hint);
+        const m = sh.match(/\b(?:FO|OF)[-\s_.:/]*(\d+)\b/i) || sh.match(/\b(\d+)[-\s_.:/]*(?:FO|OF|LİF|LIF|FIBER|CORE|DAMAR|F)\b/i);
+        if (m) return `FO ${m[1]}`;
+    }
+    return "";
 }
 
 function getSegmentFiber(r, project) {
     if (!r) return "FO 48";
+    if (r.fiberCount && normalizeFiberCount(r.fiberCount, "") !== "FO 48") {
+        return normalizeFiberCount(r.fiberCount, "FO 48");
+    }
+    if (r.props) {
+        const fromProps = extractFiberFromProps(r.props, r.name, project?.name);
+        if (fromProps) return fromProps;
+    }
+    const fromText = extractFiberFromProps(null, r.name, project?.name);
+    if (fromText) return fromText;
     if (r.fiberCount) return normalizeFiberCount(r.fiberCount, "FO 48");
-    const combined = `${r.name || ""} ${project?.name || ""}`;
-    const match = combined.match(/\b(?:FO[-\s]*(\d+)|(\d+)[-\s]*FO)\b/i);
-    if (match) return `FO ${match[1] || match[2]}`;
-    const defaults = ["FO 48", "FO 24", "FO 12"];
-    let hash = 0;
-    const key = String(r.id || r.name || "");
-    for (let i = 0; i < key.length; i++) hash = (hash + key.charCodeAt(i)) % defaults.length;
-    return defaults[hash];
+    return "FO 48";
 }
 
 function resolveLineEndNames(r, project) {
@@ -1105,14 +1155,17 @@ function registerPointShapeImages() {
         });
     });
 
-    // A və B başlanğıc/son nöqtələri üçün zərif, incə Konum (Location Pin) ikonu
+    // A və B başlanğıc/son nöqtələri üçün standart Konum (Location Pin) ikonu (statusa görə rənglənmir)
     const pinW = 34;
     const pinH = 44;
     const cx = pinW / 2;
     const cy = 14;
     const pr = 9.2;
-    colors.forEach(color => {
-        const pinId = `pin-${color.replace("#", "").toLowerCase()}`;
+    const allPinSpecs = [
+        ["pin-standard", "#38BDF8"],
+        ...colors.map(c => [`pin-${c.replace("#", "").toLowerCase()}`, c])
+    ];
+    allPinSpecs.forEach(([pinId, color]) => {
         if (map.hasImage(pinId)) return;
         const canvas = document.createElement("canvas");
         canvas.width = pinW;
@@ -1120,14 +1173,13 @@ function registerPointShapeImages() {
         const ctx = canvas.getContext("2d");
 
         ctx.save();
-        // Zərif damla formalı Konum ikonu gövdəsi
         ctx.beginPath();
         ctx.arc(cx, cy, pr, Math.PI * 0.84, Math.PI * 0.16, false);
         ctx.bezierCurveTo(cx + pr * 0.68, cy + pr * 1.02, cx + 1.4, 34, cx, 40);
         ctx.bezierCurveTo(cx - 1.4, 34, cx - pr * 0.68, cy + pr * 1.02, cx - pr * Math.cos(Math.PI * 0.16), cy + pr * Math.sin(Math.PI * 0.16));
         ctx.closePath();
 
-        ctx.shadowColor = "rgba(0, 0, 0, 0.45)";
+        ctx.shadowColor = "rgba(0, 0, 0, 0.5)";
         ctx.shadowBlur = 3;
         ctx.shadowOffsetY = 1;
         ctx.fillStyle = color;
@@ -1139,7 +1191,6 @@ function registerPointShapeImages() {
         ctx.strokeStyle = "#ffffff";
         ctx.stroke();
 
-        // Konum ikonunun ortasındakı kiçik ağ nöqtə
         ctx.beginPath();
         ctx.arc(cx, cy, 3.4, 0, Math.PI * 2);
         ctx.fillStyle = "#ffffff";
@@ -1244,16 +1295,17 @@ function mapStyle() {
                 paint: {
                     "icon-opacity": ["case", ["get", "dim"], 0.28, 1]
                 } },
-            /* Kabel üzərində lif sayı (FO 48, FO 24, FO 12): ümumi marşrut üzrə yalnız 3-4 yerdə göstərilir */
-            { id: "routes-fo-points", type: "symbol", source: "route-labels", minzoom: 6, filter: ["has", "foPointImg"],
+            /* Kabel üzərində lif sayı (FO 48, FO 24, FO 12): ümumi baxışda və yaxınlaşdıqda sadə ağ mətn ilə kabelə paralel göstərilir */
+            { id: "routes-fo-points", type: "symbol", source: "route-labels", minzoom: 4, filter: ["has", "foPointImg"],
                 layout: {
                     "icon-image": ["get", "foPointImg"],
                     "icon-rotate": ["get", "iconRotate"],
                     "icon-rotation-alignment": "map",
-                    "icon-size": ["interpolate", ["linear"], ["zoom"], 6, 0.68, 9, 0.84, 14, 0.88],
-                    "icon-padding": ["interpolate", ["linear"], ["zoom"], 6, 28, 9, 14, 13, 6],
-                    "icon-allow-overlap": false,
-                    "icon-ignore-placement": false
+                    "icon-keep-upright": true,
+                    "icon-offset": [0, -7],
+                    "icon-size": ["interpolate", ["linear"], ["zoom"], 4, 0.78, 7, 0.88, 12, 0.96],
+                    "icon-allow-overlap": true,
+                    "icon-ignore-placement": true
                 },
                 paint: {
                     "icon-opacity": ["case", ["get", "dim"], 0.28, 1]
@@ -1549,17 +1601,17 @@ function ensureLabelImage(text) {
     return key;
 }
 
-/* A və B Konum nöqtələrinin incə, yığcam ad etiketi */
-function ensureEndLabelImage(text, color = "#38BDF8") {
+/* A və B Konum nöqtələrinin adı: arxa fonu olmadan sadə ağ mətn */
+function ensureEndLabelImage(text) {
     if (!map || !text) return null;
     const light = currentBase === "street" || currentBase === "blank";
-    const key = `endlbl2:${light ? "l" : "d"}:${color}:${text}`;
+    const key = `endlbl_plain:${light ? "l" : "d"}:${text}`;
     if (map.hasImage(key)) return key;
 
     const ratio = 2;
-    const fontSize = 10.5;
-    const padX = 4.5;
-    const padY = 2;
+    const fontSize = 11.5;
+    const padX = 4;
+    const padY = 2.5;
     const measure = document.createElement("canvas").getContext("2d");
     measure.font = `600 ${fontSize}px ${LABEL_FONT}`;
     const textW = measure.measureText(text).width;
@@ -1572,41 +1624,40 @@ function ensureEndLabelImage(text, color = "#38BDF8") {
     const ctx = canvas.getContext("2d");
     ctx.scale(ratio, ratio);
 
-    const rx = 1, ry = 1, rw = W - 2, rh = H - 2, rad = 4;
-    ctx.beginPath();
-    ctx.roundRect(rx, ry, rw, rh, rad);
-    ctx.fillStyle = light ? "rgba(255, 255, 255, 0.90)" : "rgba(11, 19, 34, 0.84)";
-    ctx.fill();
-    ctx.lineWidth = 1.1;
-    ctx.strokeStyle = color;
-    ctx.stroke();
-
     ctx.font = `600 ${fontSize}px ${LABEL_FONT}`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillStyle = light ? "#0f172a" : "#f8fafc";
+    ctx.lineJoin = "round";
+
+    // Arxa fon qutusu yoxdur — sadə ağ mətn (oxunaqlılıq üçün incə tünd konturla)
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = light ? "rgba(255, 255, 255, 0.92)" : "rgba(6, 12, 22, 0.88)";
+    ctx.strokeText(text, W / 2, H / 2 + 0.5);
+
+    ctx.fillStyle = light ? "#0f172a" : "#ffffff";
     ctx.fillText(text, W / 2, H / 2 + 0.5);
 
     map.addImage(key, ctx.getImageData(0, 0, canvas.width, canvas.height), { pixelRatio: ratio });
     return key;
 }
 
-/* Kabelin üzərində yazılan lif sayı nişanı (FO 48, FO 24, FO 12 və s.) */
-function ensureFoBadgeImage(foText, color = "#38BDF8") {
+/* Kabelin üzərində yazılan lif sayı (FO 48, FO 24, FO 12 və s.) — arxa fonsuz sadə ağ mətn */
+function ensureFoBadgeImage(foText) {
     if (!map || !foText) return null;
     const cleanFo = normalizeFiberCount(foText, "FO 48");
-    const key = `fobadge:${color}:${cleanFo}`;
+    const light = currentBase === "street" || currentBase === "blank";
+    const key = `fo_plain:${light ? "l" : "d"}:${cleanFo}`;
     if (map.hasImage(key)) return key;
 
     const ratio = 2;
-    const fontSize = 11;
-    const padX = 6;
+    const fontSize = 11.5;
+    const padX = 4;
     const padY = 2.5;
     const measure = document.createElement("canvas").getContext("2d");
     measure.font = `700 ${fontSize}px ${LABEL_FONT}`;
     const textW = measure.measureText(cleanFo).width;
-    const W = Math.ceil(textW + padX * 2 + 4);
-    const H = Math.ceil(fontSize + padY * 2 + 4);
+    const W = Math.ceil(textW + padX * 2 + 2);
+    const H = Math.ceil(fontSize + padY * 2 + 2);
 
     const canvas = document.createElement("canvas");
     canvas.width = W * ratio;
@@ -1614,18 +1665,17 @@ function ensureFoBadgeImage(foText, color = "#38BDF8") {
     const ctx = canvas.getContext("2d");
     ctx.scale(ratio, ratio);
 
-    ctx.beginPath();
-    ctx.roundRect(1.5, 1.5, W - 3, H - 3, 5);
-    ctx.fillStyle = "rgba(8, 15, 28, 0.92)";
-    ctx.fill();
-    ctx.lineWidth = 1.5;
-    ctx.strokeStyle = color;
-    ctx.stroke();
-
     ctx.font = `700 ${fontSize}px ${LABEL_FONT}`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillStyle = "#ffffff";
+    ctx.lineJoin = "round";
+
+    // Arxa fon qutusu yoxdur — sadə ağ mətn (kabelə paralel oxunsun deyə)
+    ctx.lineWidth = 3.2;
+    ctx.strokeStyle = light ? "rgba(255, 255, 255, 0.94)" : "rgba(4, 10, 20, 0.92)";
+    ctx.strokeText(cleanFo, W / 2, H / 2 + 0.5);
+
+    ctx.fillStyle = light ? "#0f172a" : "#ffffff";
     ctx.fillText(cleanFo, W / 2, H / 2 + 0.5);
 
     map.addImage(key, ctx.getImageData(0, 0, canvas.width, canvas.height), { pixelRatio: ratio });
@@ -1753,6 +1803,7 @@ function drawRoutes() {
     const labelFeatures = [];
     const pointSlots = {};
     const placedEndPoints = [];
+    const placedFoPoints = [];
     const endNameRegistry = new Set();
     const projectCableGroups = {};
     const polygonCenterGroups = {};
@@ -1763,18 +1814,19 @@ function drawRoutes() {
         const lat = Number(coordinates[1]);
         if (isNaN(lng) || isNaN(lat)) return;
 
-        // Yaxın məsafədə (< ~4.5 km) artıq Konum ikonu varsa təkrar üst-üstə qoyma (məs: Quba, Gəncə, Şuşa, Bakı daxili)
+        // Yaxın məsafədə (< ~4.5 km) artıq Konum ikonu varsa təkrar üst-üstə qoyma
         const tooClose = placedEndPoints.some(p => Math.hypot(p.lng - lng, p.lat - lat) < 0.042);
         if (tooClose) return;
         placedEndPoints.push({ lng, lat });
 
         const cleanText = cleanGlText(String(labelText || "").replace(/^[AB]\s*[:.\-–—]\s*/i, "").trim());
-        const pinIcon = `pin-${color.replace("#", "").toLowerCase()}`;
+        // A və B nöqtələrinin Konum ikonu standartdır (statusa görə rənglənmir)
+        const pinIcon = "pin-standard";
         const nameKey = cleanText ? cleanText.toLocaleLowerCase("az") : "";
         let endLabelImg = null;
         if (cleanText && !/^[ab]$/i.test(cleanText) && !endNameRegistry.has(nameKey)) {
             endNameRegistry.add(nameKey);
-            endLabelImg = ensureEndLabelImage(cleanText, color);
+            endLabelImg = ensureEndLabelImage(cleanText);
         }
         const endOffset = [0, -16];
 
@@ -2002,10 +2054,11 @@ function drawRoutes() {
         } else if (coords.length >= 2) {
             const line = coords.map(([lat, lng]) => [lng, lat]);
             const foLabel = getSegmentFiber(r, project);
-            const foImg = ensureFoBadgeImage(foLabel, color);
+            const foImg = ensureFoBadgeImage(foLabel);
             const { nameA, nameB } = resolveLineEndNames(r, project);
             const stText = t(`status${r.status}`);
-            const lineTip = `<b>${esc(r.name)}</b><small>📍 <b>${esc(nameA || r.name)}</b> ➔ <b>${esc(nameB || r.name)}</b><br>🔌 Kabel: <b style="color:#38BDF8">${esc(foLabel)}</b> · Status: <b style="color:${color}">${esc(stText)}</b><br>📏 Plan: ${formatKm(r.totalKm)} km / Faktiki: ${formatKm(r.doneKm)} km (${percent(r.doneKm, r.totalKm)}%)${cExtra ? `<br>${cExtra}` : ""}</small>`;
+            // Mouse xəttə yaxınlaşanda (hover): A və B adları göstərilmir, yalnız qısa pəncərə açılır (ətraflı məlumat klikləyəndə açılır)
+            const lineTip = `<b>${esc(r.name)}</b><small>🔌 <b>${esc(foLabel)}</b> · <b style="color:${color}">${esc(stText)}</b> · ${formatKm(r.doneKm)} / ${formatKm(r.totalKm)} km (${percent(r.doneKm, r.totalKm)}%)</small>`;
 
             features.push({
                 type: "Feature", geometry: { type: "LineString", coordinates: line },
@@ -2019,7 +2072,41 @@ function drawRoutes() {
                 }
             });
 
-            // Kabel üzərində lif sayı (FO 48, FO 24, FO 12) üçün layihə/kabel qrupu üzrə seqmentləri topla (ümumi 3-4 yerdə göstərmək üçün)
+            // Hər kabel xəttinin öz üzərində paralel sadə ağ mətnlə lif sayı (FO 48, FO 24, FO 12 və s.)
+            const itemSegs = [];
+            let itemLen = 0;
+            for (let i = 0; i < line.length - 1; i++) {
+                const [x1, y1] = line[i];
+                const [x2, y2] = line[i + 1];
+                const len = Math.hypot(x2 - x1, y2 - y1);
+                if (len > 0) {
+                    itemSegs.push({ x1, y1, x2, y2, len, start: itemLen, item: r, tip: lineTip, color, dim, foImg });
+                    itemLen += len;
+                }
+            }
+            if (foImg && itemSegs.length > 0 && itemLen > 0) {
+                const itemFracs = itemLen > 0.45 ? [0.25, 0.50, 0.75] : (itemLen > 0.16 ? [0.35, 0.68] : [0.50]);
+                sampleSegmentsAtFractions(itemSegs, itemLen, itemFracs).forEach(({ coord, angle }) => {
+                    const tooCloseFo = placedFoPoints.some(p => Math.hypot(p.lng - coord[0], p.lat - coord[1]) < 0.022);
+                    if (tooCloseFo) return;
+                    placedFoPoints.push({ lng: coord[0], lat: coord[1] });
+                    labelFeatures.push({
+                        type: "Feature",
+                        geometry: { type: "Point", coordinates: coord },
+                        properties: {
+                            color,
+                            dim,
+                            foPointImg: foImg,
+                            iconRotate: angle,
+                            projectId: project.id,
+                            itemId: r.id,
+                            tip: lineTip
+                        }
+                    });
+                });
+            }
+
+            // Çoxseqmentli KML xətləri üçün də qrup məlumatını saxla
             const groupKey = `${project.id}:${foLabel}`;
             if (!projectCableGroups[groupKey]) {
                 projectCableGroups[groupKey] = {
@@ -2044,34 +2131,30 @@ function drawRoutes() {
             grp.lastItem = r;
             grp.lastTip = lineTip;
             grp.lastNameB = nameB;
+            itemSegs.forEach(s => {
+                grp.segs.push({ ...s, start: grp.totalLen });
+                grp.totalLen += s.len;
+            });
 
-            for (let i = 0; i < line.length - 1; i++) {
-                const [x1, y1] = line[i];
-                const [x2, y2] = line[i + 1];
-                const len = Math.hypot(x2 - x1, y2 - y1);
-                if (len > 0) {
-                    grp.segs.push({ x1, y1, x2, y2, len, start: grp.totalLen, item: r, tip: lineTip, color, dim, foImg });
-                    grp.totalLen += len;
-                }
-            }
-
-            // Əgər seqmentin öz fərqli A və B qovşaq adları varsa (məs: Ağsu - Şamaxı), uclarında Konum ikonu və təkcə adı göstər
+            // Əgər seqmentin öz fərqli A və B qovşaq adları varsa, uclarında standart Konum ikonu və sadə ağ ad göstər
             const hasDistinctEnds = nameA && nameB && nameA !== nameB;
             if (hasDistinctEnds) {
-                pushLineEndpoint(line[0], nameA, color, dim, project, r, `📍 <b>${esc(nameA)}</b><small>Xətt: <b>${esc(r.name)}</b><br>🔌 Kabel: <b>${esc(foLabel)}</b> · Status: <b style="color:${color}">${esc(stText)}</b></small>`);
-                pushLineEndpoint(line[line.length - 1], nameB, color, dim, project, r, `📍 <b>${esc(nameB)}</b><small>Xətt: <b>${esc(r.name)}</b><br>🔌 Kabel: <b>${esc(foLabel)}</b> · Status: <b style="color:${color}">${esc(stText)}</b></small>`);
+                pushLineEndpoint(line[0], nameA, color, dim, project, r, `📍 <b>${esc(nameA)}</b>`);
+                pushLineEndpoint(line[line.length - 1], nameB, color, dim, project, r, `📍 <b>${esc(nameB)}</b>`);
             }
         }
     });
 
-    // Hər kabel marşrutu üzrə lif sayını (FO 48, FO 24, FO 12) ümumi yalnız 3-4 yerdə yerləşdir və ümumi başlanğıc/son nöqtələri təmin et
+    // Çoxseqmentli KML xətlərində əgər ayrı-ayrı seqmentlər çox qısadırsa, ümumi marşrut üzrə də FO lif sayını və başlanğıc/son nöqtələri təmin et
     Object.values(projectCableGroups).forEach(grp => {
         const { project, segs, totalLen, firstPoint, lastPoint, firstItem, lastItem, firstNameA, lastNameB, color, dim } = grp;
         if (segs.length === 0 || totalLen <= 0) return;
 
-        // Ümumi kabel boyu yalnız 3 və ya 4 nöqtədə FO lif sayı
-        const foFractions = totalLen < 0.08 ? [0.25, 0.50, 0.75] : [0.18, 0.40, 0.62, 0.84];
+        const foFractions = totalLen < 0.08 ? [0.50] : [0.25, 0.50, 0.75];
         sampleSegmentsAtFractions(segs, totalLen, foFractions).forEach(({ coord, angle, seg }) => {
+            const tooCloseFo = placedFoPoints.some(p => Math.hypot(p.lng - coord[0], p.lat - coord[1]) < 0.022);
+            if (tooCloseFo) return;
+            placedFoPoints.push({ lng: coord[0], lat: coord[1] });
             labelFeatures.push({
                 type: "Feature",
                 geometry: { type: "Point", coordinates: coord },
@@ -2087,7 +2170,6 @@ function drawRoutes() {
             });
         });
 
-        // Çoxseqmentli KML xətlərində ümumi marşrutun başlanğıc və son Konum nöqtələri
         pushLineEndpoint(firstPoint, firstNameA, color, dim, project, firstItem, grp.firstTip);
         pushLineEndpoint(lastPoint, lastNameB, color, dim, project, lastItem, grp.lastTip);
     });
@@ -2144,12 +2226,13 @@ function selectedEntry() {
     return item ? { project, item } : null;
 }
 
-function selectSegment(project, item) {
+function selectSegment(project, item, shouldFly = false) {
     state.selected = { projectId: project.id, itemId: item.id };
+    window.__activeProjectId = project.id;
     state.expandedIds.add(project.id);
     setSidebar(true);
     renderAll();
-    flyToCoords(item.coords);
+    if (shouldFly) flyToCoords(item.coords);
 }
 
 function clearSelection() {
@@ -2854,11 +2937,12 @@ function linesFromKml(text) {
             }
         }
 
-        // 2. ArcGIS Pro "Layer to KML" zamanı <description> daxilində yaranan cədvəli oxu
+        // 2. ArcGIS Pro "Layer to KML" zamanı <description> daxilində yaranan cədvəli və ya düz mətni oxu
         const descNode = placemark.getElementsByTagName("description")[0]
             || Array.from(placemark.childNodes).find(n => /(^|:)description$/i.test(n.nodeName || ""));
         if (descNode && descNode.textContent) {
             const descHtml = descNode.textContent;
+            props._rawDescription = descHtml.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
             // 2a. <tr> daxilində 2 və ya daha çox xana (<th> və ya <td>)
             const rowMatches = descHtml.matchAll(/<tr[^>]*>(.*?)<\/tr>/gis);
             for (const r of rowMatches) {
@@ -2877,6 +2961,20 @@ function linesFromKml(text) {
                 const v = m[2].replace(/<[^>]+>/g, "").trim();
                 if (k && v && props[k] === undefined) props[k] = v;
             }
+        }
+
+        // 3. Yuxarı qovluq (<Folder><name>) adını da saxla (əgər lif sayı qovluq adında yazılıbsa)
+        let pNode = placemark.parentNode;
+        while (pNode && pNode.nodeType === 1) {
+            const pTag = (pNode.localName || pNode.nodeName || "").toLowerCase();
+            if (pTag === "folder" || pTag.endsWith(":folder")) {
+                const fNameNode = Array.from(pNode.childNodes).find(n => n.nodeType === 1 && /(^|:)name$/i.test(n.nodeName || ""));
+                if (fNameNode && fNameNode.textContent) {
+                    props._folderName = fNameNode.textContent.trim();
+                    break;
+                }
+            }
+            pNode = pNode.parentNode;
         }
         return props;
     }
@@ -3069,17 +3167,15 @@ function projectFromFile(fileName, lines) {
             // Əgər doneKm boş və ya "-" olarsa, avtomatik 0 qəbul edilir
             const doneKm = rawDoneKm !== undefined ? parseAttrNumber(rawDoneKm, 0) : 0;
 
-            // Kabelin lif sayı (FO 48, FO 24, FO 12 və s. — birbaşa faylın atributlarından oxunur)
-            const rawFiber = getPropCaseInsensitive(p, "fiber_count", "fiberCount", "fiber", "fo", "lif", "lif_sayi", "lif_sayı", "kabel", "kabel_lif", "cable", "tutum")
-                || (/\bfo[-\s_]*\d+\b/i.exec(nameVal)?.[0])
-                || "FO 48";
-            const fiberCount = normalizeFiberCount(rawFiber);
+            // Kabelin lif sayı (FO 48, FO 24, FO 12 və s. — birbaşa import edilən faylın atributlarından / adından oxunur)
+            const fiberCount = extractFiberFromProps(p, nameVal, line.name, fileName) || "FO 48";
 
             return {
                 id: `${isPolygon ? "PLY" : "IMP"}-${String(index + 1).padStart(2, "0")}`,
                 name: nameVal,
                 pointA, pointB, startDate: "", endDate: "", contractor,
                 totalKm, doneKm, status, fiberCount, customColor, lineWidth, isPolygon, closures: 0, manholes: 0, antennas: 0,
+                props: p,
                 coords: line.coords
             };
         })
@@ -3300,19 +3396,43 @@ function bindEvents() {
             if (state.expandedIds.has(project.id)) state.expandedIds.delete(project.id);
             else state.expandedIds.add(project.id);
         } else if (action === "focus") {
-            selectSegment(project, project.items.find(r => r.id === button.dataset.item));
+            // 1x Sol klik: Xəritədə yaxınlaşdırmadan yalnız status pəncərəsini aç
+            const item = project.items.find(r => r.id === button.dataset.item);
+            selectSegment(project, item, false);
             return;
         } else if (action === "editSeg") {
+            if (!isAdmin()) return;
             editSegment(project, project.items.find(r => r.id === button.dataset.item));
             return;
         } else if (action === "edit") {
+            if (!isAdmin()) return;
             editProject(project);
             return;
         } else if (action === "addSegment") {
+            if (!isAdmin()) return;
             editSegment(project, null);
             return;
         }
         renderAll();
+    });
+
+    // 2x Sol klik (Double click): Sol siyahıda xəttin və ya layihənin üzərinə 2 dəfə sol klik edəndə xəritədə göstər (zoom et)
+    $("projectList").addEventListener("dblclick", e => {
+        const projEl = e.target.closest(".project");
+        if (!projEl) return;
+        const project = state.projects.find(p => p.id === projEl.dataset.id);
+        if (!project) return;
+        state.visibleIds.add(project.id);
+        const focusBtn = e.target.closest('[data-action="focus"]');
+        if (focusBtn) {
+            const item = project.items.find(r => r.id === focusBtn.dataset.item);
+            if (item) {
+                selectSegment(project, item, true);
+                return;
+            }
+        }
+        renderAll();
+        flyToCoords(project.items.flatMap(i => i.coords));
     });
 
     $("tableBody").addEventListener("click", e => {
@@ -3384,8 +3504,14 @@ document.addEventListener("DOMContentLoaded", init);
     }
 
     function executorOptionsHtml(currentExec) {
-        const adminMap = syncAdminContractors();
         const cur = String(currentExec || "").trim();
+        if (!isAdmin()) {
+            if (!cur) return `<span style="font-size:11.5px;color:var(--ink-3)">— Təyin edilməyib —</span>`;
+            const info = findContractorInfo(cur);
+            const sub = info ? ` (${info.workers || 0} işçi · ${info.machinery || 0} tex.)` : "";
+            return `<b style="font-size:11.5px;color:var(--ink)">👷 ${esc(cur)}${esc(sub)}</b>`;
+        }
+        const adminMap = syncAdminContractors();
         const names = [...new Set(["", ...Object.keys(adminMap), ...(cur ? [cur] : [])])];
         return `<select class="input" data-exec-select>${names.map(name => {
             if (!name) return `<option value="" ${!cur ? "selected" : ""}>— İcraçı seçilməyib —</option>`;
@@ -3397,6 +3523,9 @@ document.addEventListener("DOMContentLoaded", init);
 
     function fiberOptionsHtml(currentFo) {
         const norm = normalizeFiberCount(currentFo || "FO 48");
+        if (!isAdmin()) {
+            return `<b style="font-size:11.5px;color:#38BDF8">🔌 ${esc(norm)}</b>`;
+        }
         const opts = FIBER_OPTIONS.includes(norm) ? FIBER_OPTIONS : [norm, ...FIBER_OPTIONS];
         return `<select class="input" data-fo-select>${opts.map(fo => `<option value="${esc(fo)}" ${fo === norm ? "selected" : ""}>🔌 ${esc(fo)}</option>`).join("")}</select>`;
     }
@@ -3638,6 +3767,7 @@ document.addEventListener("DOMContentLoaded", init);
         });
 
         card.addEventListener("change", async e => {
+            if (!isAdmin()) return;
             const nimSt = e.target.closest("[data-nim-status-select]");
             if (nimSt) {
                 const [projectId, itemId] = nimSt.dataset.nimStatusSelect.split(":");
@@ -4446,9 +4576,11 @@ document.addEventListener("DOMContentLoaded", init);
                                     </div>
                                     <div class="info-exec-row">
                                         <span class="muted">Nöqtə statusu:</span>
+                                        ${isAdmin() ? `
                                         <select class="input" data-nim-status-select="${esc(proj.id)}:${esc(r.id)}">
                                             ${STATUSES.map(s => `<option value="${s}" ${r.status === s ? "selected" : ""}>${t(`status${s}`)}</option>`).join("")}
                                         </select>
+                                        ` : `<b style="font-size:11.5px;color:${rTone}">${t(`status${r.status}`)}</b>`}
                                     </div>
                                     <div class="info-exec-row">
                                         <span class="muted">İcraçı:</span>
