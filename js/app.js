@@ -3475,10 +3475,17 @@ function renderProjects() {
                         <button class="icon-btn" data-action="expand" aria-label="${esc(cleanProjName)}"><i class="fa-solid fa-chevron-right chevron ${expanded ? "open" : ""}"></i></button>
                     </div>
                     ${expanded ? `<div class="segments">${filteredItems(p).map(r => {
-                        const cleanName = String(r.name || "").replace(/\s*\(?\bFaz[-\s]*[12]\b\)?/gi, "").replace(/\s*rayon(u)?\b/gi, "").trim();
+                        const rawPropName = getPropCaseInsensitive(
+                            r.props,
+                            "Name", "name", "kabel", "kabel_adi", "xett_adi", "xett", "LineName", "title", "ad", "marsrut", "route", "label"
+                        );
+                        const isGen = /^(?:idxal\s*x[əe]tti|imported\s*line|x[əe]tt|line|imp)[-\s]*\d*$/i.test(String(r.name || "").trim());
+                        const cleanName = isPoints
+                            ? String(r.name || "").replace(/\s*\(?\bFaz[-\s]*[12]\b\)?/gi, "").replace(/\s*rayon(u)?\b/gi, "").trim()
+                            : ((!isGen && r.name) ? String(r.name).trim() : String(rawPropName || r.name || p.name || "").trim());
                         const segFo = (!isNim && !isPoints && Array.isArray(r.coords) && r.coords.length >= 2) ? getSegmentFiber(r, p) : "";
                         const foBadge = segFo
-                            ? `<span style="background:rgba(14,165,233,0.16);color:#38BDF8;border:1px solid rgba(56,189,248,0.38);border-radius:6px;padding:1px 5px;font-size:10px;font-weight:700;margin-right:4px">${esc(segFo)}</span>`
+                            ? `<span style="background:rgba(14,165,233,0.16);color:#38BDF8;border:1px solid rgba(56,189,248,0.38);border-radius:6px;padding:1px 5px;font-size:10px;font-weight:700;margin-right:4px;flex-shrink:0">${esc(segFo)}</span>`
                             : "";
                         const cBrief = r.contractor ? ` · 👷 ${esc(r.contractor)}` : "";
                         const { planM: rPlanM, doneM: rDoneM } = isPoints ? getPointMetersPair(r) : { planM: 0, doneM: 0 };
@@ -3486,39 +3493,38 @@ function renderProjects() {
                             ? t(`status${r.status}`)
                             : (isPoints
                                 ? `${r.antennas || 0} antena - ${rPlanM} / ${rDoneM} m${cBrief}`
-                                : `${formatKm(r.totalKm)} / ${formatKm(r.doneKm)} km (${percent(r.doneKm, r.totalKm)}%)`);
+                                : `${formatKm(r.doneKm)} / ${formatKm(r.totalKm)} km`);
                         const qKey = `${p.id}:${r.id}`;
-                        const isQuickOpen = isAdmin() && state.quickEditKey === qKey;
+                        const isQuickOpen = isPoints && isAdmin() && state.quickEditKey === qKey;
                         return `
                         <div class="segment-wrap" data-seg-wrap="${esc(r.id)}">
                             <div class="segment ${state.selected?.itemId === r.id && state.selected?.projectId === p.id ? "selected" : ""}" style="display:flex;align-items:center;gap:4px;padding-right:6px">
-                                <button type="button" style="flex:1;display:flex;align-items:center;gap:8px;background:none;border:0;color:inherit;text-align:left;cursor:pointer;padding:0;min-width:0" data-action="focus" data-item="${esc(r.id)}">
-                                    <span class="dot" style="background:${statusTone(r.status)}"></span>
-                                    <span class="segment-name" title="${esc(cleanName)}">${isNim ? "🚦 " : (shape ? `<span style="color:${statusTone(r.status)};margin-right:3px">${shape.symbol}</span>` : "")}${foBadge}${esc(cleanName)}</span>
-                                    <span style="color:${statusTone(r.status)};font-weight:600;white-space:nowrap;font-size:11.5px">${rightText}</span>
+                                <button type="button" style="flex:1;display:flex;align-items:center;gap:8px;background:none;border:0;color:inherit;text-align:left;cursor:pointer;padding:2px 0;min-width:0" data-action="focus" data-item="${esc(r.id)}">
+                                    <span class="dot" style="background:${statusTone(r.status)};flex-shrink:0"></span>
+                                    <span class="segment-name" style="flex:1;min-width:0;${isPoints ? "overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" : "white-space:normal;word-break:break-word;line-height:1.28;"}font-weight:600;color:var(--ink)" title="${esc(cleanName)}">${isNim ? "🚦 " : (shape ? `<span style="color:${statusTone(r.status)};margin-right:3px">${shape.symbol}</span>` : "")}${foBadge}${esc(cleanName)}</span>
+                                    <span style="color:${statusTone(r.status)};font-weight:600;white-space:nowrap;font-size:11px;flex-shrink:0">${rightText}</span>
                                 </button>
-                                ${isAdmin() ? `
+                                ${isPoints && isAdmin() ? `
                                     <button type="button" class="icon-btn small" style="${isQuickOpen ? "color:#38BDF8;background:rgba(56,189,248,0.16)" : ""}" data-action="quickEditSeg" data-item="${esc(r.id)}" title="Sürətli redaktə (məsafə / antena / status)"><i class="fa-solid fa-bolt"></i></button>
+                                    <button type="button" class="icon-btn small" data-action="geomEditSeg" data-item="${esc(r.id)}" title="Nöqtəni xəritədə sürüşdür"><i class="fa-solid fa-arrows-up-down-left-right"></i></button>
                                     <button type="button" class="icon-btn small" data-action="editSeg" data-item="${esc(r.id)}" title="Tam redaktə pəncərəsi"><i class="fa-solid fa-pen"></i></button>
                                 ` : ""}
                             </div>
                             ${isQuickOpen ? `
                             <div class="seg-quick-box" style="margin:4px 8px 8px 18px;padding:8px;border-radius:9px;background:rgba(15,23,42,0.55);border:1px solid rgba(56,189,248,0.28);display:flex;flex-direction:column;gap:6px">
-                                <div style="display:grid;grid-template-columns:${isPoints ? "0.75fr 1fr 1fr 1.1fr" : (isNim ? "1fr" : "1fr 1fr 1.1fr")};gap:5px;align-items:end">
-                                    ${isPoints ? `
+                                <div style="display:grid;grid-template-columns:0.75fr 1fr 1fr 1.1fr;gap:5px;align-items:end">
                                     <label style="display:flex;flex-direction:column;gap:2px;font-size:10px;color:var(--ink-2)">
                                         <span>Antena</span>
                                         <input class="input" type="number" step="1" min="0" data-q-ant value="${r.antennas || 0}" style="height:26px;padding:0 6px;font-size:11.5px">
-                                    </label>` : ""}
-                                    ${!isNim ? `
-                                    <label style="display:flex;flex-direction:column;gap:2px;font-size:10px;color:var(--ink-2)">
-                                        <span>${isPoints ? "Verilən (m)" : "Plan (km)"}</span>
-                                        <input class="input" type="number" step="any" min="0" data-q-plan value="${isPoints ? rPlanM : formatKm(r.totalKm)}" style="height:26px;padding:0 6px;font-size:11.5px">
                                     </label>
                                     <label style="display:flex;flex-direction:column;gap:2px;font-size:10px;color:var(--ink-2)">
-                                        <span>${isPoints ? "Çəkilən (m)" : "Faktiki (km)"}</span>
-                                        <input class="input" type="number" step="any" min="0" data-q-done value="${isPoints ? rDoneM : formatKm(r.doneKm)}" style="height:26px;padding:0 6px;font-size:11.5px">
-                                    </label>` : ""}
+                                        <span>Verilən (m)</span>
+                                        <input class="input" type="number" step="any" min="0" data-q-plan value="${rPlanM}" style="height:26px;padding:0 6px;font-size:11.5px">
+                                    </label>
+                                    <label style="display:flex;flex-direction:column;gap:2px;font-size:10px;color:var(--ink-2)">
+                                        <span>Çəkilən (m)</span>
+                                        <input class="input" type="number" step="any" min="0" data-q-done value="${rDoneM}" style="height:26px;padding:0 6px;font-size:11.5px">
+                                    </label>
                                     <label style="display:flex;flex-direction:column;gap:2px;font-size:10px;color:var(--ink-2)">
                                         <span>Status</span>
                                         <select class="input" data-q-status style="height:26px;padding:0 4px;font-size:11px">
@@ -3527,7 +3533,7 @@ function renderProjects() {
                                     </label>
                                 </div>
                                 <div style="display:flex;align-items:center;justify-content:space-between;gap:6px">
-                                    <button type="button" class="btn btn-outline" style="height:25px;padding:0 8px;font-size:11px" data-action="geomEditSeg" data-item="${esc(r.id)}" title="Xəritədə sürüşdür">
+                                    <button type="button" class="btn btn-outline" style="height:25px;padding:0 8px;font-size:11px" data-action="geomEditSeg" data-item="${esc(r.id)}" title="Nöqtəni xəritədə sürüşdür">
                                         <i class="fa-solid fa-arrows-up-down-left-right"></i> Sürüşdür
                                     </button>
                                     <div style="display:flex;gap:5px">
@@ -4655,7 +4661,7 @@ function bindEvents() {
             if (!isAdmin()) return;
             const item = project.items.find(r => r.id === button.dataset.item);
             if (!item) return;
-            window.startGeomEdit?.(project, item);
+            window.startGeomEdit?.(project.id, item.id);
             return;
         } else if (action === "saveQuickSeg") {
             if (!isAdmin()) return;
@@ -5937,6 +5943,8 @@ document.addEventListener("DOMContentLoaded", init);
                     </strong>
                     <div style="display:flex;align-items:center;gap:3px;flex-shrink:0">
                         <button class="icon-btn" data-card-act="zoom" title="${t("zoomTo")}"><i class="fa-solid fa-crosshairs"></i></button>
+                        ${isAdmin() ? `<button class="icon-btn" data-card-act="geomEdit" title="Xəritədə sürüşdür / Redaktə et"><i class="fa-solid fa-bezier-curve"></i></button>` : ""}
+                        ${isAdmin() ? `<button class="icon-btn" data-card-act="edit" title="Adı / Rəngi / Qalınlığı redaktə et"><i class="fa-solid fa-pen"></i></button>` : ""}
                         <button class="icon-btn" data-card-act="close" title="${t("close")}"><i class="fa-solid fa-xmark"></i></button>
                     </div>
                 </div>
@@ -5954,7 +5962,7 @@ document.addEventListener("DOMContentLoaded", init);
         const tone = statusTone(proj.status);
         const cleanProjName = String(proj.name || "").replace(/\s*\(?\bFaz[-\s]*[12]\b\)?/gi, "").trim();
 
-        // 🚦 NİM (Svetofor kəsişmə nöqtələri — yalnız baxış və məlumat)
+        // 🚦 NİM (Svetofor kəsişmə nöqtələri — nöqtənin adı və birbaşa status seçimi)
         if (proj.category === "nim") {
             const doneCount = proj.items.filter(i => i.status === "bitmis" || i.status === "tehvil").length;
             const inProgCount = proj.items.filter(i => i.status === "icrada").length;
@@ -5991,9 +5999,24 @@ document.addEventListener("DOMContentLoaded", init);
                                         </strong>
                                         <span class="pill" style="--tone:${rTone}">${t(`status${r.status}`)}</span>
                                     </div>
+                                    <div class="info-exec-row">
+                                        <span class="muted">Nöqtə statusu:</span>
+                                        ${isAdmin() ? `
+                                        <select class="input" data-nim-status-select="${esc(proj.id)}:${esc(r.id)}">
+                                            ${STATUSES.map(s => `<option value="${s}" ${r.status === s ? "selected" : ""}>${t(`status${s}`)}</option>`).join("")}
+                                        </select>
+                                        ` : `<b style="font-size:11.5px;color:${rTone}">${t(`status${r.status}`)}</b>`}
+                                    </div>
+                                    <div class="info-exec-row">
+                                        <span class="muted">İcraçı:</span>
+                                        ${executorOptionsHtml(r.contractor)}
+                                    </div>
                                     <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;font-size:11px;color:var(--ink-2)">
-                                        <span>👷 İcraçı: <b>${esc(r.contractor || t("notAssigned"))}</b></span>
-                                        ${r.contractor ? `<span>👥 <b>${esc(cInfo.workers)} nəfər</b> · 🚜 <b>${esc(cInfo.machinery ?? 0)}</b> · 📞 <b>${esc(cInfo.engineer || "—")}</b></span>` : ""}
+                                        ${r.contractor ? `
+                                        <span>👷 İşçi: <b>${esc(cInfo.workers)} nəfər</b> · 🚜 Tex.: <b>${esc(cInfo.machinery ?? 0)}</b></span>
+                                        <span>📞 <b>${esc(cInfo.engineer || "—")}</b></span>
+                                        ` : `<span class="muted">${isAdmin() ? `<a href="admin.html#contractors" target="_blank" style="color:#38BDF8;text-decoration:none">⚙️ Admin Paneldə İcraçı əlavə et</a>` : ""}</span>`}
+                                        ${isAdmin() ? `<button class="btn btn-outline" style="height:22px;padding:0 7px;font-size:10.5px" data-geom-edit="${esc(proj.id)}:${esc(r.id)}" title="Nöqtəni xəritədə sürüşdür"><i class="fa-solid fa-arrows-up-down-left-right"></i> Sürüşdür</button>` : ""}
                                     </div>
                                 </div>
                             `;
@@ -6001,13 +6024,15 @@ document.addEventListener("DOMContentLoaded", init);
                     </div>
                     <div style="display:flex;gap:6px;padding-top:2px">
                         <button class="btn btn-outline" style="flex:1;height:28px;font-size:12px" data-card-act="zoom"><i class="fa-solid fa-crosshairs"></i> ${t("zoomTo")}</button>
+                        ${isAdmin() ? `<button class="btn btn-outline" style="height:28px;font-size:12px" data-card-act="geomEdit" title="Xəritədə sürüşdür / Redaktə et"><i class="fa-solid fa-arrows-up-down-left-right"></i> Xəritədə redaktə</button>` : ""}
+                        ${isAdmin() ? `<button class="btn btn-primary" style="height:28px;font-size:12px" data-card-act="edit"><i class="fa-solid fa-pen"></i></button>` : ""}
                     </div>
                 </div>
             `;
             return;
         }
 
-        // A) NÖQTƏ / ANTENA LAYİHƏSİ (Status panelində yalnız məlumat — metr ilə; redaktə solda qovluq altındadır)
+        // A) NÖQTƏ / ANTENA LAYİHƏSİ (Status panelində edit YOXDUR — nöqtələrin redaktəsi solda qovluq altında hər nöqtənin qarşısındadır)
         if (isPoints) {
             const totalAnt = proj.items.reduce((s, i) => s + (i.antennas || 0), 0);
             const planMVal = Math.round(sum.plan * 1000);
@@ -6071,7 +6096,7 @@ document.addEventListener("DOMContentLoaded", init);
                 </div>
             `;
         }
-        // B) MAGİSTRAL XƏTT LAYİHƏSİ (Status panelində yalnız məlumat; redaktə solda qovluq altındadır)
+        // B) MAGİSTRAL XƏTT LAYİHƏSİ (Xətlər üçün status panelində edit və xəritədə sürüşdürmə aktivdir)
         else {
             card.innerHTML = `
                 <div class="info-card-head">
@@ -6096,10 +6121,16 @@ document.addEventListener("DOMContentLoaded", init);
                             const foLabel = getSegmentFiber(r, proj);
                             const ends = resolveLineEndNames(r, proj);
                             const cInfo = findContractorInfo(r.contractor) || { workers: "—", machinery: "—", engineer: "—" };
+                            const rawPropName = getPropCaseInsensitive(
+                                r.props,
+                                "Name", "name", "kabel", "kabel_adi", "xett_adi", "xett", "LineName", "title", "ad", "marsrut", "route", "label"
+                            );
+                            const isGen = /^(?:idxal\s*x[əe]tti|imported\s*line|x[əe]tt|line|imp)[-\s]*\d*$/i.test(String(r.name || "").trim());
+                            const lineDisplayName = (!isGen && r.name) ? String(r.name).trim() : String(rawPropName || r.name || proj.name || "").trim();
                             return `
                                 <div class="info-sub-item" data-pick-seg="${esc(proj.id)}:${esc(r.id)}" style="border-color:${entry?.item === r ? rTone : "var(--line)"}">
                                     <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
-                                        <b>${esc(r.name)}</b>
+                                        <b>${esc(lineDisplayName)}</b>
                                         <div style="display:flex;align-items:center;gap:5px">
                                             ${foLabel ? `<span class="pill" style="--tone:#0EA5E9;background:rgba(14,165,233,0.16);color:#38BDF8;border:1px solid rgba(56,189,248,0.45)">🔌 ${esc(foLabel)}</span>` : ""}
                                             <span class="pill" style="--tone:${rTone}">${t(`status${r.status}`)}</span>
@@ -6113,11 +6144,23 @@ document.addEventListener("DOMContentLoaded", init);
                                     <div style="color:var(--ink-2);font-size:11.5px">
                                         Plan: <b>${formatKm(r.totalKm)} km</b> · Faktiki: <b style="color:${rTone}">${formatKm(r.doneKm)} km (${rPct}%)</b> · Qalıb: <b>${formatKm(rLeft)} km</b>
                                     </div>
+                                    <div class="info-exec-row">
+                                        <span class="muted">Kabel lif sayı:</span>
+                                        ${fiberOptionsHtml(foLabel)}
+                                    </div>
+                                    <div class="info-exec-row">
+                                        <span class="muted">İcraçı:</span>
+                                        ${executorOptionsHtml(r.contractor)}
+                                    </div>
                                     <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;font-size:11px;color:var(--ink-2)">
-                                        <span>👷 İcraçı: <b>${esc(r.contractor || t("notAssigned"))}</b></span>
                                         ${r.contractor ? `
-                                        <span>👥 İşçi: <b>${esc(cInfo.workers)} nəfər</b> · 🚜 Tex.: <b>${esc(cInfo.machinery ?? 0)}</b> · 📞 <b>${esc(cInfo.engineer || "—")}</b></span>
-                                        ` : ""}
+                                        <span>👷 İşçi: <b>${esc(cInfo.workers)} nəfər</b> · 🚜 Tex.: <b>${esc(cInfo.machinery ?? 0)}</b></span>
+                                        <span>📞 <b>${esc(cInfo.engineer || "—")}</b></span>
+                                        ` : `<span class="muted">${isAdmin() ? `<a href="admin.html#contractors" target="_blank" style="color:#38BDF8;text-decoration:none">⚙️ Admin Paneldə İcraçı əlavə et</a>` : ""}</span>`}
+                                        ${isAdmin() ? `<div style="display:flex;gap:4px">
+                                            <button class="btn btn-outline" style="height:22px;padding:0 7px;font-size:10.5px" data-edit-seg="${esc(proj.id)}:${esc(r.id)}" title="Xətti redaktə et"><i class="fa-solid fa-pen"></i> Redaktə</button>
+                                            <button class="btn btn-outline" style="height:22px;padding:0 7px;font-size:10.5px" data-geom-edit="${esc(proj.id)}:${esc(r.id)}" title="Xəttin qırılma nöqtələrini xəritədə sürüşdür"><i class="fa-solid fa-bezier-curve"></i> Xətti sürüşdür</button>
+                                        </div>` : ""}
                                     </div>
                                 </div>
                             `;
@@ -6126,6 +6169,8 @@ document.addEventListener("DOMContentLoaded", init);
 
                     <div style="display:flex;gap:6px;padding-top:2px">
                         <button class="btn btn-outline" style="flex:1;height:28px;font-size:12px" data-card-act="zoom"><i class="fa-solid fa-crosshairs"></i> ${t("zoomTo")}</button>
+                        ${isAdmin() ? `<button class="btn btn-outline" style="height:28px;font-size:12px" data-card-act="geomEdit" title="Xəttin qırılma nöqtələrini xəritədə sürüşdür"><i class="fa-solid fa-bezier-curve"></i> Xəritədə redaktə</button>` : ""}
+                        ${isAdmin() ? `<button class="btn btn-primary" style="height:28px;font-size:12px" data-card-act="edit"><i class="fa-solid fa-pen"></i></button>` : ""}
                     </div>
                 </div>
             `;
