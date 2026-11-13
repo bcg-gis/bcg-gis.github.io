@@ -2,9 +2,10 @@
 
 const AZERBAIJAN_BOUNDS = [[38.39, 44.77], [41.91, 50.63]];
 
-const STATUS_COLORS = { bitmis: "#22C55E", icrada: "#F59E0B", tehvil: "#3B82F6", layihe: "#EF4444" };
+const STATUS_COLORS = { bitmis: "#22C55E", icrada: "#F59E0B", tehvil: "#3B82F6", layihe: "#EF4444", lif_goturulen: "#94A3B8" };
 const ENDPOINT_MIN_ZOOM = 0;
 const STATUSES = Object.keys(STATUS_COLORS);
+const isLifGoturulen = (r, project) => Boolean(r?.status === "lif_goturulen" || project?.status === "lif_goturulen");
 
 const STORAGE = { lang: "bcg.lang", theme: "bcg.theme" };
 
@@ -1346,14 +1347,14 @@ const BASE_MAPS = {
 };
 const NAME_LAYERS = ["esri-transport", "esri-places"];
 
-/* Hər nöqtə layihəsi üçün kəskin fərqlənən həndəsi və daxili simvollu ikonlar */
+/* Hər nöqtə layihəsi üçün içi rəngli dolu həndəsi fiqurlar */
 const POINT_SHAPES = [
-    { id: "circle", symbol: "◉", name: "Dairə (Antena)" },
-    { id: "diamond", symbol: "❖", name: "Romb (Ulduz)" },
-    { id: "square", symbol: "▣", name: "Kvadrat (Qovşaq)" },
-    { id: "triangle", symbol: "▲", name: "Üçbucaq (Siqnal)" },
-    { id: "hexagon", symbol: "⬢", name: "Altıbucaqlı (Hədəf)" },
-    { id: "star", symbol: "★", name: "Ulduz (Mərkəz)" }
+    { id: "circle", symbol: "●", name: "Dairə" },
+    { id: "diamond", symbol: "◆", name: "Romb" },
+    { id: "square", symbol: "■", name: "Kvadrat" },
+    { id: "triangle", symbol: "▲", name: "Üçbucaq" },
+    { id: "hexagon", symbol: "⬢", name: "Altıbucaqlı" },
+    { id: "star", symbol: "★", name: "Ulduz" }
 ];
 
 function isPointProject(p) {
@@ -1378,9 +1379,9 @@ function getProjectShape(project) {
 function registerPointShapeImages() {
     if (!map) return;
     const colors = [...Object.values(STATUS_COLORS), "#38BDF8"];
-    const size = 52;
+    const size = 48;
     const half = size / 2;
-    const r = 15.5;
+    const r = 15;
 
     POINT_SHAPES.forEach(shape => {
         colors.forEach(color => {
@@ -1403,7 +1404,7 @@ function registerPointShapeImages() {
                 ctx.lineTo(half - dr, half);
                 ctx.closePath();
             } else if (shape.id === "square") {
-                const s = r * 1.75;
+                const s = r * 1.72;
                 ctx.rect(half - s / 2, half - s / 2, s, s);
             } else if (shape.id === "triangle") {
                 const tr = r + 4;
@@ -1435,90 +1436,16 @@ function registerPointShapeImages() {
                 ctx.closePath();
             }
 
-            // Tünd xarici kölgə və kontrast halqa
-            ctx.shadowColor = "rgba(0, 0, 0, 0.65)";
-            ctx.shadowBlur = 5;
+            // İçi tam rəngli dolu həndəsi fiqur (daxili ağ naxış olmadan, təmiz və aydın)
+            ctx.shadowColor = "rgba(0, 0, 0, 0.55)";
+            ctx.shadowBlur = 4;
             ctx.fillStyle = color;
             ctx.fill();
 
             ctx.shadowBlur = 0;
-            ctx.lineWidth = 3.4;
+            ctx.lineWidth = 2.2;
             ctx.strokeStyle = "#ffffff";
             ctx.stroke();
-
-            // Hər layihə ikonu üçün kəskin fərqlənən daxili ağ qrafik simvol
-            ctx.strokeStyle = "#ffffff";
-            ctx.fillStyle = "#ffffff";
-            ctx.lineCap = "round";
-            ctx.lineJoin = "round";
-
-            if (shape.id === "circle") {
-                // Dairə daxilində Antena / Radio dalğası simvolu
-                ctx.beginPath();
-                ctx.arc(half, half - 2, 2.3, 0, Math.PI * 2);
-                ctx.fill();
-                ctx.lineWidth = 2.2;
-                ctx.beginPath();
-                ctx.moveTo(half, half + 0.5);
-                ctx.lineTo(half - 4, half + 7.5);
-                ctx.moveTo(half, half + 0.5);
-                ctx.lineTo(half + 4, half + 7.5);
-                ctx.moveTo(half - 2.5, half + 5);
-                ctx.lineTo(half + 2.5, half + 5);
-                ctx.stroke();
-                ctx.lineWidth = 1.9;
-                ctx.beginPath();
-                ctx.arc(half, half - 2, 6.2, -Math.PI * 0.78, -Math.PI * 0.22);
-                ctx.stroke();
-            } else if (shape.id === "diamond") {
-                // Romb daxilində qalın 4-guşəli ulduz / xaç və mərkəz nöqtəsi
-                ctx.lineWidth = 2.6;
-                ctx.beginPath();
-                ctx.moveTo(half - 7.5, half);
-                ctx.lineTo(half + 7.5, half);
-                ctx.moveTo(half, half - 7.5);
-                ctx.lineTo(half, half + 7.5);
-                ctx.stroke();
-                ctx.fillStyle = "#0F172A";
-                ctx.beginPath();
-                ctx.arc(half, half, 2.6, 0, Math.PI * 2);
-                ctx.fill();
-            } else if (shape.id === "square") {
-                // Kvadrat daxilində ikiqat çərçivə və mərkəz kvadratı
-                ctx.lineWidth = 2.2;
-                ctx.strokeRect(half - 6.5, half - 6.5, 13, 13);
-                ctx.fillRect(half - 2.5, half - 2.5, 5, 5);
-            } else if (shape.id === "triangle") {
-                // Üçbucaq daxilində kəskin yuxarı siqnal oxu
-                ctx.lineWidth = 2.5;
-                ctx.beginPath();
-                ctx.moveTo(half - 5.5, half + 5.5);
-                ctx.lineTo(half, half - 3.5);
-                ctx.lineTo(half + 5.5, half + 5.5);
-                ctx.stroke();
-                ctx.beginPath();
-                ctx.arc(half, half + 6.5, 2.0, 0, Math.PI * 2);
-                ctx.fill();
-            } else if (shape.id === "hexagon") {
-                // Altıbucaqlı daxilində hədəf halqası (bullseye)
-                ctx.lineWidth = 2.2;
-                ctx.beginPath();
-                ctx.arc(half, half, 6.5, 0, Math.PI * 2);
-                ctx.stroke();
-                ctx.beginPath();
-                ctx.arc(half, half, 2.5, 0, Math.PI * 2);
-                ctx.fill();
-            } else if (shape.id === "star") {
-                // Ulduz daxilində mərkəz halqası
-                ctx.fillStyle = "#0F172A";
-                ctx.beginPath();
-                ctx.arc(half, half + 0.5, 4.8, 0, Math.PI * 2);
-                ctx.fill();
-                ctx.fillStyle = "#ffffff";
-                ctx.beginPath();
-                ctx.arc(half, half + 0.5, 2.4, 0, Math.PI * 2);
-                ctx.fill();
-            }
 
             ctx.restore();
 
@@ -2379,6 +2306,47 @@ function ensureFoBadgeImage(foText) {
     return key;
 }
 
+/* Lif götürülən kabel üzərində lif sayı əvəzinə "name" hissəsindəki mətni xətt boyu çıxarır */
+function ensureLineTextBadgeImage(rawText) {
+    if (!map || !rawText) return null;
+    const text = cleanGlText(String(rawText).trim());
+    if (!text) return null;
+    const light = isLightBaseMap();
+    const key = `lntxt_v1:${light ? "l" : "d"}:${text}`;
+    if (map.hasImage(key)) return key;
+
+    const ratio = 2;
+    const fontSize = 11.5;
+    const padX = 5;
+    const padY = 2.5;
+    const measure = document.createElement("canvas").getContext("2d");
+    measure.font = `700 ${fontSize}px ${LABEL_FONT}`;
+    const textW = measure.measureText(text).width;
+    const W = Math.ceil(textW + padX * 2 + 2);
+    const H = Math.ceil(fontSize + padY * 2 + 2);
+
+    const canvas = document.createElement("canvas");
+    canvas.width = W * ratio;
+    canvas.height = H * ratio;
+    const ctx = canvas.getContext("2d");
+    ctx.scale(ratio, ratio);
+
+    ctx.font = `700 ${fontSize}px ${LABEL_FONT}`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.lineJoin = "round";
+
+    ctx.lineWidth = 3.4;
+    ctx.strokeStyle = light ? "rgba(255, 255, 255, 0.98)" : "rgba(3, 7, 18, 0.95)";
+    ctx.strokeText(text, W / 2, H / 2 + 0.5);
+
+    ctx.fillStyle = light ? "#090D16" : "#FFFFFF";
+    ctx.fillText(text, W / 2, H / 2 + 0.5);
+
+    map.addImage(key, ctx.getImageData(0, 0, canvas.width, canvas.height), { pixelRatio: ratio });
+    return key;
+}
+
 /* Digər qovluğundakı RM və köməkçi xətlərin üzərində (xətt boyu) çıxan ad etiketi */
 function ensureOtherLineNameImage(text, color = "#38BDF8") {
     if (!map || !text) return null;
@@ -2813,13 +2781,25 @@ function drawRoutes() {
             return;
         } else if (coords.length >= 2) {
             const line = coords.map(([lat, lng]) => [lng, lat]);
-            const foLabel = getSegmentFiber(r, project);
-            const foImg = foLabel ? ensureFoBadgeImage(foLabel) : null;
+            const isLifLine = isLifGoturulen(r, project);
+            const rawPropName = getPropCaseInsensitive(
+                r.props,
+                "Name", "name", "kabel", "kabel_adi", "xett_adi", "xett", "LineName", "title", "ad", "marsrut", "route", "label"
+            );
+            const isGen = /^(?:idxal\s*x[əe]tti|imported\s*line|x[əe]tt|line|imp)[-\s]*\d*$/i.test(String(r.name || "").trim());
+            const lineDisplayName = (!isGen && r.name) ? String(r.name).trim() : String(rawPropName || r.name || project.name || "").trim();
+            const foLabel = isLifLine ? "" : getSegmentFiber(r, project);
+            const foImg = isLifLine
+                ? ensureLineTextBadgeImage(lineDisplayName)
+                : (foLabel ? ensureFoBadgeImage(foLabel) : null);
             const { nameA, nameB } = resolveLineEndNames(r, project);
             const stText = t(`status${r.status}`);
             const foTipPart = foLabel ? `🔌 <b>${esc(foLabel)}</b> · ` : "";
-            // Mouse xəttə yaxınlaşanda (hover): qısa məlumat pəncərəsi
-            const lineTip = `<b>${esc(r.name)}</b><small>${foTipPart}<b style="color:${color}">${esc(stText)}</b> · ${formatKm(r.doneKm)} / ${formatKm(r.totalKm)} km (${percent(r.doneKm, r.totalKm)}%)</small>`;
+            const routePart = (nameA || nameB) ? `<br>📍 <b>${esc(nameA || "—")}</b> ➔ 📍 <b>${esc(nameB || "—")}</b>` : "";
+            // Mouse xəttə yaxınlaşanda (hover): Lif götürülən kabeldə məsafə göstərilmir, yalnız adı və hardan-hara getdiyi çıxır
+            const lineTip = isLifLine
+                ? `<b>${esc(lineDisplayName)}</b><small><b style="color:${color}">${esc(stText)}</b>${routePart}</small>`
+                : `<b>${esc(lineDisplayName)}</b><small>${foTipPart}<b style="color:${color}">${esc(stText)}</b> · ${formatKm(r.doneKm)} / ${formatKm(r.totalKm)} km (${percent(r.doneKm, r.totalKm)}%)</small>`;
 
             features.push({
                 type: "Feature", geometry: { type: "LineString", coordinates: line },
@@ -3455,12 +3435,15 @@ function renderProjects() {
             const donePts = p.items.filter(i => i.status === "bitmis" || i.status === "tehvil").length;
             const totalPlanM = Math.round(sum.plan * 1000);
             const totalDoneM = Math.round(sum.done * 1000);
+            const isAllLifGoturulen = !isNim && !isPoints && (p.status === "lif_goturulen" || (p.items.length > 0 && p.items.every(it => isLifGoturulen(it, p))));
             const subTitle = isNim
                 ? `${p.items.length} svetofor kəsişməsi · Hazır: ${donePts}/${p.items.length}`
                 : (isPoints
                     ? `📡 ${totalAnt} antena - ${totalPlanM} / ${totalDoneM} m`
-                    : `〰️ ${formatKm(sum.plan)} / ${formatKm(sum.done)} km · Qalıb: ${formatKm(Math.max(0, sum.plan - sum.done))} km`);
-            const rightPct = isNim ? `${p.items.length ? Math.round(donePts / p.items.length * 100) : 0}%` : `${pct}%`;
+                    : (isAllLifGoturulen
+                        ? `〰️ ${t("statuslif_goturulen")} (${p.items.length})`
+                        : `〰️ ${formatKm(sum.plan)} / ${formatKm(sum.done)} km · Qalıb: ${formatKm(Math.max(0, sum.plan - sum.done))} km`));
+            const rightPct = isNim ? `${p.items.length ? Math.round(donePts / p.items.length * 100) : 0}%` : (isAllLifGoturulen ? "" : `${pct}%`);
 
             return `
                 <div class="project ${visible ? "" : "hidden-on-map"}" data-id="${esc(p.id)}">
@@ -3470,7 +3453,7 @@ function renderProjects() {
                             <strong title="${esc(cleanProjName)}">${shapeBadge}${esc(cleanProjName)}</strong>
                             <small>${subTitle}</small>
                         </button>
-                        <span class="project-pct">${rightPct}</span>
+                        ${rightPct ? `<span class="project-pct">${rightPct}</span>` : ""}
                         ${isAdmin() ? `<button class="icon-btn" data-action="edit" title="${t("editProject")}"><i class="fa-solid fa-pen"></i></button>` : ""}
                         <button class="icon-btn" data-action="expand" aria-label="${esc(cleanProjName)}"><i class="fa-solid fa-chevron-right chevron ${expanded ? "open" : ""}"></i></button>
                     </div>
@@ -3483,31 +3466,35 @@ function renderProjects() {
                         const cleanName = isPoints
                             ? String(r.name || "").replace(/\s*\(?\bFaz[-\s]*[12]\b\)?/gi, "").replace(/\s*rayon(u)?\b/gi, "").trim()
                             : ((!isGen && r.name) ? String(r.name).trim() : String(rawPropName || r.name || p.name || "").trim());
-                        const segFo = (!isNim && !isPoints && Array.isArray(r.coords) && r.coords.length >= 2) ? getSegmentFiber(r, p) : "";
+                        const isLifSeg = !isNim && !isPoints && isLifGoturulen(r, p);
+                        const segFo = (!isNim && !isPoints && !isLifSeg && Array.isArray(r.coords) && r.coords.length >= 2) ? getSegmentFiber(r, p) : "";
                         const foBadge = segFo
                             ? `<span style="background:rgba(14,165,233,0.16);color:#38BDF8;border:1px solid rgba(56,189,248,0.38);border-radius:6px;padding:1px 5px;font-size:10px;font-weight:700;margin-right:4px;flex-shrink:0">${esc(segFo)}</span>`
                             : "";
                         const cBrief = r.contractor ? ` · 👷 ${esc(r.contractor)}` : "";
                         const { planM: rPlanM, doneM: rDoneM } = isPoints ? getPointMetersPair(r) : { planM: 0, doneM: 0 };
+                        const segEnds = isLifSeg ? resolveLineEndNames(r, p) : null;
                         const rightText = isNim
                             ? t(`status${r.status}`)
                             : (isPoints
                                 ? `${r.antennas || 0} antena - ${rPlanM} / ${rDoneM} m${cBrief}`
-                                : `${formatKm(r.doneKm)} / ${formatKm(r.totalKm)} km`);
+                                : (isLifSeg
+                                    ? `📍 ${esc(segEnds.aName)} ➔ ${esc(segEnds.bName)}`
+                                    : `${formatKm(r.doneKm)} / ${formatKm(r.totalKm)} km`));
                         const qKey = `${p.id}:${r.id}`;
                         const isQuickOpen = isPoints && isAdmin() && state.quickEditKey === qKey;
                         return `
                         <div class="segment-wrap" data-seg-wrap="${esc(r.id)}">
-                            <div class="segment ${state.selected?.itemId === r.id && state.selected?.projectId === p.id ? "selected" : ""}" style="display:flex;align-items:center;gap:4px;padding-right:6px">
-                                <button type="button" style="flex:1;display:flex;align-items:center;gap:8px;background:none;border:0;color:inherit;text-align:left;cursor:pointer;padding:2px 0;min-width:0" data-action="focus" data-item="${esc(r.id)}">
-                                    <span class="dot" style="background:${statusTone(r.status)};flex-shrink:0"></span>
-                                    <span class="segment-name" style="flex:1;min-width:0;${isPoints ? "overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" : "white-space:normal;word-break:break-word;line-height:1.28;"}font-weight:600;color:var(--ink)" title="${esc(cleanName)}">${isNim ? "🚦 " : (shape ? `<span style="color:${statusTone(r.status)};margin-right:3px">${shape.symbol}</span>` : "")}${foBadge}${esc(cleanName)}</span>
-                                    <span style="color:${statusTone(r.status)};font-weight:600;white-space:nowrap;font-size:11px;flex-shrink:0">${rightText}</span>
+                            <div class="segment ${state.selected?.itemId === r.id && state.selected?.projectId === p.id ? "selected" : ""}" style="display:flex;align-items:center;justify-content:space-between;gap:6px;padding-right:6px">
+                                <button type="button" style="flex:1;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:4px 8px;background:none;border:0;color:inherit;text-align:left;cursor:pointer;padding:3px 0;min-width:0" data-action="focus" data-item="${esc(r.id)}">
+                                    <span style="display:flex;align-items:center;gap:6px;min-width:0;flex:1 1 auto">
+                                        <span class="dot" style="background:${statusTone(r.status)};flex-shrink:0"></span>
+                                        <span class="segment-name" style="min-width:0;white-space:normal;word-break:break-word;line-height:1.25;font-weight:600;color:var(--ink)" title="${esc(cleanName)}">${isNim ? "🚦 " : (shape ? `<span style="color:${statusTone(r.status)};margin-right:4px">${shape.symbol}</span>` : "")}${foBadge}${esc(cleanName)}</span>
+                                    </span>
+                                    <span style="color:${statusTone(r.status)};font-weight:600;white-space:nowrap;font-size:11px;flex-shrink:0;margin-left:auto">${rightText}</span>
                                 </button>
                                 ${isPoints && isAdmin() ? `
-                                    <button type="button" class="icon-btn small" style="${isQuickOpen ? "color:#38BDF8;background:rgba(56,189,248,0.16)" : ""}" data-action="quickEditSeg" data-item="${esc(r.id)}" title="Sürətli redaktə (məsafə / antena / status)"><i class="fa-solid fa-bolt"></i></button>
-                                    <button type="button" class="icon-btn small" data-action="geomEditSeg" data-item="${esc(r.id)}" title="Nöqtəni xəritədə sürüşdür"><i class="fa-solid fa-arrows-up-down-left-right"></i></button>
-                                    <button type="button" class="icon-btn small" data-action="editSeg" data-item="${esc(r.id)}" title="Tam redaktə pəncərəsi"><i class="fa-solid fa-pen"></i></button>
+                                    <button type="button" class="icon-btn small" style="flex-shrink:0;margin-left:2px;${isQuickOpen ? "color:#38BDF8;background:rgba(56,189,248,0.16)" : ""}" data-action="quickEditSeg" data-item="${esc(r.id)}" title="Nöqtəni redaktə et"><i class="fa-solid fa-pen"></i></button>
                                 ` : ""}
                             </div>
                             ${isQuickOpen ? `
@@ -3532,10 +3519,15 @@ function renderProjects() {
                                         </select>
                                     </label>
                                 </div>
-                                <div style="display:flex;align-items:center;justify-content:space-between;gap:6px">
-                                    <button type="button" class="btn btn-outline" style="height:25px;padding:0 8px;font-size:11px" data-action="geomEditSeg" data-item="${esc(r.id)}" title="Nöqtəni xəritədə sürüşdür">
-                                        <i class="fa-solid fa-arrows-up-down-left-right"></i> Sürüşdür
-                                    </button>
+                                <div style="display:flex;align-items:center;justify-content:space-between;gap:5px;flex-wrap:wrap">
+                                    <div style="display:flex;gap:4px">
+                                        <button type="button" class="btn btn-outline" style="height:25px;padding:0 8px;font-size:11px" data-action="geomEditSeg" data-item="${esc(r.id)}" title="Nöqtəni xəritədə sürüşdür">
+                                            <i class="fa-solid fa-arrows-up-down-left-right"></i> Sürüşdür
+                                        </button>
+                                        <button type="button" class="btn btn-outline" style="height:25px;padding:0 8px;font-size:11px" data-action="editSeg" data-item="${esc(r.id)}" title="Tam redaktə pəncərəsi">
+                                            <i class="fa-solid fa-sliders"></i> Ətraflı
+                                        </button>
+                                    </div>
                                     <div style="display:flex;gap:5px">
                                         <button type="button" class="btn btn-outline" style="height:25px;padding:0 8px;font-size:11px" data-action="quickEditSeg" data-item="${esc(r.id)}">Bağla</button>
                                         <button type="button" class="btn btn-primary" style="height:25px;padding:0 10px;font-size:11px" data-action="saveQuickSeg" data-item="${esc(r.id)}">
@@ -3566,8 +3558,15 @@ function renderDetail() {
     const pct = percent(dDoneKm, dPlanKm);
     const info = findContractorInfo(r.contractor);
     const isLineSeg = Array.isArray(r.coords) && r.coords.length >= 2 && project.type !== "points" && project.category !== "nim";
-    const foText = isLineSeg ? getSegmentFiber(r, project) : "";
+    const isLifSeg = isLineSeg && isLifGoturulen(r, project);
+    const foText = (isLineSeg && !isLifSeg) ? getSegmentFiber(r, project) : "";
     const ends = resolveLineEndNames(r, project);
+    const rawPropName = getPropCaseInsensitive(
+        r.props,
+        "Name", "name", "kabel", "kabel_adi", "xett_adi", "xett", "LineName", "title", "ad", "marsrut", "route", "label"
+    );
+    const isGen = /^(?:idxal\s*x[əe]tti|imported\s*line|x[əe]tt|line|imp)[-\s]*\d*$/i.test(String(r.name || "").trim());
+    const displayName = (!isGen && r.name) ? String(r.name).trim() : String(rawPropName || r.name || project.name || "").trim();
     const row = (label, value) => `<dt>${label}</dt><dd>${value}</dd>`;
 
     $("detailView").innerHTML = `
@@ -3578,17 +3577,18 @@ function renderDetail() {
         <div class="detail-body">
             <div class="detail-title">
                 <small>${esc(r.id)} · ${esc(project.name)}</small>
-                <h2>${esc(r.name)}</h2>
+                <h2>${esc(displayName)}</h2>
                 <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
                     <span class="pill" style="--tone:${tone}"><span class="dot" style="background:${tone}"></span>${t(`status${r.status}`)}</span>
                     ${foText ? `<span class="pill" style="--tone:#0EA5E9;background:rgba(14,165,233,0.16);color:#38BDF8;border:1px solid rgba(56,189,248,0.45)">🔌 ${esc(foText)}</span>` : ""}
                 </div>
             </div>
             <div class="route">
-                <i class="fa-solid fa-location-dot" style="color:${tone}"></i><strong>${esc(ends.aName || r.name)}</strong>
+                <i class="fa-solid fa-location-dot" style="color:${tone}"></i><strong>${esc(ends.aName || displayName)}</strong>
                 <span class="stem"></span><span></span>
-                <i class="fa-solid fa-location-dot" style="color:${tone}"></i><strong>${esc(ends.bName || r.name)}</strong>
+                <i class="fa-solid fa-location-dot" style="color:${tone}"></i><strong>${esc(ends.bName || displayName)}</strong>
             </div>
+            ${isLifSeg ? "" : `
             <div>
                 <div class="meter-row"><b>${pct}%</b><span class="muted">${formatKm(dPlanKm)} / ${formatKm(dDoneKm)} km</span></div>
                 <div class="progress"><span style="width:${pct}%;background:${tone}"></span></div>
@@ -3603,7 +3603,7 @@ function renderDetail() {
             <dl class="spec">
                 ${row(t("thContractor"), esc(r.contractor || t("notAssigned")))}
                 ${info ? row(t("workers"), info.workers) + row(t("machinery"), info.machinery) + row(t("engineer"), esc(info.engineer)) : ""}
-            </dl>
+            </dl>`}
             <button class="btn btn-outline" data-action="zoom"><i class="fa-solid fa-crosshairs"></i> ${t("zoomTo")}</button>
             ${isAdmin() ? `<button class="btn btn-primary" data-action="edit"><i class="fa-solid fa-pen"></i> ${t("editSegment")}</button>` : ""}
         </div>
@@ -3742,12 +3742,13 @@ function normalizeKey(k) {
 function normalizeStatus(val) {
     if (!val) return "layihe";
     const s = String(val).trim().toLowerCase()
-        .replace(/ə/g, "e").replace(/ı/g, "i").replace(/ç/g, "c").replace(/ş/g, "s");
+        .replace(/ə/g, "e").replace(/ı/g, "i").replace(/ç/g, "c").replace(/ş/g, "s").replace(/ğ/g, "g").replace(/ö/g, "o").replace(/ü/g, "u");
+    if (s.includes("lif") || s.includes("gotur") || s.includes("icar")) return "lif_goturulen";
     if (s.includes("bit") || s.includes("tamam") || s.includes("done") || s.includes("finish")) return "bitmis";
     if (s.includes("icra") || s.includes("gedir") || s.includes("prog") || s.includes("davam")) return "icrada";
     if (s.includes("tehvil") || s.includes("teslim") || s.includes("ready") || s.includes("hazir")) return "tehvil";
     if (s.includes("layi") || s.includes("plan") || s.includes("proy")) return "layihe";
-    if (s.includes("lif") || s.includes("kabel")) return "layihe";
+    if (s.includes("kabel")) return "layihe";
     return STATUSES.includes(s) ? s : "layihe";
 }
 
@@ -4373,23 +4374,30 @@ function projectFromFile(fileName, lines, polyFillMode = "auto") {
             }
 
             // Xətt və ya Poliqon layihəsi: totalKm və doneKm birbaşa ArcGIS sütunlarından
+            const isLifStatus = status === "lif_goturulen" || /(?:lif\s*g[öo]t[üu]r|lif_goturulen)/i.test(`${nameVal || ""} ${cleanFileName || ""}`);
+            const finalStatus = isLifStatus ? "lif_goturulen" : status;
             const km = Math.round((tools.length(line.coords) / 1000) * 10) / 10;
             const rawTotalKm = getPropCaseInsensitive(p, "totalKm", "total_km", "totalkm", "plan_km", "planKm", "plan", "uzunluq", "length");
             const rawDoneKm = getPropCaseInsensitive(p, "doneKm", "done_km", "donekm", "faktiki_km", "faktiki", "icra", "done");
 
-            // Əgər totalKm boş və ya "-" olarsa, sayt xəttin GPS koordinatlarından faktiki uzunluğu avtomatik hesablayır
-            const totalKm = rawTotalKm !== undefined ? parseAttrNumber(rawTotalKm, km) : km;
-            // Əgər doneKm boş və ya "-" olarsa, avtomatik 0 qəbul edilir
-            const doneKm = rawDoneKm !== undefined ? parseAttrNumber(rawDoneKm, 0) : 0;
+            // Lif götürülən kabeldə məsafələr boş (0) saxlanılır; digər xətlərdə GPS və ya atribut oxunur
+            const totalKm = finalStatus === "lif_goturulen"
+                ? 0
+                : (rawTotalKm !== undefined ? parseAttrNumber(rawTotalKm, km) : km);
+            const doneKm = finalStatus === "lif_goturulen"
+                ? 0
+                : (rawDoneKm !== undefined ? parseAttrNumber(rawDoneKm, 0) : 0);
 
             // Kabelin lif sayı (FO 48, FO 24, FO 12 və s. — birbaşa import edilən faylın atributlarından / adından oxunur; şərti rəqəm atılmır)
-            const fiberCount = extractFiberFromProps(p, nameVal, line.name, p._folderName, p._rawDescription, fileName) || "";
+            const fiberCount = finalStatus === "lif_goturulen"
+                ? ""
+                : (extractFiberFromProps(p, nameVal, line.name, p._folderName, p._rawDescription, fileName) || "");
 
             return {
                 id: `${isPolygon ? "PLY" : "IMP"}-${String(index + 1).padStart(2, "0")}`,
                 name: nameVal,
                 pointA, pointB, startDate: "", endDate: "", contractor,
-                totalKm, doneKm, status, fiberCount, customColor, fillColor, fillOpacity, lineWidth, isPolygon, polyFilled,
+                totalKm, doneKm, status: finalStatus, fiberCount, customColor, fillColor, fillOpacity, lineWidth, isPolygon, polyFilled,
                 holes: line.holes || [],
                 closures: 0, manholes: 0, antennas: 0,
                 props: p,
@@ -4414,6 +4422,9 @@ async function handleImportFiles(fileList, targetCategory) {
                 continue;
             }
             const project = projectFromFile(file.name, lines, polyFillMode);
+            if (Array.isArray(project.items) && project.items.length > 0 && project.items.every(it => it.status === "lif_goturulen")) {
+                project.status = "lif_goturulen";
+            }
             project.id = project.id || (`imp_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`);
             project.imported = true;
             project.category = cat;
@@ -5183,6 +5194,31 @@ document.addEventListener("DOMContentLoaded", init);
                 recordAuditLog("Status Dəyişikliyi", "🚦 NİM", item.name, `Svetofor nöqtəsinin statusu '${t("status" + item.status)}' olaraq yeniləndi`);
                 renderAll();
                 toast(`🚦 ${item.name} statusu yeniləndi: ${t("status" + item.status)}`);
+                return;
+            }
+            const lineSt = e.target.closest("[data-line-status-select]");
+            if (lineSt) {
+                const [projectId, itemId] = lineSt.dataset.lineStatusSelect.split(":");
+                const proj = state.projects.find(p => p.id === projectId);
+                const item = proj?.items.find(r => r.id === itemId);
+                if (!proj || !item) return;
+                item.status = lineSt.value;
+                if (item.status === "lif_goturulen") {
+                    item.totalKm = 0;
+                    item.doneKm = 0;
+                }
+                if (proj.items.length === 1) {
+                    proj.status = item.status;
+                    saveProjectOverride(proj);
+                }
+                saveSegmentOverride(proj.id, item);
+                saveImportedProjects();
+                if (isAdmin() && api.configured) {
+                    try { await api.saveSegment(proj.id, item.id, { status: item.status, totalKm: item.totalKm, doneKm: item.doneKm }); } catch {}
+                }
+                recordAuditLog("Status Dəyişikliyi", proj.category === "azconnect" ? "🌐 Azconnect" : "📁 Layihələr", item.name, `Kabel statusu '${t("status" + item.status)}' olaraq yeniləndi`);
+                renderAll();
+                toast(`〰️ ${item.name} statusu yeniləndi: ${t("status" + item.status)}`);
                 return;
             }
             const foSel = e.target.closest("[data-fo-select]");
@@ -6116,9 +6152,10 @@ document.addEventListener("DOMContentLoaded", init);
                     <div class="info-sub-list">
                         ${items.map(r => {
                             const rTone = statusTone(r.status);
+                            const isLifSeg = isLifGoturulen(r, proj);
                             const rLeft = Math.max(0, r.totalKm - r.doneKm);
                             const rPct = percent(r.doneKm, r.totalKm);
-                            const foLabel = getSegmentFiber(r, proj);
+                            const foLabel = isLifSeg ? "" : getSegmentFiber(r, proj);
                             const ends = resolveLineEndNames(r, proj);
                             const cInfo = findContractorInfo(r.contractor) || { workers: "—", machinery: "—", engineer: "—" };
                             const rawPropName = getPropCaseInsensitive(
@@ -6137,10 +6174,11 @@ document.addEventListener("DOMContentLoaded", init);
                                         </div>
                                     </div>
                                     <div style="font-size:11.5px;color:var(--ink-2);display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-                                        <span>📍 <b>${esc(ends.aName || r.name)}</b></span>
+                                        <span>📍 <b>${esc(ends.aName || lineDisplayName)}</b></span>
                                         <span style="opacity:0.6">➔</span>
-                                        <span>📍 <b>${esc(ends.bName || r.name)}</b></span>
+                                        <span>📍 <b>${esc(ends.bName || lineDisplayName)}</b></span>
                                     </div>
+                                    ${isLifSeg ? "" : `
                                     <div style="color:var(--ink-2);font-size:11.5px">
                                         Plan: <b>${formatKm(r.totalKm)} km</b> · Faktiki: <b style="color:${rTone}">${formatKm(r.doneKm)} km (${rPct}%)</b> · Qalıb: <b>${formatKm(rLeft)} km</b>
                                     </div>
@@ -6151,12 +6189,19 @@ document.addEventListener("DOMContentLoaded", init);
                                     <div class="info-exec-row">
                                         <span class="muted">İcraçı:</span>
                                         ${executorOptionsHtml(r.contractor)}
-                                    </div>
+                                    </div>`}
+                                    ${isAdmin() ? `
+                                    <div class="info-exec-row">
+                                        <span class="muted">Status:</span>
+                                        <select class="info-exec-select" data-line-status-select="${esc(proj.id)}:${esc(r.id)}">
+                                            ${STATUSES.map(st => `<option value="${st}" ${r.status === st ? "selected" : ""}>${t("status" + st)}</option>`).join("")}
+                                        </select>
+                                    </div>` : ""}
                                     <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;font-size:11px;color:var(--ink-2)">
-                                        ${r.contractor ? `
+                                        ${!isLifSeg && r.contractor ? `
                                         <span>👷 İşçi: <b>${esc(cInfo.workers)} nəfər</b> · 🚜 Tex.: <b>${esc(cInfo.machinery ?? 0)}</b></span>
                                         <span>📞 <b>${esc(cInfo.engineer || "—")}</b></span>
-                                        ` : `<span class="muted">${isAdmin() ? `<a href="admin.html#contractors" target="_blank" style="color:#38BDF8;text-decoration:none">⚙️ Admin Paneldə İcraçı əlavə et</a>` : ""}</span>`}
+                                        ` : `<span class="muted">${!isLifSeg && isAdmin() ? `<a href="admin.html#contractors" target="_blank" style="color:#38BDF8;text-decoration:none">⚙️ Admin Paneldə İcraçı əlavə et</a>` : ""}</span>`}
                                         ${isAdmin() ? `<div style="display:flex;gap:4px">
                                             <button class="btn btn-outline" style="height:22px;padding:0 7px;font-size:10.5px" data-edit-seg="${esc(proj.id)}:${esc(r.id)}" title="Xətti redaktə et"><i class="fa-solid fa-pen"></i> Redaktə</button>
                                             <button class="btn btn-outline" style="height:22px;padding:0 7px;font-size:10.5px" data-geom-edit="${esc(proj.id)}:${esc(r.id)}" title="Xəttin qırılma nöqtələrini xəritədə sürüşdür"><i class="fa-solid fa-bezier-curve"></i> Xətti sürüşdür</button>
