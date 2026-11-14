@@ -421,10 +421,12 @@ const api = (() => {
         async saveProject(project) {
             const VALID_DB_STATUSES = ["bitmis", "icrada", "tehvil", "layihe"];
             const dbStatus = VALID_DB_STATUSES.includes(project.status) ? project.status : "layihe";
+            const dbType = project.type === "points" ? "points" : "lines";
             unwrap(await client.from("projects").upsert({
                 id: project.id,
                 name: project.name,
                 status: dbStatus,
+                project_type: dbType,
                 imported: true
             }));
 
@@ -468,6 +470,7 @@ const api = (() => {
                     status: segDbStatus,
                     closures: Number(r.closures) || 0,
                     manholes: Number(r.manholes) || 0,
+                    antennas: Number(r.antennas) || 0,
                     coords: safeCoords
                 };
             });
