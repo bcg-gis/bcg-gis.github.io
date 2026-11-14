@@ -421,10 +421,11 @@ const api = (() => {
         async saveProject(project) {
             const VALID_DB_STATUSES = ["bitmis", "icrada", "tehvil", "layihe"];
             const dbStatus = VALID_DB_STATUSES.includes(project.status) ? project.status : "layihe";
-            const dbType = project.type === "points" ? "points" : "lines";
             unwrap(await client.from("projects").upsert({
-                id: project.id, name: project.name, status: dbStatus,
-                project_type: dbType, imported: true
+                id: project.id,
+                name: project.name,
+                status: dbStatus,
+                imported: true
             }));
 
             // Podratçıların mövcudluğunu yoxla, xarici podratçılarda FK xətası olmasın deyə
@@ -456,10 +457,18 @@ const api = (() => {
                     pt1: isSinglePt
                 });
                 return {
-                    project_id: project.id, code: r.id, name: r.name || "", point_a: r.pointA || "", point_b: packedPointB,
+                    project_id: project.id,
+                    code: r.id,
+                    name: r.name || "",
+                    point_a: r.pointA || "",
+                    point_b: packedPointB,
                     contractor: withContractor ? (r.contractor || null) : null,
-                    total_km: totalKm, done_km: doneKm, status: segDbStatus,
-                    antennas: Number(r.antennas) || 0, coords: safeCoords
+                    total_km: totalKm,
+                    done_km: doneKm,
+                    status: segDbStatus,
+                    closures: Number(r.closures) || 0,
+                    manholes: Number(r.manholes) || 0,
+                    coords: safeCoords
                 };
             });
 
@@ -481,10 +490,11 @@ const api = (() => {
             const VALID_DB_STATUSES = ["bitmis", "icrada", "tehvil", "layihe"];
             const projId = id || `proj_${Date.now()}`;
             const safeRow = {
-                ...row,
                 id: projId,
+                name: row.name,
                 status: VALID_DB_STATUSES.includes(row.status) ? row.status : "layihe",
-                project_type: row.project_type === "points" ? "points" : "lines"
+                start_date: row.start_date || null,
+                end_date: row.end_date || null
             };
             const query = client.from("projects").upsert(safeRow);
             unwrap(await query);
@@ -498,27 +508,35 @@ const api = (() => {
             if (row.point_b !== undefined) {
                 existingMeta = unpackPointBMeta(row.point_b).meta;
             }
+            const isSinglePt = Array.isArray(row.coords) && row.coords.length === 1;
             const mergedMeta = {
                 ...existingMeta,
                 ...(extraMeta || {}),
                 ...(row.status ? { st: row.status } : {}),
-                ...(row.antennas !== undefined ? { ant: Number(row.antennas) || 0 } : {})
+                ...(row.antennas !== undefined ? { ant: Number(row.antennas) || 0 } : {}),
+                ...(isSinglePt ? { pt1: true } : {})
             };
             const safeRow = {
-                ...row,
                 project_id: projectId,
                 code: code || row.code,
                 total_km: totalKm,
                 done_km: doneKm
             };
-            if (safeRow.status !== undefined) {
-                safeRow.status = VALID_DB_STATUSES.includes(safeRow.status) ? safeRow.status : "layihe";
+            if (row.name !== undefined) safeRow.name = row.name;
+            if (row.point_a !== undefined) safeRow.point_a = row.point_a;
+            if (row.point_b !== undefined || Object.keys(mergedMeta).length > 0) {
+                safeRow.point_b = packPointBMeta(row.point_b || "", mergedMeta);
             }
-            if (safeRow.point_b !== undefined) {
-                safeRow.point_b = packPointBMeta(safeRow.point_b, mergedMeta);
+            if (row.start_date !== undefined) safeRow.start_date = row.start_date || null;
+            if (row.end_date !== undefined) safeRow.end_date = row.end_date || null;
+            if (row.contractor !== undefined) safeRow.contractor = row.contractor || null;
+            if (row.closures !== undefined) safeRow.closures = Number(row.closures) || 0;
+            if (row.manholes !== undefined) safeRow.manholes = Number(row.manholes) || 0;
+            if (row.status !== undefined) {
+                safeRow.status = VALID_DB_STATUSES.includes(row.status) ? row.status : "layihe";
             }
-            if (Array.isArray(safeRow.coords) && safeRow.coords.length === 1) {
-                safeRow.coords = [safeRow.coords[0], safeRow.coords[0]];
+            if (Array.isArray(row.coords)) {
+                safeRow.coords = isSinglePt ? [row.coords[0], row.coords[0]] : row.coords;
             }
             let res = await client.from("segments").upsert(safeRow, { onConflict: "project_id,code" });
             if (res.error) {
