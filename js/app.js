@@ -755,6 +755,21 @@ async function enterApp(user) {
     renderNotes();
     renderMaterials();
     renderAll();
+
+    // Əvvəllər lokal yaddaşa (Digər / Azconnect / NİM / BCG) əlavə edilmiş layihələri avtomatik Supabase bazasına sinxronlaşdır
+    if (isAdmin() && api.configured && storedImported.length > 0) {
+        (async () => {
+            for (const localProj of storedImported) {
+                if (!localProj || !localProj.id) continue;
+                const currentProj = state.projects.find(p => p.id === localProj.id) || localProj;
+                try {
+                    await api.saveProject(currentProj);
+                } catch (e) {
+                    console.warn("Auto-sync saveProject error:", e);
+                }
+            }
+        })();
+    }
 }
 
 /* REDAKTƏ (admin) */
@@ -1288,7 +1303,10 @@ async function enterSharedView(token) {
         return;
     }
     state.projects = projects;
-    projects.forEach(p => state.visibleIds.add(p.id));
+    projects.forEach(p => {
+        state.visibleIds.add(p.id);
+        state.activeFolders.add(p.category || "project");
+    });
     renderAll();
     const extras = await api.loadSharedExtras(token).catch(() => null);
     if (extras?.drawings) tools.loadShared(extras.drawings);
@@ -1326,6 +1344,12 @@ async function createShare(event) {
     }
     let link;
     try {
+        if (isAdmin() && api.configured) {
+            const visibleProjs = state.projects.filter(p => state.visibleIds.has(p.id) && (p.imported || p.category === "other" || p.category === "azconnect" || p.category === "nim"));
+            for (const p of visibleProjs) {
+                try { await api.saveProject(p); } catch {}
+            }
+        }
         const view = { center: map.getCenter().toArray(), zoom: map.getZoom(), bearing: map.getBearing(), pitch: map.getPitch() };
         link = await api.createShare([...state.visibleIds], Number($("shareDays").value), tools.shapes(), view);
     } catch {
@@ -4425,7 +4449,7 @@ async function handleImportFiles(fileList, targetCategory) {
             if (Array.isArray(project.items) && project.items.length > 0 && project.items.every(it => it.status === "lif_goturulen")) {
                 project.status = "lif_goturulen";
             }
-            project.id = project.id || (`imp_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`);
+            project.id = (`imp_${cat}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`);
             project.imported = true;
             project.category = cat;
             const forcedType = $("importGeomType")?.value;
