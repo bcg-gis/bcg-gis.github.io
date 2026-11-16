@@ -1201,11 +1201,6 @@ async function submitEditor(event) {
     }
     try {
         if (values.start_date && values.end_date && values.end_date < values.start_date) throw new Error("dates");
-        if ("done_km" in values) {
-            const pCmp = editor.isPoints ? normalizePointMetersInput(values.total_km) : values.total_km;
-            const dCmp = editor.isPoints ? normalizePointMetersInput(values.done_km) : values.done_km;
-            if (dCmp > pCmp) throw new Error("km");
-        }
         pushUndoSnapshot(editor.title || "Redaktə");
         await editor.onSave(values);
         await reloadData();
@@ -6103,7 +6098,7 @@ document.addEventListener("DOMContentLoaded", init);
         const pointA = $("mmPointA").value.trim() || itemName || "Mərkəz";
         const pointB = $("mmPointB").value.trim() || "Şəbəkə";
         const planVal = Math.max(0, Number($("mmPlanVal").value) || 0);
-        const doneVal = Math.min(planVal, Math.max(0, Number($("mmDoneVal").value) || 0));
+        const doneVal = Math.max(0, Number($("mmDoneVal").value) || 0);
         const antennas = Math.max(0, Number($("mmAntennasVal").value) || 0);
 
         if (!itemName) {

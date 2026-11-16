@@ -52,8 +52,8 @@ const api = (() => {
             startDate: row.start_date || "",
             endDate: row.end_date || "",
             contractor: row.contractor || "",
-            totalKm: Number(row.total_km),
-            doneKm: Number(row.done_km),
+            totalKm: meta.tKm !== undefined ? Number(meta.tKm) : Number(row.total_km),
+            doneKm: meta.dKm !== undefined ? Number(meta.dKm) : Number(row.done_km),
             status: meta.st || row.status,
             closures: row.closures || 0,
             manholes: row.manholes || 0,
@@ -437,13 +437,16 @@ const api = (() => {
                     ? [r.coords[0], r.coords[0]]
                     : (r.coords || []);
                 const totalKm = Math.max(0, Number(r.totalKm) || 0);
-                const doneKm = Math.min(totalKm, Math.max(0, Number(r.doneKm) || 0));
+                const doneKm = Math.max(0, Number(r.doneKm) || 0);
+                const dbTotalKm = Math.max(totalKm, doneKm);
                 const segDbStatus = VALID_DB_STATUSES.includes(r.status) ? r.status : "layihe";
                 const packedPointB = packPointBMeta(r.pointB || "", {
                     cat: project.category || "project",
                     pType: project.type || "lines",
                     pSt: project.status,
                     st: r.status,
+                    tKm: totalKm,
+                    dKm: doneKm,
                     fo: r.fiberCount,
                     uFo: r.userSetFiber,
                     col: r.customColor,
@@ -465,7 +468,7 @@ const api = (() => {
                     point_a: r.pointA || "",
                     point_b: packedPointB,
                     contractor: withContractor ? (r.contractor || null) : null,
-                    total_km: totalKm,
+                    total_km: dbTotalKm,
                     done_km: doneKm,
                     status: segDbStatus,
                     closures: Number(r.closures) || 0,
@@ -506,7 +509,8 @@ const api = (() => {
         async saveSegment(projectId, code, row, extraMeta = null) {
             const VALID_DB_STATUSES = ["bitmis", "icrada", "tehvil", "layihe"];
             const totalKm = Math.max(0, Number(row.total_km) || 0);
-            const doneKm = Math.min(totalKm, Math.max(0, Number(row.done_km) || 0));
+            const doneKm = Math.max(0, Number(row.done_km) || 0);
+            const dbTotalKm = Math.max(totalKm, doneKm);
             let existingMeta = {};
             if (row.point_b !== undefined) {
                 existingMeta = unpackPointBMeta(row.point_b).meta;
@@ -515,6 +519,8 @@ const api = (() => {
             const mergedMeta = {
                 ...existingMeta,
                 ...(extraMeta || {}),
+                ...(row.total_km !== undefined ? { tKm: totalKm } : {}),
+                ...(row.done_km !== undefined ? { dKm: doneKm } : {}),
                 ...(row.status ? { st: row.status } : {}),
                 ...(row.antennas !== undefined ? { ant: Number(row.antennas) || 0 } : {}),
                 ...(isSinglePt ? { pt1: true } : {})
@@ -522,7 +528,7 @@ const api = (() => {
             const safeRow = {
                 project_id: projectId,
                 code: code || row.code,
-                total_km: totalKm,
+                total_km: dbTotalKm,
                 done_km: doneKm
             };
             if (row.name !== undefined) safeRow.name = row.name;
