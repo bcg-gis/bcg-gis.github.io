@@ -212,6 +212,32 @@ textarea.input { height: auto; padding: 8px 10px; resize: vertical; }
 .chip b { font-weight: 400; color: var(--ink-3); }
 .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; display: inline-block; }
 
+/* İcrada olan statuslar üçün yanıb-sönən işıq effekti */
+.dot.icrada,
+.pill[style*="--tone:#F59E0B"] .dot,
+.pill[style*="--tone:#f59e0b"] .dot,
+.dot[style*="background:#F59E0B"],
+.dot[style*="background:#f59e0b"],
+.dot[style*="background: #F59E0B"],
+.dot[style*="background: #f59e0b"] {
+    animation: icradaPulseLight 1.5s infinite ease-in-out;
+}
+
+@keyframes icradaPulseLight {
+    0% {
+        transform: scale(0.92);
+        box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.85);
+    }
+    60% {
+        transform: scale(1.25);
+        box-shadow: 0 0 0 6px rgba(245, 158, 11, 0);
+    }
+    100% {
+        transform: scale(0.92);
+        box-shadow: 0 0 0 0 rgba(245, 158, 11, 0);
+    }
+}
+
 .list-head { flex: none; display: flex; align-items: center; justify-content: space-between; padding: 12px 16px 6px; }
 .list-head h2 { font-size: 13px; }
 .project-list { flex: 1; min-height: 0; overflow-y: auto; padding-bottom: 8px; }

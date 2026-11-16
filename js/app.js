@@ -652,9 +652,35 @@ function saveBcgLeadEntry(leadName, workers, phone) {
     }
 }
 
+function extractContractorFromProps(p) {
+    if (!p) return "";
+    const direct = getPropCaseInsensitive(
+        p,
+        "icraçı", "icraci", "icracı", "icraçi", "contractor", "podratçı", "podratci", "podrat",
+        "icraci_sirket", "icraçı_şirkət", "icraci_sirketi", "icraçı_şirkəti", "icraci_adi", "icraçı_adı",
+        "icra_eden", "icraeden", "icra edən", "icracilar", "icraçılar", "briqada", "sirket", "şirkət",
+        "operator", "provayder", "qurum", "partnyor", "partner"
+    );
+    if (direct !== undefined && cleanAttrVal(direct) !== undefined) {
+        const str = String(direct).trim();
+        if (str && !/^(?:null|<null>|none|yoxdur|-+|—+)$/i.test(str)) return str;
+    }
+    const pat = findPropByPattern(p, /^(icra|podrat|contract|briqad)/i, /^(icra_status|icrada)/i);
+    if (pat && pat.val) {
+        const valStr = String(pat.val).trim();
+        if (valStr && !/^(layihe|icrada|bitmis|tehvil|plan|hazir|davam)$/i.test(normalizeStatus(valStr))) {
+            return valStr;
+        }
+    }
+    return "";
+}
+
 function parseContractorAndLead(rawContractor, props) {
     const p = props || {};
     let contractorStr = String(rawContractor || "").trim();
+    if (!contractorStr) {
+        contractorStr = extractContractorFromProps(p);
+    }
     let execLead = String(
         getPropCaseInsensitive(
             p,
@@ -1110,6 +1136,7 @@ function mergeLocalProjectIntoDb(dbProj, localProj) {
             name: locIt.name || dbIt.name,
             pointA: (dbIt.pointA && !/^(a|mərkəz)$/i.test(dbIt.pointA)) ? dbIt.pointA : (locIt.pointA || dbIt.pointA),
             pointB: (dbIt.pointB && !/^(b|şəbəkə)$/i.test(dbIt.pointB)) ? dbIt.pointB : (locIt.pointB || dbIt.pointB),
+            contractor: locIt.contractor || dbIt.contractor || "",
             execLead: locIt.execLead || dbIt.execLead || "",
             execWorkers: locIt.execWorkers ?? dbIt.execWorkers,
             execPhone: locIt.execPhone || dbIt.execPhone || "",
@@ -1150,6 +1177,13 @@ function applySavedMetaOverrides() {
                 if (sMap[key]) {
                     Object.assign(r, sMap[key]);
                 }
+                // Əgər icraçı yoxdursa və ya faylın atribut sütunlarında (props) varsa dərhal bərpa et
+                if (!r.contractor && r.props) {
+                    const extracted = extractContractorFromProps(r.props);
+                    if (extracted) {
+                        r.contractor = extracted;
+                    }
+                }
                 if (r.contractor) {
                     const parsedExec = parseContractorAndLead(r.contractor, r.props);
                     if (parsedExec.execLead && !r.execLead) r.execLead = parsedExec.execLead;
@@ -1161,8 +1195,8 @@ function applySavedMetaOverrides() {
                         const matched = findContractorInfo(parsedExec.contractor);
                         if (matched) {
                             r.contractor = matched.name;
-                        } else if (LEGACY_DEMO_CONTRACTORS.has(String(r.contractor).trim().toLowerCase())) {
-                            r.contractor = "";
+                        } else if (parsedExec.contractor) {
+                            r.contractor = parsedExec.contractor;
                         }
                     }
                 }
@@ -1882,7 +1916,7 @@ async function createShare(event) {
 const esriTiles = path => [`https://server.arcgisonline.com/ArcGIS/rest/services/${path}/MapServer/tile/{z}/{y}/{x}`];
 
 const BASE_MAPS = {
-    satellite: { icon: "fa-satellite", label: "layerSatellite", raster: "esri", bg: "#1c2a30", names: true },
+    satellite: { icon: "fa-satellite", label: "layerSatellite", raster: "googleSat", bg: "#1c2a30", names: true },
     street: { icon: "fa-road", label: "layerStreet", raster: "osm", bg: "#dfe6ea" },
     dark: { icon: "fa-moon", label: "layerDark", raster: "carto", bg: "#0e1a2b" },
     blank: { icon: "fa-square", label: "layerBlank", bg: "#ffffff" }
@@ -2121,6 +2155,62 @@ function registerPointShapeImages() {
 
         map.addImage(pinId, ctx.getImageData(0, 0, pinW, pinH), { pixelRatio: 2 });
     });
+
+    registerPulsingBeacon();
+}
+
+function registerPulsingBeacon() {
+    if (!map) return;
+    const beaconId = "pulsing-beacon-icrada";
+    if (map.hasImage(beaconId)) return;
+    const size = 140;
+    const pulsingDot = {
+        width: size,
+        height: size,
+        data: new Uint8Array(size * size * 4),
+        onAdd: function() {
+            const canvas = document.createElement("canvas");
+            canvas.width = this.width;
+            canvas.height = this.height;
+            this.context = canvas.getContext("2d", { willReadFrequently: true });
+        },
+        render: function() {
+            const duration = 1500;
+            const t = (performance.now() % duration) / duration;
+            const radius = (size / 2) * 0.26;
+            const outerRadius = (size / 2) * 0.82 * t + radius;
+            const ctx = this.context;
+            ctx.clearRect(0, 0, size, size);
+
+            // 1. Genişlənən xarici dalğa halqası (yanıb-sönən mayak radar dalğası)
+            ctx.beginPath();
+            ctx.arc(size / 2, size / 2, outerRadius, 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(245, 158, 11, ${(1 - t) * 0.60})`;
+            ctx.fill();
+
+            // 2. İkinci orta parıltı dalğası
+            const midRadius = (size / 2) * 0.50 * t + radius;
+            ctx.beginPath();
+            ctx.arc(size / 2, size / 2, midRadius, 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(251, 191, 36, ${(1 - t) * 0.82})`;
+            ctx.fill();
+
+            // 3. Mərkəzi parlaq pulsasiya edən işıq halqası
+            const pulse = 0.5 + 0.5 * Math.sin(t * Math.PI * 2);
+            ctx.beginPath();
+            ctx.arc(size / 2, size / 2, radius + 2, 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(245, 158, 11, ${0.45 + 0.45 * pulse})`;
+            ctx.fill();
+            ctx.strokeStyle = `rgba(255, 255, 255, ${0.75 + 0.25 * pulse})`;
+            ctx.lineWidth = 2.6;
+            ctx.stroke();
+
+            this.data = ctx.getImageData(0, 0, size, size).data;
+            map.triggerRepaint();
+            return true;
+        }
+    };
+    map.addImage(beaconId, pulsingDot, { pixelRatio: 2 });
 }
 
 function mapStyle() {
@@ -2131,18 +2221,19 @@ function mapStyle() {
         version: 8,
         glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
         sources: {
-            esri: raster(esriTiles("World_Imagery"), 256, 19, "Imagery &copy; Esri, Maxar, Earthstar Geographics"),
-            "esri-transport": raster(esriTiles("Reference/World_Transportation"), 256, 19),
-            "esri-places": raster(esriTiles("Reference/World_Boundaries_and_Places"), 256, 19),
+            googleSat: raster(["0", "1", "2", "3"].map(s => `https://mt${s}.google.com/vt/lyrs=s&hl=az&x={x}&y={y}&z={z}`), 256, 20, "Peyk &copy; Google"),
+            esri: raster(esriTiles("World_Imagery"), 256, 18, "Imagery &copy; Esri, Maxar, Earthstar Geographics"),
+            "esri-transport": raster(esriTiles("Reference/World_Transportation"), 256, 18),
+            "esri-places": raster(esriTiles("Reference/World_Boundaries_and_Places"), 256, 18),
             osm: raster(["0", "1", "2", "3"].map(s => `https://mt${s}.google.com/vt/lyrs=m&hl=az&x={x}&y={y}&z={z}`), 256, 20, "Xəritə məlumatları &copy; Google"),
-            carto: raster(esriTiles("Canvas/World_Dark_Gray_Base"), 256, 19, "Xəritə &copy; Esri"),
+            carto: raster(esriTiles("Canvas/World_Dark_Gray_Base"), 256, 18, "Xəritə &copy; Esri"),
             routes: empty,
             "route-labels": empty,
             draw: empty
         },
         layers: [
             { id: "bg", type: "background", paint: { "background-color": "#1c2a30" } },
-            rasterLayer("esri"), rasterLayer("esri-transport"), rasterLayer("esri-places"), rasterLayer("osm"), rasterLayer("carto"),
+            rasterLayer("googleSat"), rasterLayer("esri"), rasterLayer("esri-transport"), rasterLayer("esri-places"), rasterLayer("osm"), rasterLayer("carto"),
             /* ALT QAT (Underlay): Poliqon sahələri (məs: Xəzər dənizi), poliqon sərhədləri (rayon sərhədləri) və Digər qovluğunun xətləri — bütün magistral xətlər və nöqtələr bunların üzərinə düşür */
             { id: "routes-poly-fill", type: "fill", source: "routes", filter: ["all", ["==", ["geometry-type"], "Polygon"], ["==", ["get", "polyFilled"], true]],
                 paint: {
@@ -2246,6 +2337,27 @@ function mapStyle() {
                     "icon-image": ["get", "pinIcon"],
                     "icon-anchor": "bottom",
                     "icon-size": 0.68,
+                    "icon-allow-overlap": true,
+                    "icon-ignore-placement": true
+                },
+                paint: {
+                    "icon-opacity": ["case", ["get", "dim"], 0.28, 1]
+                } },
+            /* İcrada olan layihə nöqtələri üçün yanıb-sönən işıq / radar mayakı (bütün miqyaslarda fərqlənir) */
+            { id: "routes-point-pulse", type: "symbol", source: "routes", minzoom: 3, maxzoom: 10.2, filter: ["all", ["==", ["geometry-type"], "Point"], ["has", "isRayonPoint"], ["==", ["get", "isIcrada"], true], ["!", ["has", "splitOnly"]]],
+                layout: {
+                    "icon-image": "pulsing-beacon-icrada",
+                    "icon-size": ["interpolate", ["linear"], ["zoom"], 4, 0.45, 8, 0.70, 10, 0.90],
+                    "icon-allow-overlap": true,
+                    "icon-ignore-placement": true
+                },
+                paint: {
+                    "icon-opacity": ["case", ["get", "dim"], 0.28, 1]
+                } },
+            { id: "routes-point-pulse-split", type: "symbol", source: "routes", minzoom: 10.2, filter: ["all", ["==", ["geometry-type"], "Point"], ["has", "isRayonPoint"], ["==", ["get", "isIcrada"], true], ["!", ["has", "mergedOnly"]]],
+                layout: {
+                    "icon-image": "pulsing-beacon-icrada",
+                    "icon-size": ["interpolate", ["linear"], ["zoom"], 10.2, 0.90, 14, 1.25],
                     "icon-allow-overlap": true,
                     "icon-ignore-placement": true
                 },
@@ -2410,7 +2522,7 @@ function initMap() {
     map.on("rotate", () => {
         $("northIcon").style.transform = `rotate(${-45 - map.getBearing()}deg)`;
     });
-    ["routes-poly-fill", "routes-poly-line", "routes-other", "routes-hit", "routes-other-line", "routes-other-points", "routes-fo-points", "routes-ends", "routes-ends-label", "routes-point-halo", "routes-point-shape", "routes-point-halo-split", "routes-point-shape-split", "routes-point-name", "routes-point-label", "routes-point-label-near", "routes-summary-name", "routes-summary-card-merged", "routes-summary-card"].forEach(layer => {
+    ["routes-poly-fill", "routes-poly-line", "routes-other", "routes-hit", "routes-other-line", "routes-other-points", "routes-fo-points", "routes-ends", "routes-ends-label", "routes-point-pulse", "routes-point-halo", "routes-point-shape", "routes-point-pulse-split", "routes-point-halo-split", "routes-point-shape-split", "routes-point-name", "routes-point-label", "routes-point-label-near", "routes-summary-name", "routes-summary-card-merged", "routes-summary-card"].forEach(layer => {
         map.on("mousemove", layer, e => {
             if (tools.isActive()) return;
             window.routeHover = true;
@@ -2448,7 +2560,7 @@ function flyToCoords(coords) {
     if (valid.length === 0) return;
     map.fitBounds(toLngLatBounds(valid), {
         padding: { top: 65, left: 65, right: 90, bottom: 65 },
-        maxZoom: 15,
+        maxZoom: 18,
         duration: 850
     });
 }
@@ -2456,7 +2568,7 @@ function flyToCoords(coords) {
 function switchBaseLayer(name) {
     const base = BASE_MAPS[name];
     currentBase = name;
-    ["esri", "osm", "carto"].forEach(id => map.setLayoutProperty(id, "visibility", id === base.raster ? "visible" : "none"));
+    ["googleSat", "esri", "osm", "carto"].forEach(id => map.setLayoutProperty(id, "visibility", id === base.raster ? "visible" : "none"));
     map.setPaintProperty("bg", "background-color", base.bg);
 
     applyNames();
@@ -3351,6 +3463,7 @@ function drawRoutes() {
             const nimProps = {
                 isRayonPoint: true,
                 isNim: true,
+                isIcrada: r.status === "icrada",
                 color,
                 shapeIcon,
                 dim,
@@ -3537,6 +3650,7 @@ function drawRoutes() {
             });
 
         // 1) Uzaq miqyas (zoom < 10.2) üçün qovuşmuş kart + yan-yana fərqli ikonlar
+        const hasIcrada = grp.entries.some(e => e.r.status === "icrada");
         labelFeatures.push({
             type: "Feature",
             geometry: { type: "Point", coordinates: [centerLng, centerLat] },
@@ -3544,6 +3658,7 @@ function drawRoutes() {
                 isRayonPoint: true,
                 isSummary: true,
                 isMultiRayon: n > 1,
+                isIcrada: hasIcrada,
                 centerLng,
                 centerLat,
                 color: first.stColor,
@@ -3574,6 +3689,7 @@ function drawRoutes() {
                     isSummary: true,
                     mergedOnly: true,
                     isMultiRayon: n > 1,
+                    isIcrada: e.r.status === "icrada",
                     centerLng,
                     centerLat,
                     color: e.stColor,
@@ -3634,6 +3750,7 @@ function drawRoutes() {
                 isRayonPoint: true,
                 isSummary: true,
                 splitOnly: true,
+                isIcrada: e.r.status === "icrada",
                 color: e.stColor,
                 shapeIcon: e.shapeIcon,
                 dim: e.dim,
@@ -4139,7 +4256,7 @@ function renderProjects() {
                                 ? `${formatPointAntLabel(r.antennas, ptType)} - ${rPlanM} / ${rDoneM} m${cBrief}`
                                 : (isLifSeg
                                      ? `📍 ${esc(segEnds.aName)} ➔ ${esc(segEnds.bName)}`
-                                     : `${formatKm(r.doneKm)} / ${formatKm(r.totalKm)} km`));
+                                     : `${formatKm(r.doneKm)} / ${formatKm(r.totalKm)} km${cBrief}`));
                         const qKey = `${p.id}:${r.id}`;
                         const isQuickOpen = isPoints && isAdmin() && state.quickEditKey === qKey;
                         const qContractors = [...new Set(["BCG", ...Object.keys(syncAdminContractors()), ...(r.contractor ? [r.contractor] : [])])];
@@ -4154,8 +4271,8 @@ function renderProjects() {
                                     </span>
                                     <span style="color:${statusTone(r.status)};font-weight:600;white-space:nowrap;font-size:11px;flex-shrink:0;margin-left:auto">${rightText}</span>
                                 </button>
-                                ${isPoints && isAdmin() ? `
-                                    <button type="button" class="icon-btn small" style="flex-shrink:0;margin-left:2px;${isQuickOpen ? "color:#38BDF8;background:rgba(56,189,248,0.16)" : ""}" data-action="quickEditSeg" data-item="${esc(r.id)}" title="Nöqtəni redaktə et"><i class="fa-solid fa-pen"></i></button>
+                                ${isAdmin() ? `
+                                    <button type="button" class="icon-btn small" style="flex-shrink:0;margin-left:2px;${isQuickOpen ? "color:#38BDF8;background:rgba(56,189,248,0.16)" : ""}" data-action="${isPoints ? "quickEditSeg" : "editSeg"}" data-item="${esc(r.id)}" title="${isPoints ? "Nöqtəni redaktə et" : "Xətti və icraçını redaktə et"}"><i class="fa-solid fa-pen"></i></button>
                                 ` : ""}
                             </div>
                             ${isQuickOpen ? `
@@ -4946,7 +5063,7 @@ function projectFromFile(fileName, lines, polyFillMode = "auto") {
             const status = normalizeStatus(rawStatus);
 
             // 2. İcraçı: icraçı, icraci, contractor — həm "BCG - Mühəndis", həm də ayrı sütunlar dəstəklənir
-            const rawContractor = getPropCaseInsensitive(p, "icraçı", "icraci", "contractor", "icraci_sirket", "icraci_adi", "podratci", "briqada") || "";
+            const rawContractor = extractContractorFromProps(p);
             const parsedExec = parseContractorAndLead(rawContractor, p);
             const matchedContractor = findContractorInfo(parsedExec.contractor || rawContractor);
             const contractor = isBcgContractor(parsedExec.contractor)
@@ -6800,8 +6917,8 @@ document.addEventListener("DOMContentLoaded", init);
                 type: "lines",
                 status: "icrada",
                 items: [
-                    { id: "AZC-01", name: "Bakı Mərkəz – Xırdalan – Sumqayıt xətti", pointA: "Bakı Mərkəz Qovşaq", pointB: "Sumqayıt Stansiya", status: "bitmis", fiberCount: "FO 48", totalKm: 36.4, doneKm: 36.4, contractor: "", coords: [[40.4093, 49.8671], [40.4520, 49.7550], [40.5897, 49.6686]] },
-                    { id: "AZC-02", name: "Bakı – Hövsan – Türkan – Zirə xətti", pointA: "Bakı Şərq Qovşaq", pointB: "Zirə Qovşaq", status: "icrada", fiberCount: "FO 24", totalKm: 42.0, doneKm: 28.5, contractor: "", coords: [[40.3890, 49.9520], [40.3690, 50.0850], [40.3640, 50.2910]] }
+                    { id: "AZC-01", name: "Bakı Mərkəz – Xırdalan – Sumqayıt xətti", pointA: "Bakı Mərkəz Qovşaq", pointB: "Sumqayıt Stansiya", status: "bitmis", fiberCount: "FO 48", totalKm: 36.4, doneKm: 36.4, contractor: "Azconnect", coords: [[40.4093, 49.8671], [40.4520, 49.7550], [40.5897, 49.6686]] },
+                    { id: "AZC-02", name: "Bakı – Hövsan – Türkan – Zirə xətti", pointA: "Bakı Şərq Qovşaq", pointB: "Zirə Qovşaq", status: "icrada", fiberCount: "FO 24", totalKm: 42.0, doneKm: 28.5, contractor: "BCG", execLead: "Samir Əliyev", execWorkers: 5, execPhone: "+994502221100", coords: [[40.3890, 49.9520], [40.3690, 50.0850], [40.3640, 50.2910]] }
                 ]
             };
             const azc2 = {
@@ -6811,14 +6928,35 @@ document.addEventListener("DOMContentLoaded", init);
                 type: "lines",
                 status: "icrada",
                 items: [
-                    { id: "AZC-03", name: "Hacıqabul – Kürdəmir – Ucar – Yevlax xətti", pointA: "Hacıqabul Qovşaq", pointB: "Yevlax Qovşaq", status: "icrada", fiberCount: "FO 48", totalKm: 168.0, doneKm: 119.5, contractor: "", coords: [[40.0394, 48.9356], [40.3425, 48.1564], [40.5180, 47.6500], [40.6172, 47.1500]] },
-                    { id: "AZC-04", name: "Yevlax – Gəncə – Şəmkir xətti", pointA: "Yevlax Qovşaq", pointB: "Şəmkir Stansiya", status: "tehvil", fiberCount: "FO 12", totalKm: 104.5, doneKm: 104.5, contractor: "", coords: [[40.6172, 47.1500], [40.6828, 46.3606], [40.8297, 46.0178]] }
+                    { id: "AZC-03", name: "Hacıqabul – Kürdəmir – Ucar – Yevlax xətti", pointA: "Hacıqabul Qovşaq", pointB: "Yevlax Qovşaq", status: "icrada", fiberCount: "FO 48", totalKm: 168.0, doneKm: 119.5, contractor: "Azconnect", coords: [[40.0394, 48.9356], [40.3425, 48.1564], [40.5180, 47.6500], [40.6172, 47.1500]] },
+                    { id: "AZC-04", name: "Yevlax – Gəncə – Şəmkir xətti", pointA: "Yevlax Qovşaq", pointB: "Şəmkir Stansiya", status: "tehvil", fiberCount: "FO 12", totalKm: 104.5, doneKm: 104.5, contractor: "BCG", execLead: "Rəşad Quliyev", execWorkers: 6, execPhone: "+994503332211", coords: [[40.6172, 47.1500], [40.6828, 46.3606], [40.8297, 46.0178]] }
                 ]
             };
             state.projects.push(azc1, azc2);
             const hiddenSet = getHiddenProjectIds();
             if (!hiddenSet.has(azc1.id)) state.visibleIds.add(azc1.id);
             if (!hiddenSet.has(azc2.id)) state.visibleIds.add(azc2.id);
+        } else {
+            // Əvvəllər yaddaşda qalmış Azconnect xətlərində icraçıları sütunlardan (props) və ya defaultdan bərpa et
+            state.projects.filter(p => p.category === "azconnect").forEach(p => {
+                (p.items || []).forEach(r => {
+                    if (!r.contractor && r.props) {
+                        const extracted = extractContractorFromProps(r.props);
+                        if (extracted) {
+                            const parsed = parseContractorAndLead(extracted, r.props);
+                            r.contractor = parsed.contractor || extracted;
+                            if (parsed.execLead && !r.execLead) r.execLead = parsed.execLead;
+                            if (parsed.execWorkers !== "" && r.execWorkers === undefined) r.execWorkers = parsed.execWorkers;
+                            if (parsed.execPhone && !r.execPhone) r.execPhone = parsed.execPhone;
+                        }
+                    }
+                    if (!r.contractor) {
+                        if (r.id === "AZC-01" || r.id === "AZC-03") r.contractor = "Azconnect";
+                        else if (r.id === "AZC-02") { r.contractor = "BCG"; r.execLead = r.execLead || "Samir Əliyev"; r.execWorkers = r.execWorkers || 5; }
+                        else if (r.id === "AZC-04") { r.contractor = "BCG"; r.execLead = r.execLead || "Rəşad Quliyev"; r.execWorkers = r.execWorkers || 6; }
+                    }
+                });
+            });
         }
     }
 
