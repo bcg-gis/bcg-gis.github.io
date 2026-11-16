@@ -63,6 +63,7 @@ const api = (() => {
         if (meta.unit) seg.unit = meta.unit;
         if (meta.sum !== undefined) seg.summary = Boolean(meta.sum);
         if (meta.ray) seg.rayon = meta.ray;
+        if (meta.pTyp) seg.pointType = meta.pTyp;
         if (meta.fo) seg.fiberCount = meta.fo;
         if (meta.uFo) seg.userSetFiber = true;
         if (meta.col) seg.customColor = meta.col;
@@ -458,6 +459,7 @@ const api = (() => {
                     unit: r.unit,
                     sum: r.summary,
                     ray: r.rayon,
+                    pTyp: r.pointType,
                     ant: Number(r.antennas) || 0,
                     pt1: isSinglePt
                 });

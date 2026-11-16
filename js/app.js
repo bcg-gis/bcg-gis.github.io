@@ -453,10 +453,12 @@ async function exportActiveToKmz() {
             }
 
             const { planM, doneM } = isPointGeom ? getPointMetersPair(r) : { planM: 0, doneM: 0 };
+            const ptTypeVal = isPointGeom ? (extractPointType(r.props, r) || "") : "";
             const extData = `
                 <ExtendedData>
                     <Data name="status"><value>${escXml(r.status || p.status || "layihe")}</value></Data>
                     <Data name="category"><value>${escXml(p.category || "project")}</value></Data>
+                    ${ptTypeVal ? `<Data name="noqte_novu"><value>${escXml(ptTypeVal)}</value></Data>` : ""}
                     <Data name="pointA"><value>${escXml(r.pointA || "")}</value></Data>
                     <Data name="pointB"><value>${escXml(r.pointB || "")}</value></Data>
                     <Data name="totalKm"><value>${escXml(isPointGeom ? planM : (r.totalKm ?? 0))}</value></Data>
@@ -918,6 +920,7 @@ function saveSegmentOverride(projectId, item) {
         antennas: item.antennas,
         summary: item.summary,
         rayon: item.rayon,
+        pointType: item.pointType,
         fiberCount: item.fiberCount,
         userSetFiber: item.userSetFiber,
         customColor: item.customColor,
@@ -1389,6 +1392,7 @@ function editSegment(project, item) {
             custom_color: item.customColor || item.fillColor || (item.isPolygon ? "#38BDF8" : "#38BDF8"),
             line_width: item.lineWidth || (item.isPolygon ? 1.4 : 2.0),
             poly_fill: item.polyFilled === true ? "filled" : (item.polyFilled === false ? "hollow" : "auto"),
+            point_type: extractPointType(item.props, item) || "",
             antennas: item.antennas || 0, coords: coordsToText(item.coords)
         } : {
             code: `${isOther ? "RM" : (isPoints ? "PT" : "SEG")}-${Date.now().toString().slice(-4)}`,
@@ -1397,6 +1401,7 @@ function editSegment(project, item) {
             custom_color: "#38BDF8",
             line_width: 1.8,
             poly_fill: "auto",
+            point_type: "",
             total_km: 0,
             done_km: 0,
             antennas: 0,
@@ -1409,6 +1414,7 @@ function editSegment(project, item) {
             ...(!isOther ? [{ key: "status", label: t("thStatus"), type: "select", options: statusOptions() }] : []),
             ...(!isPoints && !isOther ? [{ key: "fiber_count", label: "🔌 Kabelin lif sayı (FO)", type: "select", wide: true, options: [["", "— Fayldan / Təyin edilməyib —"], ...fiberOpts.map(fo => [fo, `🔌 ${fo}`])] }] : []),
             { key: "name", label: t("fieldName"), required: true, wide: true },
+            ...(isPoints && !isOther ? [{ key: "point_type", label: "🔷 Nöqtə növü (alt-layihə / fərqli ikon üçün)", wide: true, placeholder: "Məs: Faz-1, Faz-2, GPON, LTE, Növ-1..." }] : []),
             ...(isOther ? [
                 { key: "custom_color", label: "🎨 Rəng seçimi (və ya rəng kodu)", type: "color", wide: true },
                 { key: "line_width", label: "📏 Xətt / Sərhəd qalınlığı (px)", type: "number", wide: true },
@@ -1452,6 +1458,7 @@ function editSegment(project, item) {
                     item.endDate = row.end_date || "";
                     if (isPoints) {
                         item.antennas = Number(row.antennas || 0);
+                        item.pointType = String(row.point_type ?? item.pointType ?? "").trim();
                         item.unit = "m";
                         item.summary = true;
                     }
@@ -1479,6 +1486,7 @@ function editSegment(project, item) {
                     pointA: row.point_a || row.name || "",
                     pointB: row.point_b || "",
                     status: row.status || "layihe",
+                    pointType: isPoints ? String(row.point_type || "").trim() : undefined,
                     fiberCount: foVal,
                     customColor: col,
                     fillColor: col,
@@ -1509,6 +1517,7 @@ function editSegment(project, item) {
                 delete dbRow.custom_color;
                 delete dbRow.line_width;
                 delete dbRow.poly_fill;
+                delete dbRow.point_type;
                 await api.saveSegment(project.id, oldCode || item?.id, {
                     ...dbRow,
                     point_a: item.pointA || "",
@@ -1516,7 +1525,7 @@ function editSegment(project, item) {
                     antennas: Number(row.antennas || 0),
                     contractor: row.contractor || null,
                     coords: parsedCoords
-                });
+                }, { pTyp: item.pointType || "" });
             } catch (e) {
                 console.warn("api.saveSegment xətası (lokal qorunur):", e);
             }
@@ -1715,6 +1724,81 @@ function getProjectShape(project) {
     const str = String(project.id || project.name || "");
     for (let i = 0; i < str.length; i++) hash = (hash * 31 + str.charCodeAt(i)) >>> 0;
     return POINT_SHAPES[hash % POINT_SHAPES.length];
+}
+
+/* Faylda / obyektdə "nöqtə növü" (noqte_novu, point_type, tip, növ və s.) sütununu oxuyur */
+function extractPointType(props, item) {
+    if (item && typeof item.pointType === "string" && item.pointType.trim()) {
+        return item.pointType.trim();
+    }
+    const p = props || item?.props;
+    if (!p || typeof p !== "object") return "";
+    const direct = getPropCaseInsensitive(
+        p,
+        "nöqtə növü", "noqte novu", "nöqtə_növü", "noqte_novu", "noqte_nov", "nöqtənövü", "noqtenovu",
+        "point_type", "pointtype", "pointType", "nov", "növ", "novu", "növü", "tip", "tipi",
+        "alt_layihe", "alt_layihə", "sub_project", "layihe_novu", "layihə_növü"
+    );
+    if (direct !== undefined && cleanAttrVal(direct)) {
+        return String(cleanAttrVal(direct)).trim();
+    }
+    for (const [k, v] of Object.entries(p)) {
+        if (v === undefined || v === null) continue;
+        const nk = normalizeKey(k);
+        if (/(noqte_?nov|point_?type|^nov$|^novu$|^tip$|^tipi$|alt_?layi|layihe_?nov)/.test(nk)) {
+            const cleaned = cleanAttrVal(v);
+            if (cleaned) return String(cleaned).trim();
+        }
+    }
+    return "";
+}
+
+function getProjectPointTypes(project) {
+    if (!project || !Array.isArray(project.items)) return [];
+    const seen = new Set();
+    const list = [];
+    project.items.forEach(r => {
+        const pt = extractPointType(r?.props, r);
+        if (!pt) return;
+        const key = pt.toLocaleLowerCase("az");
+        if (!seen.has(key)) {
+            seen.add(key);
+            list.push(pt);
+        }
+    });
+    return list;
+}
+
+/* Nöqtə növünə (nöqtə_növü) görə fərqli həndəsi fiqur ikonu qaytarır */
+function getItemShape(project, item) {
+    const baseShape = getProjectShape(project);
+    if (!project || !item) return baseShape;
+    const baseIdx = Math.max(0, POINT_SHAPES.indexOf(baseShape));
+    const pt = extractPointType(item.props, item);
+    if (pt) {
+        const types = getProjectPointTypes(project);
+        const tIdx = types.findIndex(x => x.toLocaleLowerCase("az") === pt.toLocaleLowerCase("az"));
+        if (tIdx >= 0) {
+            return POINT_SHAPES[(baseIdx + tIdx) % POINT_SHAPES.length];
+        }
+        let hash = 0;
+        for (let i = 0; i < pt.length; i++) hash = (hash * 31 + pt.charCodeAt(i)) >>> 0;
+        return POINT_SHAPES[hash % POINT_SHAPES.length];
+    }
+    // Əgər eyni layihədə eyni rayonda 2+ nöqtə varsa və nöqtə növü yazılmayıbsa, yenə də ikonları fərqləndir
+    if (Array.isArray(project.items) && project.items.length > 1) {
+        const rName = String(item.name || item.rayon || "").replace(/\s*rayon(u)?\b/gi, "").trim().toLocaleLowerCase("az");
+        if (rName) {
+            const sameRayon = project.items.filter(it =>
+                String(it.name || it.rayon || "").replace(/\s*rayon(u)?\b/gi, "").trim().toLocaleLowerCase("az") === rName
+            );
+            if (sameRayon.length > 1) {
+                const subIdx = sameRayon.indexOf(item);
+                if (subIdx > 0) return POINT_SHAPES[(baseIdx + subIdx) % POINT_SHAPES.length];
+            }
+        }
+    }
+    return baseShape;
 }
 
 function registerPointShapeImages() {
@@ -2439,19 +2523,19 @@ function ensureMergedSummaryCardImage(rayonName, entries) {
         const e = entries[0];
         return ensureSummaryCardImage({
             name: rayonName,
-            color: e.stColor,
+            color: e.stColor || e.color,
             shapeSymbol: e.shapeSymbol,
-            folderName: e.projTitle,
+            folderName: e.projTitle || e.folderName,
             antennas: e.antennas,
             doneM: e.doneM,
-            totalM: e.planM,
+            totalM: e.planM ?? e.totalM,
             pct: e.pct,
             contractor: e.contractor
         });
     }
     const light = isLightBaseMap();
-    const sig = entries.map(e => `${e.shapeSymbol}:${e.projTitle}:${e.stColor}:${e.antennas}:${e.planM}:${e.doneM}:${e.contractor}`).join("|");
-    const key = `summerged_v1:${light ? "l" : "d"}:${rayonName}:${sig}`;
+    const sig = entries.map(e => `${e.shapeSymbol}:${e.projTitle || e.folderName}:${e.stColor || e.color}:${e.antennas}:${e.planM ?? e.totalM}:${e.doneM}:${e.contractor}`).join("|");
+    const key = `summerged_v2:${light ? "l" : "d"}:${rayonName}:${sig}`;
     if (map.hasImage(key)) return key;
 
     const ratio = 2;
@@ -2462,7 +2546,7 @@ function ensureMergedSummaryCardImage(rayonName, entries) {
     const fBody = `600 11px ${LABEL_FONT}`;
     const fSmall = `600 9.5px ${LABEL_FONT}`;
 
-    const headText = `${rayonName} (${entries.length} layihə)`;
+    const headText = `${rayonName} (${entries.length} nöqtə)`;
     const m = document.createElement("canvas").getContext("2d");
     m.font = fHead;
     let maxW = m.measureText(headText).width;
@@ -2470,15 +2554,18 @@ function ensureMergedSummaryCardImage(rayonName, entries) {
     const pctW = m.measureText("100%").width;
 
     const prepared = entries.map(e => {
-        const projLine = `${e.shapeSymbol || "●"} ${e.projTitle || "Layihə"}`;
-        const bodyLine = `${e.antennas} antena - ${e.planM} / ${e.doneM} m`;
+        const stColor = e.stColor || e.color || "#38BDF8";
+        const titleStr = e.projTitle || e.folderName || "Layihə";
+        const planM = e.planM ?? e.totalM ?? 0;
+        const projLine = `${e.shapeSymbol || "●"} ${titleStr}`;
+        const bodyLine = `${e.antennas} antena - ${planM} / ${e.doneM} m`;
         const cLine = e.contractor ? `İcraçı: ${e.contractor}` : "";
         m.font = fProj; const pw = m.measureText(projLine).width;
         m.font = fBody; const bw = m.measureText(bodyLine).width;
         m.font = fSmall; const cw = cLine ? m.measureText(cLine).width : 0;
         maxW = Math.max(maxW, pw + 10, bw + 10, cw + 10, 130);
         const blockH = 14 + 15 + 11 + (cLine ? 13 : 0) + 6;
-        return { ...e, projLine, bodyLine, cLine, blockH };
+        return { ...e, stColor, projLine, bodyLine, cLine, blockH };
     });
 
     const W = Math.ceil(padX * 2 + maxW);
@@ -2896,11 +2983,11 @@ function drawRoutes() {
             : (r.customColor ? normalizeColorCode(r.customColor, statusTone(r.status)) : statusTone(r.status));
         const customLineWidth = normalizeLineWidth(r.lineWidth || project.lineWidth, isPolyItem ? 1.3 : (isOther ? 1.8 : 0));
 
-        const shape = getProjectShape(project);
-        const shapeIcon = `pt-${shape.id}-${statusTone(r.status).replace("#", "").toLowerCase()}`;
-        const dim = Boolean(state.focusMode && activeProjId && project.id !== activeProjId);
         const isSingleCoord = coords.length === 1 || (coords.length === 2 && coords[0][0] === coords[1][0] && coords[0][1] === coords[1][1]);
         const isPointItem = !isPolyItem && (project.type === "points" || isSingleCoord || (r.antennas || 0) > 0);
+        const shape = isPointItem ? getItemShape(project, r) : getProjectShape(project);
+        const shapeIcon = `pt-${shape.id}-${statusTone(r.status).replace("#", "").toLowerCase()}`;
+        const dim = Boolean(state.focusMode && activeProjId && project.id !== activeProjId);
 
         // 1) POLİQON (məs: Xəzər dənizi — içi dolu və ya Rayon sərhədləri — içi boş sərhəd xətti)
         if (isPolyItem && coords.length >= 3) {
@@ -3081,13 +3168,16 @@ function drawRoutes() {
         if (isPointItem) {
             const [lat, lng] = coords[0];
             const stColor = statusTone(r.status);
+            const ptType = extractPointType(r.props, r);
             const rawRayonName = String(r.name || r.rayon || "").replace(/\s*\(?\bFaz[-\s]*[12]\b\)?/gi, "").replace(/\s*rayon(u)?(?![a-zəçşğıöü])/gi, "").trim();
             const rayonName = rawRayonName || String(r.name || "").trim();
             const normKey = rayonName.toLocaleLowerCase("az").replace(/\s+/g, " ").trim() || `${lat.toFixed(2)}_${lng.toFixed(2)}`;
             const { planM: verilenM, doneM: cekilenM } = getPointMetersPair(r);
             const pct = percent(cekilenM, verilenM);
-            const rawProjName = String(project.name || "").replace(/\s*\(?\bFaz[-\s]*[12]\b\)?/gi, "").trim();
-            const compactProjName = rawProjName.length > 28 ? `${rawProjName.slice(0, 27).trim()}…` : rawProjName;
+            const rawProjBase = String(project.name || "").replace(/\s*\(?\bFaz[-\s]*[12]\b\)?/gi, "").trim();
+            const rawProjName = ptType ? `${rawProjBase} · ${ptType}` : rawProjBase;
+            const cardHeaderBase = ptType ? ptType : rawProjBase;
+            const compactProjName = cardHeaderBase.length > 28 ? `${cardHeaderBase.slice(0, 27).trim()}…` : cardHeaderBase;
             const antCount = Number(r.antennas || 0);
 
             if (!pointSlots[normKey]) {
@@ -3557,9 +3647,19 @@ function renderLegend() {
     const pointProjectsHtml = activePointProjects.length > 0
         ? `<div class="legend-divider"></div><div class="legend-sec-title">Nöqtə layihələri</div>` +
           activePointProjects.map(p => {
-              const shape = getProjectShape(p);
               const cleanProjName = String(p.name || "").replace(/\s*\(?\bFaz[-\s]*[12]\b\)?/gi, "").trim();
               const tone = statusTone(p.status);
+              const ptTypes = getProjectPointTypes(p);
+              if (ptTypes.length > 0) {
+                  return ptTypes.map(pt => {
+                      const sampleItem = p.items.find(it => extractPointType(it.props, it).toLocaleLowerCase("az") === pt.toLocaleLowerCase("az"));
+                      const sh = sampleItem ? getItemShape(p, sampleItem) : getProjectShape(p);
+                      const stTone = sampleItem ? statusTone(sampleItem.status) : tone;
+                      const label = `${cleanProjName} (${pt})`;
+                      return `<div class="legend-row" title="${esc(label)}"><span class="legend-shape-badge" style="color:${stTone}">${sh.symbol}</span><span class="legend-proj-name">${esc(pt)}</span></div>`;
+                  }).join("");
+              }
+              const shape = getProjectShape(p);
               return `<div class="legend-row" title="${esc(cleanProjName)}"><span class="legend-shape-badge" style="color:${tone}">${shape.symbol}</span><span class="legend-proj-name">${esc(cleanProjName)}</span></div>`;
           }).join("")
         : "";
@@ -3806,6 +3906,11 @@ function renderProjects() {
                         const cleanName = isPoints
                             ? String(r.name || "").replace(/\s*\(?\bFaz[-\s]*[12]\b\)?/gi, "").replace(/\s*rayon(u)?\b/gi, "").trim()
                             : ((!isGen && r.name) ? String(r.name).trim() : String(rawPropName || r.name || p.name || "").trim());
+                        const itemShape = isPoints ? getItemShape(p, r) : shape;
+                        const ptType = isPoints ? extractPointType(r.props, r) : "";
+                        const ptTypeBadge = ptType
+                            ? `<span style="background:rgba(56,189,248,0.14);color:#38BDF8;border:1px solid rgba(56,189,248,0.35);border-radius:5px;padding:0 5px;font-size:10px;font-weight:700;margin-left:4px;flex-shrink:0">${esc(ptType)}</span>`
+                            : "";
                         const isLifSeg = !isNim && !isPoints && isLifGoturulen(r, p);
                         const segFo = (!isNim && !isPoints && !isLifSeg && Array.isArray(r.coords) && r.coords.length >= 2) ? getSegmentFiber(r, p) : "";
                         const foBadge = segFo
@@ -3829,7 +3934,7 @@ function renderProjects() {
                                 <button type="button" style="flex:1;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:4px 8px;background:none;border:0;color:inherit;text-align:left;cursor:pointer;padding:3px 0;min-width:0" data-action="focus" data-item="${esc(r.id)}">
                                     <span style="display:flex;align-items:center;gap:6px;min-width:0;flex:1 1 auto">
                                         <span class="dot" style="background:${statusTone(r.status)};flex-shrink:0"></span>
-                                        <span class="segment-name" style="min-width:0;white-space:normal;word-break:break-word;line-height:1.25;font-weight:600;color:var(--ink)" title="${esc(cleanName)}">${isNim ? "🚦 " : (shape ? `<span style="color:${statusTone(r.status)};margin-right:4px">${shape.symbol}</span>` : "")}${foBadge}${esc(cleanName)}</span>
+                                        <span class="segment-name" style="min-width:0;white-space:normal;word-break:break-word;line-height:1.25;font-weight:600;color:var(--ink)" title="${esc(cleanName)}">${isNim ? "🚦 " : (itemShape ? `<span style="color:${statusTone(r.status)};margin-right:4px">${itemShape.symbol}</span>` : "")}${foBadge}${esc(cleanName)}${ptTypeBadge}</span>
                                     </span>
                                     <span style="color:${statusTone(r.status)};font-weight:600;white-space:nowrap;font-size:11px;flex-shrink:0;margin-left:auto">${rightText}</span>
                                 </button>
@@ -3859,6 +3964,10 @@ function renderProjects() {
                                         </select>
                                     </label>
                                 </div>
+                                <label style="display:flex;align-items:center;gap:6px;font-size:10px;color:var(--ink-2)">
+                                    <span style="white-space:nowrap">Nöqtə növü:</span>
+                                    <input class="input" type="text" data-q-pttype value="${esc(ptType)}" placeholder="Məs: Faz-1, Faz-2, GPON, LTE..." style="flex:1;height:25px;padding:0 6px;font-size:11px">
+                                </label>
                                 <div style="display:flex;align-items:center;justify-content:space-between;gap:5px;flex-wrap:wrap">
                                     <div style="display:flex;gap:4px">
                                         <button type="button" class="btn btn-outline" style="height:25px;padding:0 8px;font-size:11px" data-action="geomEditSeg" data-item="${esc(r.id)}" title="Nöqtəni xəritədə sürüşdür">
@@ -4682,18 +4791,20 @@ function projectFromFile(fileName, lines, polyFillMode = "auto") {
             if (!pointB) pointB = "B";
 
             if (line.isPoint || line.coords.length === 1) {
-                // Rayon / Antena nöqtəsi: Antena_say, Verilən və Çəkilən kabel məsafəsi (metr və ya km), Status, İcraçı
+                // Rayon / Antena nöqtəsi: Antena_say, Verilən və Çəkilən kabel məsafəsi (metr və ya km), Nöqtə növü, Status, İcraçı
                 const rawDesc = p._rawDescription || "";
                 const antennas = parseAntennaCount(p, nameVal, rawDesc);
                 const { planMeters, doneMeters } = parsePointDistances(p, nameVal, rawDesc);
+                const pointType = extractPointType(p) || "";
                 const rayonName = getPropCaseInsensitive(p, "Rayon", "rayon_adi", "rayonu", "sheher", "bolge") || nameVal;
                 const cleanPointName = String(rayonName || nameVal).replace(/\s*rayon(u)?(?![a-zəçşğıöü])/gi, "").trim();
-                const isSummary = Boolean(antennas > 0 || planMeters > 0 || doneMeters > 0);
+                const isSummary = Boolean(antennas > 0 || planMeters > 0 || doneMeters > 0 || pointType);
 
                 return {
                     id: `${isSummary ? "RS" : "PT"}-${String(index + 1).padStart(2, "0")}`,
                     name: cleanPointName,
                     rayon: rayonName,
+                    pointType,
                     summary: isSummary,
                     pointA: cleanPointName || "Mərkəz",
                     pointB: "Şəbəkə",
@@ -5040,9 +5151,13 @@ function bindEvents() {
             const planInp = wrap.querySelector("[data-q-plan]");
             const doneInp = wrap.querySelector("[data-q-done]");
             const stSel = wrap.querySelector("[data-q-status]");
+            const ptTypeInp = wrap.querySelector("[data-q-pttype]");
 
             if (isPts && antInp) {
                 item.antennas = Math.max(0, Math.round(Number(antInp.value) || 0));
+            }
+            if (isPts && ptTypeInp) {
+                item.pointType = ptTypeInp.value.trim();
             }
             if (!isNim && planInp && doneInp) {
                 if (isPts) {
@@ -6465,6 +6580,11 @@ document.addEventListener("DOMContentLoaded", init);
                     <div class="info-sub-list">
                         ${items.map(r => {
                             const rTone = statusTone(r.status);
+                            const rShape = getItemShape(proj, r);
+                            const rPtType = extractPointType(r.props, r);
+                            const rPtBadge = rPtType
+                                ? `<span style="background:rgba(56,189,248,0.14);color:#38BDF8;border:1px solid rgba(56,189,248,0.35);border-radius:5px;padding:0 5px;font-size:10px;font-weight:700">${esc(rPtType)}</span>`
+                                : "";
                             const { planM: rVerilenM, doneM: rCekilenM } = getPointMetersPair(r);
                             const rLeftM = Math.max(0, rVerilenM - rCekilenM);
                             const rPct = percent(rCekilenM, rVerilenM);
@@ -6472,10 +6592,11 @@ document.addEventListener("DOMContentLoaded", init);
                             const cInfo = findContractorInfo(r.contractor) || { workers: "—", machinery: "—", engineer: "—" };
                             return `
                                 <div class="info-sub-item" data-pick-seg="${esc(proj.id)}:${esc(r.id)}" style="border-color:${entry?.item === r ? rTone : "var(--line)"}">
-                                    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+                                    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
                                         <strong style="display:flex;align-items:center;gap:6px">
-                                            <span style="color:${rTone}">${projShape.symbol}</span>
+                                            <span style="color:${rTone}">${rShape.symbol}</span>
                                             ${esc(cleanName)}
+                                            ${rPtBadge}
                                         </strong>
                                         <span class="pill" style="--tone:${rTone}">${t(`status${r.status}`)}</span>
                                     </div>
