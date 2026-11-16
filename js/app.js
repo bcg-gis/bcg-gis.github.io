@@ -109,6 +109,65 @@ function writeStore(key, value) {
     }
 }
 
+function getStorageInfo() {
+    let totalBytes = 0;
+    const details = {};
+    try {
+        for (let i = 0; i < localStorage.length; i++) {
+            const k = localStorage.key(i);
+            const v = localStorage.getItem(k) || "";
+            const bytes = (k.length + v.length) * 2;
+            totalBytes += bytes;
+            details[k] = Math.round(bytes / 1024);
+        }
+    } catch {}
+    const totalKB = Math.round(totalBytes / 1024);
+    const totalMB = (totalBytes / (1024 * 1024)).toFixed(2);
+    const pct = Math.min(100, Math.round((totalKB / 5120) * 100));
+    return { totalBytes, totalKB, totalMB, pct, details };
+}
+
+function cleanAppStorage() {
+    let before = 0, after = 0;
+    try {
+        before = getStorageInfo().totalBytes;
+        // 1. Audit jurnalları (köhnə əməliyyat qeydləri)
+        localStorage.removeItem("bcg.audit.logs.v1");
+        localStorage.removeItem("bcg.audit.v1");
+
+        // 2. Orphaned segment və layihə meta qeydləri
+        const validItemIds = new Set();
+        (state.projects || []).forEach(p => {
+            (p.items || []).forEach(it => {
+                validItemIds.add(it.id);
+                validItemIds.add(`${p.id}:${it.id}`);
+            });
+        });
+
+        const segMeta = readStore("bcg.seg.meta.v2", {});
+        const cleanedSegMeta = {};
+        for (const [k, v] of Object.entries(segMeta || {})) {
+            if (validItemIds.has(k)) cleanedSegMeta[k] = v;
+        }
+        writeStore("bcg.seg.meta.v2", cleanedSegMeta);
+
+        // 3. İstifadə olunmayan köhnə həndəsə qeydləri
+        const geom = readStore("bcg.geom.overrides.v1", {});
+        const cleanedGeom = {};
+        for (const [k, v] of Object.entries(geom || {})) {
+            if (validItemIds.has(k)) cleanedGeom[k] = v;
+        }
+        writeStore("bcg.geom.overrides.v1", cleanedGeom);
+
+        after = getStorageInfo().totalBytes;
+    } catch (e) {
+        console.warn("cleanAppStorage error:", e);
+    }
+    return Math.max(0, before - after);
+}
+window.getStorageInfo = getStorageInfo;
+window.cleanAppStorage = cleanAppStorage;
+
 function toast(message, isError = false) {
     const el = document.createElement("div");
     el.className = `toast${isError ? " error" : ""}`;
@@ -1263,21 +1322,6 @@ async function enterApp(user) {
     renderNotes();
     renderMaterials();
     renderAll();
-
-    // Əvvəllər lokal yaddaşa (Digər / Azconnect / NİM / BCG) əlavə edilmiş layihələri avtomatik Supabase bazasına sinxronlaşdır
-    if (isAdmin() && api.configured && storedImported.length > 0) {
-        (async () => {
-            for (const localProj of storedImported) {
-                if (!localProj || !localProj.id) continue;
-                const currentProj = state.projects.find(p => p.id === localProj.id) || localProj;
-                try {
-                    await api.saveProject(currentProj);
-                } catch (e) {
-                    console.warn("Auto-sync saveProject error:", e);
-                }
-            }
-        })();
-    }
 }
 
 /* REDAKTƏ (admin) */
@@ -2186,37 +2230,16 @@ function registerFlowArrowImage() {
 }
 
 let lineFlowAnimId = null;
-let lineFlowOffset = 0;
 
 function startLineFlowAnimation() {
-    if (lineFlowAnimId) return;
-
-    let lastTime = 0;
-    const period = 7.0;
-
-    function loop(time) {
-        lineFlowAnimId = requestAnimationFrame(loop);
-        if (time - lastTime < 38) return; // ~26 FPS - hamar və yüngül
-        lastTime = time;
-
-        if (!map || !map.getLayer("routes-line-icrada-flow")) return;
-
-        // A-dan B-yə irəli istiqamətdə sürüşmə (offset)
-        lineFlowOffset = (lineFlowOffset + 0.35) % period;
-        const x = lineFlowOffset;
-        let dash;
-        if (x < 4.0) {
-            dash = [0.01, Math.max(0.01, x), 3.0, Math.max(0.01, 4.0 - x)];
-        } else {
-            const d = x - 4.0;
-            dash = [Math.max(0.01, d), 4.0, Math.max(0.01, 3.0 - d), 0.01];
-        }
-
-        try {
-            map.setPaintProperty("routes-line-icrada-flow", "line-dasharray", dash);
-        } catch {}
+    // WebGL xəritəsində hər kadrda (requestAnimationFrame) setPaintProperty("line-dasharray") çağırmaq
+    // CPU-nu 100% yükləyir və donmalar (lag) yaradır.
+    // Xətt animasiyası MapLibre-nin GPU daxili axın şaderi (arrow-flow-dir istiqamət oxları)
+    // və tikinti nöqtəsindəki mayak işığı ilə təmin olunur, CPU yükü tam aradan qaldırıldı.
+    if (lineFlowAnimId) {
+        cancelAnimationFrame(lineFlowAnimId);
+        lineFlowAnimId = null;
     }
-    lineFlowAnimId = requestAnimationFrame(loop);
 }
 
 function registerPulsingBeacon() {
@@ -2224,6 +2247,7 @@ function registerPulsingBeacon() {
     const beaconId = "pulsing-beacon-icrada";
     if (map.hasImage(beaconId)) return;
     const size = 140;
+    let lastBeaconRepaint = 0;
     const pulsingDot = {
         width: size,
         height: size,
@@ -2235,8 +2259,18 @@ function registerPulsingBeacon() {
             this.context = canvas.getContext("2d", { willReadFrequently: true });
         },
         render: function() {
+            // Əgər tab arxa fondadırsa (və ya başqa proqramdasınızsa) GPU-nu boşuna yükləmə
+            if (document.hidden) return false;
+
+            const now = performance.now();
+            // 60 FPS əvəzinə ~16 FPS (60ms) - göz üçün tamamilə hamar dalğa effekti verir, GPU və CPU yükünü 75% azaldır
+            if (now - lastBeaconRepaint < 60) {
+                return true;
+            }
+            lastBeaconRepaint = now;
+
             const duration = 1500;
-            const t = (performance.now() % duration) / duration;
+            const t = (now % duration) / duration;
             const radius = (size / 2) * 0.26;
             const outerRadius = (size / 2) * 0.82 * t + radius;
             const ctx = this.context;
@@ -2270,7 +2304,7 @@ function registerPulsingBeacon() {
             return true;
         }
     };
-    map.addImage(beaconId, pulsingDot, { pixelRatio: 2 });
+    try { map.addImage(beaconId, pulsingDot, { pixelRatio: 2 }); } catch {}
 }
 
 function mapStyle() {
@@ -5529,6 +5563,37 @@ function bindEvents() {
     $("notesBtn").addEventListener("click", () => $("notesModal").showModal());
     $("materialsBtn").addEventListener("click", () => $("materialsModal").showModal());
     $("printBtn").addEventListener("click", () => openExportPrintModal());
+
+    function updateStorageModalUI() {
+        const info = getStorageInfo();
+        if ($("storageUsageVal")) {
+            $("storageUsageVal").textContent = `${info.totalMB} MB / 5.0 MB (${info.pct}%)`;
+        }
+        if ($("storageProgressBar")) {
+            $("storageProgressBar").style.width = `${info.pct}%`;
+            $("storageProgressBar").style.background = info.pct > 75 ? "#EF4444" : (info.pct > 40 ? "#F59E0B" : "#22C55E");
+        }
+        if ($("storageStatusText")) {
+            if (info.pct > 75) {
+                $("storageStatusText").innerHTML = `<span style="color:#EF4444;font-weight:600">⚠️ Yaddaş dolmaq üzrədir!</span> Saytın sürətlənməsi üçün təmizləyin.`;
+            } else if (info.pct > 40) {
+                $("storageStatusText").innerHTML = `<span style="color:#F59E0B;font-weight:600">ℹ️ Yaddaş orta səviyyədədir.</span> Ehtiyac olduqda təmizləyə bilərsiniz.`;
+            } else {
+                $("storageStatusText").innerHTML = `<span style="color:#22C55E;font-weight:600">✅ Yaddaş əla vəziyyətdədir.</span> Sayt yüngül və sürətli işləyir.`;
+            }
+        }
+    }
+
+    $("cleanStorageBtn")?.addEventListener("click", () => {
+        updateStorageModalUI();
+        $("storageModal")?.showModal();
+    });
+
+    $("cleanCacheBtn")?.addEventListener("click", () => {
+        cleanAppStorage();
+        updateStorageModalUI();
+        toast("🧹 Yaddaş və köhnə keş təmizləndi! Sayt optimallaşdırıldı.");
+    });
     $("toolDock").addEventListener("click", async e => {
         if (!e.target.closest("#shareBtn")) return;
         $("shareModal").showModal();

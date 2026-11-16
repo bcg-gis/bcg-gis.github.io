@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="az" data-theme="dark">
 <head>
     <meta charset="UTF-8">
@@ -446,6 +446,14 @@
                     <div class="kpi-head"><span>Bu gün sayta giriş və əməliyyat</span><i class="fa-solid fa-user-clock" style="color:var(--purple)"></i></div>
                     <div class="kpi-val" id="kpiTodayActions">24 əməliyyat</div>
                     <div class="kpi-sub" id="kpiActiveUsers">Aktiv istifadəçilər: 5 nəfər</div>
+                </div>
+                <div class="kpi-card" style="border-color:rgba(56,189,248,0.3)">
+                    <div class="kpi-head"><span>⚡ Sistem Keşi & Brauzer Yaddaşı</span><i class="fa-solid fa-microchip" style="color:var(--brand)"></i></div>
+                    <div class="kpi-val" id="adminStorageUsage">0.0 MB</div>
+                    <div class="kpi-sub" style="display:flex;align-items:center;justify-content:space-between">
+                        <span id="adminStorageSub">Limit: 5.0 MB</span>
+                        <button type="button" class="btn btn-outline" id="adminCleanStorageBtn" style="height:24px;padding:0 8px;font-size:11px"><i class="fa-solid fa-broom"></i> Təmizlə</button>
+                    </div>
                 </div>
             </div>
 
@@ -1130,6 +1138,33 @@
             }
         });
 
+        function updateAdminStorage() {
+            let total = 0;
+            try {
+                for (let i = 0; i < localStorage.length; i++) {
+                    const k = localStorage.key(i);
+                    const v = localStorage.getItem(k) || "";
+                    total += (k.length + v.length) * 2;
+                }
+            } catch {}
+            const mb = (total / (1024 * 1024)).toFixed(2);
+            const pct = Math.min(100, Math.round((total / (5 * 1024 * 1024)) * 100));
+            if ($("adminStorageUsage")) $("adminStorageUsage").textContent = `${mb} MB (${pct}%)`;
+            if ($("adminStorageSub")) $("adminStorageSub").textContent = pct > 75 ? "⚠️ Yaddaş çoxdur" : "Norma daxilində (Limit: 5 MB)";
+        }
+
+        $("adminCleanStorageBtn")?.addEventListener("click", () => {
+            try {
+                localStorage.removeItem(LOGS_KEY);
+                localStorage.removeItem("bcg.audit.v1");
+                updateAdminStorage();
+                toast("🧹 Brauzer keşi və köhnə jurnallar təmizləndi!");
+            } catch (e) {
+                toast("Xəta baş verdi: " + e.message);
+            }
+        });
+
+        updateAdminStorage();
         renderAll();
         if (typeof api !== "undefined" && api.pullCloudRegistry) {
             api.pullCloudRegistry().then(() => {
