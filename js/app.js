@@ -585,6 +585,128 @@ const LEGACY_DEMO_CONTRACTORS = new Set([
     "baktelekom"
 ]);
 
+const BCG_LEADS_STORE_KEY = "bcg.exec.leads.v1";
+
+function calcPointPct(doneVal, planVal, status) {
+    if (status === "bitmis" || status === "tehvil") return 100;
+    return percent(doneVal, planVal);
+}
+
+function isBcgContractor(name) {
+    const s = String(name || "").trim();
+    return /^bcg\b/i.test(s);
+}
+
+function getSavedBcgLeads() {
+    const stored = readStore(BCG_LEADS_STORE_KEY, {}) || {};
+    const map = typeof stored === "object" && !Array.isArray(stored) ? { ...stored } : {};
+    (state.projects || []).forEach(p => {
+        (p.items || []).forEach(r => {
+            const lead = String(r?.execLead || "").trim();
+            if (lead && !map[lead]) {
+                map[lead] = {
+                    workers: r.execWorkers ?? "",
+                    phone: r.execPhone || ""
+                };
+            }
+        });
+    });
+    return map;
+}
+
+function saveBcgLeadEntry(leadName, workers, phone) {
+    const cleanLead = String(leadName || "").trim();
+    if (!cleanLead) return;
+    const map = readStore(BCG_LEADS_STORE_KEY, {}) || {};
+    map[cleanLead] = {
+        workers: workers !== undefined && workers !== "" ? Number(workers) || 0 : "",
+        phone: String(phone || "").trim()
+    };
+    writeStore(BCG_LEADS_STORE_KEY, map);
+}
+
+function parseContractorAndLead(rawContractor, props) {
+    const p = props || {};
+    let contractorStr = String(rawContractor || "").trim();
+    let execLead = String(
+        getPropCaseInsensitive(
+            p,
+            "muhendis", "mühəndis", "briqadir", "kim_isleyib", "kim_işləyib", "kim isleyib", "kim işləyib",
+            "mesul", "məsul", "engineer", "lead", "bcg_muhendis", "usta"
+        ) || ""
+    ).trim();
+    const rawWrk = getPropCaseInsensitive(
+        p,
+        "isci_sayi", "işçi_sayı", "isci sayi", "işçi sayı", "isci", "işçi", "workers", "nece_nefer", "neçə_nəfər"
+    );
+    const execWorkers = rawWrk !== undefined && cleanAttrVal(rawWrk) !== undefined
+        ? Math.max(0, Math.round(parseAttrNumber(rawWrk, 0)))
+        : "";
+    const execPhone = String(
+        getPropCaseInsensitive(
+            p,
+            "elaqe", "əlaqə", "elaqe_nomresi", "əlaqə_nömrəsi", "telefon", "nomre", "nömrə", "phone", "tel", "mobil"
+        ) || ""
+    ).trim();
+
+    // Əgər sütunda "BCG - Əli Məmmədov" və ya "BCG / Əli" yazılıbsa avtomatik ayır
+    const bcgSplit = contractorStr.match(/^bcg\s*[-–—/:]\s*(.+)$/i);
+    if (bcgSplit) {
+        contractorStr = "BCG";
+        if (!execLead) execLead = bcgSplit[1].trim();
+    } else if (/^bcg$/i.test(contractorStr)) {
+        contractorStr = "BCG";
+    } else if (contractorStr) {
+        const matched = findContractorInfo(contractorStr);
+        if (matched) contractorStr = matched.name;
+    }
+
+    if (execLead) {
+        saveBcgLeadEntry(execLead, execWorkers, execPhone);
+    }
+
+    return {
+        contractor: contractorStr,
+        execLead,
+        execWorkers,
+        execPhone
+    };
+}
+
+function resolveItemExecDetails(r) {
+    if (!r) return { contractor: "", isBcg: false, lead: "", workers: "", phone: "", machinery: "", cardSummary: "" };
+    let contractor = String(r.contractor || "").trim();
+    let leadFromContractor = "";
+    const bcgSplit = contractor.match(/^bcg\s*[-–—/:]\s*(.+)$/i);
+    if (bcgSplit) {
+        contractor = "BCG";
+        leadFromContractor = bcgSplit[1].trim();
+    } else if (/^bcg$/i.test(contractor)) {
+        contractor = "BCG";
+    }
+    const isBcg = isBcgContractor(contractor);
+    const cInfo = (!isBcg && contractor) ? findContractorInfo(contractor) : null;
+    const lead = String(r.execLead || leadFromContractor || (!isBcg && cInfo?.engineer ? cInfo.engineer : "") || "").trim();
+    const hasCustomWrk = r.execWorkers !== undefined && r.execWorkers !== null && String(r.execWorkers).trim() !== "";
+    const workers = hasCustomWrk
+        ? Number(r.execWorkers)
+        : (!isBcg && cInfo && cInfo.workers !== undefined ? cInfo.workers : "");
+    const phone = String(r.execPhone || "").trim();
+    const machinery = !isBcg && cInfo && cInfo.machinery !== undefined ? cInfo.machinery : "";
+
+    let cardSummary = contractor;
+    if (contractor) {
+        const parts = [];
+        if (lead) parts.push(lead);
+        if (workers !== "" && workers !== undefined) parts.push(`${workers} nəfər`);
+        if (phone) parts.push(phone);
+        if (parts.length > 0) {
+            cardSummary = `${contractor} (${parts.join(" · ")})`;
+        }
+    }
+    return { contractor, isBcg, lead, workers, phone, machinery, cardSummary };
+}
+
 function syncAdminContractors() {
     const map = readStore(ADMIN_CONTRACTORS_KEY, {}) || {};
     if (map && typeof map === "object" && !Array.isArray(map)) {
@@ -914,6 +1036,9 @@ function saveSegmentOverride(projectId, item) {
         pointB: item.pointB,
         status: item.status,
         contractor: item.contractor,
+        execLead: item.execLead,
+        execWorkers: item.execWorkers,
+        execPhone: item.execPhone,
         totalKm: item.totalKm,
         doneKm: item.doneKm,
         unit: item.unit,
@@ -964,6 +1089,9 @@ function mergeLocalProjectIntoDb(dbProj, localProj) {
             name: locIt.name || dbIt.name,
             pointA: (dbIt.pointA && !/^(a|mərkəz)$/i.test(dbIt.pointA)) ? dbIt.pointA : (locIt.pointA || dbIt.pointA),
             pointB: (dbIt.pointB && !/^(b|şəbəkə)$/i.test(dbIt.pointB)) ? dbIt.pointB : (locIt.pointB || dbIt.pointB),
+            execLead: locIt.execLead || dbIt.execLead || "",
+            execWorkers: locIt.execWorkers ?? dbIt.execWorkers,
+            execPhone: locIt.execPhone || dbIt.execPhone || "",
             fiberCount: locIt.fiberCount || dbIt.fiberCount || "",
             userSetFiber: locIt.userSetFiber || dbIt.userSetFiber,
             customColor: locIt.customColor || dbIt.customColor,
@@ -1002,11 +1130,19 @@ function applySavedMetaOverrides() {
                     Object.assign(r, sMap[key]);
                 }
                 if (r.contractor) {
-                    const matched = findContractorInfo(r.contractor);
-                    if (matched) {
-                        r.contractor = matched.name;
-                    } else if (LEGACY_DEMO_CONTRACTORS.has(String(r.contractor).trim().toLowerCase())) {
-                        r.contractor = "";
+                    const parsedExec = parseContractorAndLead(r.contractor, r.props);
+                    if (parsedExec.execLead && !r.execLead) r.execLead = parsedExec.execLead;
+                    if (parsedExec.execWorkers !== "" && r.execWorkers === undefined) r.execWorkers = parsedExec.execWorkers;
+                    if (parsedExec.execPhone && !r.execPhone) r.execPhone = parsedExec.execPhone;
+                    if (parsedExec.contractor === "BCG") {
+                        r.contractor = "BCG";
+                    } else {
+                        const matched = findContractorInfo(parsedExec.contractor);
+                        if (matched) {
+                            r.contractor = matched.name;
+                        } else if (LEGACY_DEMO_CONTRACTORS.has(String(r.contractor).trim().toLowerCase())) {
+                            r.contractor = "";
+                        }
                     }
                 }
                 if (p.type !== "points" && p.category !== "nim" && p.category !== "other") {
@@ -1375,16 +1511,20 @@ function editSegment(project, item) {
     const isPoints = project?.type === "points";
     const isOther = project?.category === "other";
     const adminMap = syncAdminContractors();
-    const contractorNames = [...new Set([...Object.keys(adminMap), ...(item?.contractor ? [item.contractor] : [])])].filter(Boolean);
+    const contractorNames = [...new Set(["BCG", ...Object.keys(adminMap), ...(item?.contractor ? [item.contractor] : [])])].filter(Boolean);
     const currentFiber = item ? getSegmentFiber(item, project) : "";
     const fiberOpts = currentFiber && !FIBER_OPTIONS.includes(currentFiber) ? [currentFiber, ...FIBER_OPTIONS] : FIBER_OPTIONS;
     const ptKm = isPoints && item ? getPointKmPair(item) : null;
+    const itemExec = item ? resolveItemExecDetails(item) : { contractor: "", lead: "", workers: "", phone: "" };
     openEditor({
         title: t(item ? "editSegment" : "addSegment"),
         isPoints,
         values: item ? {
             code: item.id, name: item.name, point_a: item.pointA || "", point_b: item.pointB || "", start_date: item.startDate, end_date: item.endDate,
-            contractor: item.contractor || "",
+            contractor: itemExec.contractor || item.contractor || "",
+            exec_lead: item.execLead || itemExec.lead || "",
+            exec_workers: item.execWorkers !== undefined && item.execWorkers !== "" ? item.execWorkers : "",
+            exec_phone: item.execPhone || itemExec.phone || "",
             total_km: isPoints ? Number(formatKm(ptKm.planKm)) : item.totalKm,
             done_km: isPoints ? Number(formatKm(ptKm.doneKm)) : item.doneKm,
             status: item.status || "layihe",
@@ -1407,7 +1547,10 @@ function editSegment(project, item) {
             antennas: 0,
             point_a: isOther ? "" : "Mərkəz",
             point_b: isOther ? "" : "Şəbəkə",
-            contractor: ""
+            contractor: "",
+            exec_lead: "",
+            exec_workers: "",
+            exec_phone: ""
         },
         fields: [
             { key: "code", label: t("fieldCode"), required: true, wide: isOther },
@@ -1432,7 +1575,10 @@ function editSegment(project, item) {
                 { key: "total_km", label: isPoints ? "1. Verilən məsafə (km və ya m)" : `1. Nəzərdə tutulan (km)`, type: "number" },
                 { key: "done_km", label: isPoints ? "2. Çəkilən məsafə (km və ya m)" : `2. Faktiki iş görülən (km)`, type: "number" },
                 ...(isPoints ? [{ key: "antennas", label: "Antena sayı (ədəd)", type: "number", wide: true }] : []),
-                { key: "contractor", label: "İş icraçısı (Admin Panel qovluğundan)", type: "select", wide: true, options: [["", t("notAssigned")], ...contractorNames.map(n => [n, `👷 ${n}`])] }
+                { key: "contractor", label: "İş icraçısı", type: "select", wide: true, options: [["", t("notAssigned")], ...contractorNames.map(n => [n, n === "BCG" ? "🏢 BCG" : `👷 ${n}`])] },
+                { key: "exec_lead", label: "👨‍🔧 Kim işləyib (Mühəndis / Briqadir)", placeholder: "Məs: Əli Məmmədov", wide: true },
+                { key: "exec_workers", label: "👥 İşçi sayı (neçə nəfər)", type: "number" },
+                { key: "exec_phone", label: "📞 Əlaqə nömrəsi", placeholder: "Məs: 050-000-00-00" }
             ] : []),
             { key: "coords", label: t("coordsField"), type: "textarea", wide: true, required: true, placeholder: "41.4205, 46.9242", action: { label: t("useLastDrawing"), run: useLastDrawing } }
         ],
@@ -1442,6 +1588,10 @@ function editSegment(project, item) {
             const foVal = normalizeFiberCount(row.fiber_count ?? item?.fiberCount ?? "", "");
             const finalTotal = isPoints ? normalizePointMetersInput(row.total_km) : (Number(row.total_km) || 0);
             const finalDone = isPoints ? normalizePointMetersInput(row.done_km) : (Number(row.done_km) || 0);
+            const eLeadVal = String(row.exec_lead || "").trim();
+            const eWrkVal = row.exec_workers !== undefined && String(row.exec_workers).trim() !== "" && Number(row.exec_workers) > 0 ? Math.round(Number(row.exec_workers)) : "";
+            const ePhnVal = String(row.exec_phone || "").trim();
+            if (eLeadVal) saveBcgLeadEntry(eLeadVal, eWrkVal, ePhnVal);
             if (item) {
                 item.id = row.code;
                 item.name = row.name;
@@ -1454,6 +1604,9 @@ function editSegment(project, item) {
                     item.totalKm = finalTotal;
                     item.doneKm = finalDone;
                     item.contractor = row.contractor || "";
+                    item.execLead = eLeadVal;
+                    item.execWorkers = eWrkVal;
+                    item.execPhone = ePhnVal;
                     item.startDate = row.start_date || "";
                     item.endDate = row.end_date || "";
                     if (isPoints) {
@@ -1498,6 +1651,9 @@ function editSegment(project, item) {
                     unit: isPoints ? "m" : undefined,
                     summary: isPoints ? true : undefined,
                     contractor: row.contractor || "",
+                    execLead: eLeadVal,
+                    execWorkers: eWrkVal,
+                    execPhone: ePhnVal,
                     startDate: row.start_date || "",
                     endDate: row.end_date || "",
                     antennas: Number(row.antennas || 0),
@@ -1518,6 +1674,9 @@ function editSegment(project, item) {
                 delete dbRow.line_width;
                 delete dbRow.poly_fill;
                 delete dbRow.point_type;
+                delete dbRow.exec_lead;
+                delete dbRow.exec_workers;
+                delete dbRow.exec_phone;
                 await api.saveSegment(project.id, oldCode || item?.id, {
                     ...dbRow,
                     point_a: item.pointA || "",
@@ -1525,7 +1684,7 @@ function editSegment(project, item) {
                     antennas: Number(row.antennas || 0),
                     contractor: row.contractor || null,
                     coords: parsedCoords
-                }, { pTyp: item.pointType || "" });
+                }, { pTyp: item.pointType || "", eLead: item.execLead || "", eWrk: item.execWorkers, ePhn: item.execPhone || "" });
             } catch (e) {
                 console.warn("api.saveSegment xətası (lokal qorunur):", e);
             }
@@ -1751,6 +1910,12 @@ function extractPointType(props, item) {
         }
     }
     return "";
+}
+
+function formatPointAntLabel(antennas, pointType) {
+    const cnt = Number(antennas) || 0;
+    const pt = String(pointType || "").trim();
+    return pt ? `${pt}-${cnt} ədəd` : `${cnt} antena`;
 }
 
 function getProjectPointTypes(project) {
@@ -2411,23 +2576,24 @@ function ensureSummaryNameImage(text, color) {
 }
 
 /* Rayon xülasə kartı (tək layihə və ya yaxınlaşanda ayrılmış pəncərə): məsafə metr (m) ilə göstərilir */
-function ensureSummaryCardImage({ name, color, shapeSymbol, folderName, antennas, doneM, totalM, pct, contractor }) {
+function ensureSummaryCardImage({ name, color, shapeSymbol, folderName, antennas, pointType, doneM, totalM, pct, contractor }) {
     if (!map || !name) return null;
     const light = isLightBaseMap();
     const folder = folderName || "";
     const sym = shapeSymbol || "";
-    const key = `sumcard_v6:${light ? "l" : "d"}:${color}:${sym}:${name}:${folder}:${antennas}:${doneM}:${totalM}:${contractor}`;
+    const antLabel = formatPointAntLabel(antennas, pointType);
+    const key = `sumcard_v7:${light ? "l" : "d"}:${color}:${sym}:${name}:${folder}:${antLabel}:${doneM}:${totalM}:${pct}:${contractor}`;
     if (map.hasImage(key)) return key;
 
     const ratio = 2;
     const padX = 9;
     const padY = 5;
     const stripe = 4;
-    const fFolder = `700 10px ${LABEL_FONT}`;
+    const fFolder = `700 10.5px ${LABEL_FONT}`;
     const fTitle = `800 13px ${LABEL_FONT}`;
     const fBody = `600 11.5px ${LABEL_FONT}`;
     const fSmall = `600 10px ${LABEL_FONT}`;
-    const bodyText = `${antennas} antena - ${totalM} / ${doneM} m`;
+    const bodyText = `${antLabel} - ${totalM} / ${doneM} m`;
     const folderText = folder ? `${sym ? sym + " " : ""}${String(folder).trim()}` : "";
     const contractorText = contractor ? `İcraçı: ${contractor}` : "";
 
@@ -2516,7 +2682,7 @@ function ensureSummaryCardImage({ name, color, shapeSymbol, folderName, antennas
     return key;
 }
 
-/* Eyni rayonda 2+ nöqtə layihəsi olduqda miqyas kiçiləndə bir pəncərədə qovuşan kart (hər layihənin öz məlumatları yerində qalır) */
+/* Eyni rayonda 2+ nöqtə layihəsi olduqda miqyas kiçiləndə bir pəncərədə qovuşan kart (hər layihənin öz adı və öz məlumatları yerində qalır) */
 function ensureMergedSummaryCardImage(rayonName, entries) {
     if (!map || !rayonName || !Array.isArray(entries) || entries.length === 0) return null;
     if (entries.length === 1) {
@@ -2527,6 +2693,7 @@ function ensureMergedSummaryCardImage(rayonName, entries) {
             shapeSymbol: e.shapeSymbol,
             folderName: e.projTitle || e.folderName,
             antennas: e.antennas,
+            pointType: e.pointType,
             doneM: e.doneM,
             totalM: e.planM ?? e.totalM,
             pct: e.pct,
@@ -2534,19 +2701,19 @@ function ensureMergedSummaryCardImage(rayonName, entries) {
         });
     }
     const light = isLightBaseMap();
-    const sig = entries.map(e => `${e.shapeSymbol}:${e.projTitle || e.folderName}:${e.stColor || e.color}:${e.antennas}:${e.planM ?? e.totalM}:${e.doneM}:${e.contractor}`).join("|");
-    const key = `summerged_v2:${light ? "l" : "d"}:${rayonName}:${sig}`;
+    const sig = entries.map(e => `${e.shapeSymbol}:${e.projTitle || e.folderName}:${e.stColor || e.color}:${e.antennas}:${e.pointType || ""}:${e.planM ?? e.totalM}:${e.doneM}:${e.pct}:${e.contractor}`).join("|");
+    const key = `summerged_v3:${light ? "l" : "d"}:${rayonName}:${sig}`;
     if (map.hasImage(key)) return key;
 
     const ratio = 2;
     const padX = 10;
     const padY = 6;
-    const fHead = `800 12.5px ${LABEL_FONT}`;
-    const fProj = `700 10.5px ${LABEL_FONT}`;
+    const fHead = `800 13px ${LABEL_FONT}`;
+    const fProj = `700 11px ${LABEL_FONT}`;
     const fBody = `600 11px ${LABEL_FONT}`;
     const fSmall = `600 9.5px ${LABEL_FONT}`;
 
-    const headText = `${rayonName} (${entries.length} nöqtə)`;
+    const headText = rayonName;
     const m = document.createElement("canvas").getContext("2d");
     m.font = fHead;
     let maxW = m.measureText(headText).width;
@@ -2557,14 +2724,15 @@ function ensureMergedSummaryCardImage(rayonName, entries) {
         const stColor = e.stColor || e.color || "#38BDF8";
         const titleStr = e.projTitle || e.folderName || "Layihə";
         const planM = e.planM ?? e.totalM ?? 0;
+        const antLabel = formatPointAntLabel(e.antennas, e.pointType);
         const projLine = `${e.shapeSymbol || "●"} ${titleStr}`;
-        const bodyLine = `${e.antennas} antena - ${planM} / ${e.doneM} m`;
+        const bodyLine = `${antLabel} - ${planM} / ${e.doneM} m`;
         const cLine = e.contractor ? `İcraçı: ${e.contractor}` : "";
         m.font = fProj; const pw = m.measureText(projLine).width;
         m.font = fBody; const bw = m.measureText(bodyLine).width;
         m.font = fSmall; const cw = cLine ? m.measureText(cLine).width : 0;
-        maxW = Math.max(maxW, pw + 10, bw + 10, cw + 10, 130);
-        const blockH = 14 + 15 + 11 + (cLine ? 13 : 0) + 6;
+        maxW = Math.max(maxW, pw + 10, bw + 10, cw + 10, 135);
+        const blockH = 15 + 15 + 11 + (cLine ? 13 : 0) + 6;
         return { ...e, stColor, projLine, bodyLine, cLine, blockH };
     });
 
@@ -3173,12 +3341,13 @@ function drawRoutes() {
             const rayonName = rawRayonName || String(r.name || "").trim();
             const normKey = rayonName.toLocaleLowerCase("az").replace(/\s+/g, " ").trim() || `${lat.toFixed(2)}_${lng.toFixed(2)}`;
             const { planM: verilenM, doneM: cekilenM } = getPointMetersPair(r);
-            const pct = percent(cekilenM, verilenM);
+            const pct = calcPointPct(cekilenM, verilenM, r.status);
             const rawProjBase = String(project.name || "").replace(/\s*\(?\bFaz[-\s]*[12]\b\)?/gi, "").trim();
-            const rawProjName = ptType ? `${rawProjBase} · ${ptType}` : rawProjBase;
-            const cardHeaderBase = ptType ? ptType : rawProjBase;
-            const compactProjName = cardHeaderBase.length > 28 ? `${cardHeaderBase.slice(0, 27).trim()}…` : cardHeaderBase;
+            const rawProjName = rawProjBase;
+            const compactProjName = rawProjBase.length > 32 ? `${rawProjBase.slice(0, 31).trim()}…` : rawProjBase;
             const antCount = Number(r.antennas || 0);
+            const antLabel = formatPointAntLabel(antCount, ptType);
+            const execDet = resolveItemExecDetails(r);
 
             if (!pointSlots[normKey]) {
                 pointSlots[normKey] = {
@@ -3203,7 +3372,10 @@ function drawRoutes() {
                 rayonName,
                 rawProjName,
                 compactProjName,
+                ptType,
                 antCount,
+                antLabel,
+                execSummary: execDet.cardSummary,
                 verilenM,
                 cekilenM,
                 pct,
@@ -3301,10 +3473,10 @@ function drawRoutes() {
         const first = grp.entries[0];
 
         const mergedTip = n > 1
-            ? `<b>📍 ${esc(grp.rayonName)} (${n} layihə)</b><br>` + grp.entries.map(e =>
-                `<small><span style="color:${e.stColor}">${e.shape.symbol}</span> <b>${esc(e.rawProjName)}:</b> 📡 ${e.antCount} antena - ${e.verilenM} / ${e.cekilenM} m (${e.pct}%)${e.r.contractor ? ` · 👷 ${esc(e.r.contractor)}` : ""}</small>`
+            ? `<b>📍 ${esc(grp.rayonName)}</b><br>` + grp.entries.map(e =>
+                `<small><span style="color:${e.stColor}">${e.shape.symbol}</span> <b>${esc(e.rawProjName)}:</b> 📡 ${esc(e.antLabel)} - ${e.verilenM} / ${e.cekilenM} m (${e.pct}%)${e.execSummary ? ` · 👷 ${esc(e.execSummary)}` : ""}</small>`
             ).join("<br>")
-            : `<b style="color:${first.stColor}">${first.shape.symbol} ${esc(grp.rayonName)}</b><small>${first.rawProjName ? `<span style="opacity:0.9">${esc(first.rawProjName)}</span><br>` : ""}📡 ${first.antCount} antena - ${first.verilenM} / ${first.cekilenM} m (${first.pct}%)${first.r.contractor ? `<br>👷 İcraçı: <b>${esc(first.r.contractor)}</b>` : ""}</small>`;
+            : `<b style="color:${first.stColor}">${first.shape.symbol} ${esc(grp.rayonName)}</b><small>${first.rawProjName ? `<span style="opacity:0.9">${esc(first.rawProjName)}</span><br>` : ""}📡 ${esc(first.antLabel)} - ${first.verilenM} / ${first.cekilenM} m (${first.pct}%)${first.execSummary ? `<br>👷 İcraçı: <b>${esc(first.execSummary)}</b>` : ""}</small>`;
 
         const mergedCardImg = n > 1
             ? ensureMergedSummaryCardImage(grp.rayonName, grp.entries.map(e => ({
@@ -3312,10 +3484,11 @@ function drawRoutes() {
                 shapeSymbol: e.shape.symbol,
                 folderName: e.compactProjName,
                 antennas: e.antCount,
+                pointType: e.ptType,
                 totalM: e.verilenM,
                 doneM: e.cekilenM,
                 pct: e.pct,
-                contractor: e.r.contractor || ""
+                contractor: e.execSummary || ""
             })))
             : ensureSummaryCardImage({
                 name: grp.rayonName,
@@ -3323,10 +3496,11 @@ function drawRoutes() {
                 shapeSymbol: first.shape.symbol,
                 folderName: first.compactProjName,
                 antennas: first.antCount,
+                pointType: first.ptType,
                 totalM: first.verilenM,
                 doneM: first.cekilenM,
                 pct: first.pct,
-                contractor: first.r.contractor || ""
+                contractor: first.execSummary || ""
             });
 
         // 1) Uzaq miqyas (zoom < 10.2) üçün qovuşmuş kart + yan-yana fərqli ikonlar
@@ -3354,7 +3528,7 @@ function drawRoutes() {
         });
 
         grp.entries.forEach((e, idx) => {
-            const singleTip = `<b style="color:${e.stColor}">${e.shape.symbol} ${esc(e.rayonName)}</b><small>${e.rawProjName ? `<span style="opacity:0.9">${esc(e.rawProjName)}</span><br>` : ""}📡 ${e.antCount} antena - ${e.verilenM} / ${e.cekilenM} m (${e.pct}%)${e.r.contractor ? `<br>👷 İcraçı: <b>${esc(e.r.contractor)}</b>` : ""}</small>`;
+            const singleTip = `<b style="color:${e.stColor}">${e.shape.symbol} ${esc(e.rayonName)}</b><small>${e.rawProjName ? `<span style="opacity:0.9">${esc(e.rawProjName)}</span><br>` : ""}📡 ${esc(e.antLabel)} - ${e.verilenM} / ${e.cekilenM} m (${e.pct}%)${e.execSummary ? `<br>👷 İcraçı: <b>${esc(e.execSummary)}</b>` : ""}</small>`;
 
             // Zoom < 10.2: ikonlar yan-yana kiçik ara ilə görünür ki hər layihənin fərqli ikonu seçilsin
             const mergedLng = n === 1 ? e.lng : centerLng + (idx - (n - 1) / 2) * 0.0085;
@@ -3416,10 +3590,11 @@ function drawRoutes() {
                 shapeSymbol: e.shape.symbol,
                 folderName: e.compactProjName,
                 antennas: e.antCount,
+                pointType: e.ptType,
                 totalM: e.verilenM,
                 doneM: e.cekilenM,
                 pct: e.pct,
-                contractor: e.r.contractor || ""
+                contractor: e.execSummary || ""
             });
 
             const splitProps = {
@@ -3865,9 +4040,12 @@ function renderProjects() {
             const visible = state.visibleIds.has(p.id);
             const expanded = state.expandedIds.has(p.id);
             const sum = totals(p.items);
-            const pct = percent(sum.done, sum.plan);
             const isNim = p.category === "nim";
             const isPoints = p.type === "points";
+            const allPtsDone = isPoints && p.items.length > 0 && p.items.every(i => i.status === "bitmis" || i.status === "tehvil");
+            const pct = isPoints
+                ? calcPointPct(sum.done, sum.plan, (p.status === "bitmis" || p.status === "tehvil" || allPtsDone) ? "bitmis" : p.status)
+                : percent(sum.done, sum.plan);
             const shape = isPointProject(p) ? getProjectShape(p) : null;
             const shapeBadge = shape ? `<span style="color:${statusTone(p.status)};margin-right:5px;font-size:13px" title="Nöqtə işarəsi: ${shape.name}">${shape.symbol}</span>` : "";
             const totalAnt = p.items.reduce((s, r) => s + (r.antennas || 0), 0);
@@ -3916,18 +4094,23 @@ function renderProjects() {
                         const foBadge = segFo
                             ? `<span style="background:rgba(14,165,233,0.16);color:#38BDF8;border:1px solid rgba(56,189,248,0.38);border-radius:6px;padding:1px 5px;font-size:10px;font-weight:700;margin-right:4px;flex-shrink:0">${esc(segFo)}</span>`
                             : "";
-                        const cBrief = r.contractor ? ` · 👷 ${esc(r.contractor)}` : "";
+                        const execInfo = resolveItemExecDetails(r);
+                        const cBrief = r.contractor
+                            ? ` · 👷 ${esc(r.contractor)}${execInfo.lead ? ` (${esc(execInfo.lead)})` : ""}`
+                            : "";
                         const { planM: rPlanM, doneM: rDoneM } = isPoints ? getPointMetersPair(r) : { planM: 0, doneM: 0 };
                         const segEnds = isLifSeg ? resolveLineEndNames(r, p) : null;
                         const rightText = isNim
                             ? t(`status${r.status}`)
                             : (isPoints
-                                ? `${r.antennas || 0} antena - ${rPlanM} / ${rDoneM} m${cBrief}`
+                                ? `${formatPointAntLabel(r.antennas, ptType)} - ${rPlanM} / ${rDoneM} m${cBrief}`
                                 : (isLifSeg
-                                    ? `📍 ${esc(segEnds.aName)} ➔ ${esc(segEnds.bName)}`
-                                    : `${formatKm(r.doneKm)} / ${formatKm(r.totalKm)} km`));
+                                     ? `📍 ${esc(segEnds.aName)} ➔ ${esc(segEnds.bName)}`
+                                     : `${formatKm(r.doneKm)} / ${formatKm(r.totalKm)} km`));
                         const qKey = `${p.id}:${r.id}`;
                         const isQuickOpen = isPoints && isAdmin() && state.quickEditKey === qKey;
+                        const qContractors = [...new Set(["BCG", ...Object.keys(syncAdminContractors()), ...(r.contractor ? [r.contractor] : [])])];
+                        const qSavedLeads = getSavedBcgLeads();
                         return `
                         <div class="segment-wrap" data-seg-wrap="${esc(r.id)}">
                             <div class="segment ${state.selected?.itemId === r.id && state.selected?.projectId === p.id ? "selected" : ""}" style="display:flex;align-items:center;justify-content:space-between;gap:6px;padding-right:6px">
@@ -3964,10 +4147,36 @@ function renderProjects() {
                                         </select>
                                     </label>
                                 </div>
-                                <label style="display:flex;align-items:center;gap:6px;font-size:10px;color:var(--ink-2)">
-                                    <span style="white-space:nowrap">Nöqtə növü:</span>
-                                    <input class="input" type="text" data-q-pttype value="${esc(ptType)}" placeholder="Məs: Faz-1, Faz-2, GPON, LTE..." style="flex:1;height:25px;padding:0 6px;font-size:11px">
-                                </label>
+                                <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;align-items:end">
+                                    <label style="display:flex;flex-direction:column;gap:2px;font-size:10px;color:var(--ink-2)">
+                                        <span>Nöqtə növü:</span>
+                                        <input class="input" type="text" data-q-pttype value="${esc(ptType)}" placeholder="Məs: GPON, Faz-1..." style="height:25px;padding:0 6px;font-size:11px">
+                                    </label>
+                                    <label style="display:flex;flex-direction:column;gap:2px;font-size:10px;color:var(--ink-2)">
+                                        <span>İcraçı:</span>
+                                        <select class="input" data-q-exec style="height:25px;padding:0 4px;font-size:11px">
+                                            <option value="">— Seçilməyib —</option>
+                                            ${qContractors.map(cName => `<option value="${esc(cName)}" ${r.contractor === cName ? "selected" : ""}>${cName === "BCG" ? "🏢 BCG" : esc(cName)}</option>`).join("")}
+                                        </select>
+                                    </label>
+                                </div>
+                                <div style="display:grid;grid-template-columns:1.25fr 0.65fr 1fr;gap:5px;align-items:end;padding:5px 6px;border-radius:7px;background:rgba(14,165,233,0.08);border:1px dashed rgba(56,189,248,0.3)">
+                                    <label style="display:flex;flex-direction:column;gap:2px;font-size:10px;color:#38BDF8">
+                                        <span>👷 Kim işləyib (Mühəndis)</span>
+                                        <input class="input" type="text" list="qLeadList_${esc(r.id)}" data-q-lead value="${esc(r.execLead || "")}" placeholder="Ad Soyad..." style="height:24px;padding:0 5px;font-size:11px">
+                                        <datalist id="qLeadList_${esc(r.id)}">
+                                            ${qSavedLeads.map(l => `<option value="${esc(l.name)}">${l.workers ? `${esc(l.workers)} nəfər` : ""}${l.phone ? ` · ${esc(l.phone)}` : ""}</option>`).join("")}
+                                        </datalist>
+                                    </label>
+                                    <label style="display:flex;flex-direction:column;gap:2px;font-size:10px;color:#38BDF8">
+                                        <span>👥 Neçə nəfər</span>
+                                        <input class="input" type="number" min="0" step="1" data-q-wrk value="${esc(r.execWorkers || "")}" placeholder="Say" style="height:24px;padding:0 5px;font-size:11px">
+                                    </label>
+                                    <label style="display:flex;flex-direction:column;gap:2px;font-size:10px;color:#38BDF8">
+                                        <span>📞 Əlaqə nömrəsi</span>
+                                        <input class="input" type="text" data-q-phone value="${esc(r.execPhone || "")}" placeholder="+994..." style="height:24px;padding:0 5px;font-size:11px">
+                                    </label>
+                                </div>
                                 <div style="display:flex;align-items:center;justify-content:space-between;gap:5px;flex-wrap:wrap">
                                     <div style="display:flex;gap:4px">
                                         <button type="button" class="btn btn-outline" style="height:25px;padding:0 8px;font-size:11px" data-action="geomEditSeg" data-item="${esc(r.id)}" title="Nöqtəni xəritədə sürüşdür">
@@ -4703,10 +4912,19 @@ function projectFromFile(fileName, lines, polyFillMode = "auto") {
             const rawStatus = getPropCaseInsensitive(p, "status", "Status", "STATUS") || line.props?.status || "layihe";
             const status = normalizeStatus(rawStatus);
 
-            // 2. İcraçı: icraçı, icraci, contractor — Admin Paneldəki İş İcraçıları qovluğu ilə avtomatik uyğunlaşdırılır
+            // 2. İcraçı: icraçı, icraci, contractor — həm "BCG - Mühəndis", həm də ayrı sütunlar dəstəklənir
             const rawContractor = getPropCaseInsensitive(p, "icraçı", "icraci", "contractor", "icraci_sirket", "icraci_adi", "podratci", "briqada") || "";
-            const matchedContractor = findContractorInfo(rawContractor);
-            const contractor = matchedContractor ? matchedContractor.name : rawContractor;
+            const parsedExec = parseContractorAndLead(rawContractor, p);
+            const matchedContractor = findContractorInfo(parsedExec.contractor || rawContractor);
+            const contractor = isBcgContractor(parsedExec.contractor)
+                ? "BCG"
+                : (matchedContractor ? matchedContractor.name : (parsedExec.contractor || rawContractor));
+            const execLead = parsedExec.execLead || "";
+            const execWorkers = parsedExec.execWorkers || "";
+            const execPhone = parsedExec.execPhone || "";
+            if (contractor === "BCG" && execLead) {
+                saveBcgLeadEntry(execLead, execWorkers, execPhone);
+            }
 
             // 3. Name: Ağsu-Şamaxı, Şamaxı-İsmayıllı, Rayon adı, Xəzər dənizi və s.
             let nameVal = (line.name && line.name.trim())
@@ -4809,6 +5027,7 @@ function projectFromFile(fileName, lines, polyFillMode = "auto") {
                     pointA: cleanPointName || "Mərkəz",
                     pointB: "Şəbəkə",
                     startDate: "", endDate: "", contractor,
+                    execLead, execWorkers, execPhone,
                     totalKm: planMeters,
                     doneKm: doneMeters,
                     unit: "m",
@@ -4848,6 +5067,7 @@ function projectFromFile(fileName, lines, polyFillMode = "auto") {
                 id: `${isPolygon ? "PLY" : "IMP"}-${String(index + 1).padStart(2, "0")}`,
                 name: nameVal,
                 pointA, pointB, startDate: "", endDate: "", contractor,
+                execLead, execWorkers, execPhone,
                 totalKm, doneKm, status: finalStatus, fiberCount, customColor, fillColor, fillOpacity, lineWidth, isPolygon, polyFilled,
                 holes: line.holes || [],
                 closures: 0, manholes: 0, antennas: 0,
@@ -5152,12 +5372,32 @@ function bindEvents() {
             const doneInp = wrap.querySelector("[data-q-done]");
             const stSel = wrap.querySelector("[data-q-status]");
             const ptTypeInp = wrap.querySelector("[data-q-pttype]");
+            const execSel = wrap.querySelector("[data-q-exec]");
+            const leadInp = wrap.querySelector("[data-q-lead]");
+            const wrkInp = wrap.querySelector("[data-q-wrk]");
+            const phoneInp = wrap.querySelector("[data-q-phone]");
 
             if (isPts && antInp) {
                 item.antennas = Math.max(0, Math.round(Number(antInp.value) || 0));
             }
             if (isPts && ptTypeInp) {
                 item.pointType = ptTypeInp.value.trim();
+            }
+            if (execSel) {
+                item.contractor = execSel.value.trim();
+            }
+            if (leadInp) {
+                item.execLead = leadInp.value.trim();
+            }
+            if (wrkInp) {
+                item.execWorkers = wrkInp.value.trim();
+            }
+            if (phoneInp) {
+                item.execPhone = phoneInp.value.trim();
+            }
+            if (item.execLead && (!item.contractor || isBcgContractor(item.contractor))) {
+                if (!item.contractor) item.contractor = "BCG";
+                saveBcgLeadEntry(item.execLead, item.execWorkers, item.execPhone);
             }
             if (!isNim && planInp && doneInp) {
                 if (isPts) {
@@ -5182,11 +5422,14 @@ function bindEvents() {
             saveSegmentOverride(project.id, item);
             saveImportedProjects();
             if (api.configured && item.dbId) {
+                const packedPtB = typeof api.packPointBMeta === "function"
+                    ? api.packPointBMeta(item.pointB || "", item)
+                    : (item.pointB || "");
                 api.saveSegment(project.id, item.dbId, {
                     code: item.id,
                     name: item.name,
                     point_a: item.pointA || "",
-                    point_b: item.pointB || "",
+                    point_b: packedPtB,
                     start_date: item.startDate || null,
                     end_date: item.endDate || null,
                     contractor: item.contractor || "",
@@ -5287,22 +5530,72 @@ document.addEventListener("DOMContentLoaded", init);
         if (legend) legend.hidden = state.activeFolders.size === 0 || visibleEntries().length === 0 || !legend.innerHTML.trim();
     }
 
-    function executorOptionsHtml(currentExec) {
+    function executorOptionsHtml(currentExec, item) {
         const cur = String(currentExec || "").trim();
+        const details = item ? resolveItemExecDetails(item) : null;
         if (!isAdmin()) {
             if (!cur) return `<span style="font-size:11.5px;color:var(--ink-3)">— Təyin edilməyib —</span>`;
-            const info = findContractorInfo(cur);
-            const sub = info ? ` (${info.workers || 0} işçi · ${info.machinery || 0} tex.)` : "";
-            return `<b style="font-size:11.5px;color:var(--ink)">👷 ${esc(cur)}${esc(sub)}</b>`;
+            const leadTxt = details?.lead ? ` · ${details.lead}` : "";
+            const wrkTxt = details?.workers ? ` (${details.workers} nəfər)` : "";
+            return `<b style="font-size:11.5px;color:var(--ink)">👷 ${esc(cur)}${esc(leadTxt)}${esc(wrkTxt)}</b>`;
         }
         const adminMap = syncAdminContractors();
-        const names = [...new Set(["", ...Object.keys(adminMap), ...(cur ? [cur] : [])])];
+        const names = [...new Set(["", "BCG", ...Object.keys(adminMap), ...(cur ? [cur] : [])])];
         return `<select class="input" data-exec-select>${names.map(name => {
             if (!name) return `<option value="" ${!cur ? "selected" : ""}>— İcraçı seçilməyib —</option>`;
+            if (isBcgContractor(name)) {
+                return `<option value="BCG" ${isBcgContractor(cur) ? "selected" : ""}>🏢 BCG (Mühəndis / Briqadir seçimi)</option>`;
+            }
             const info = findContractorInfo(name);
-            const sub = info ? ` (${info.workers || 0} işçi · ${info.machinery || 0} tex.)` : "";
+            const sub = info && (info.workers || info.machinery) ? ` (${info.workers || 0} işçi · ${info.machinery || 0} tex.)` : "";
             return `<option value="${esc(name)}" ${name === cur ? "selected" : ""}>👷 ${esc(name)}${esc(sub)}</option>`;
         }).join("")}</select>`;
+    }
+
+    function renderExecDetailBlockHtml(r, proj) {
+        const execInfo = resolveItemExecDetails(r);
+        const savedLeads = getSavedBcgLeads();
+        const isBcg = isBcgContractor(r.contractor);
+        const showSummary = Boolean(r.contractor || execInfo.lead || execInfo.workers || execInfo.phone);
+
+        const summaryHtml = showSummary ? `
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;font-size:11px;color:var(--ink-2)">
+                <span>👷 İcraçı: <b>${esc(r.contractor || t("notAssigned"))}</b>${execInfo.lead ? ` · Mühəndis/Briqadir: <b style="color:#38BDF8">${esc(execInfo.lead)}</b>` : ""}</span>
+                <span>
+                    ${execInfo.workers ? `👥 İşçi: <b>${esc(execInfo.workers)} nəfər</b>` : `<span class="muted">👥 İşçi: —</span>`}
+                    ${!isBcg && execInfo.machinery ? ` · 🚜 Tex.: <b>${esc(execInfo.machinery)}</b>` : ""}
+                    · 📞 <b>${esc(execInfo.phone || "—")}</b>
+                </span>
+            </div>
+        ` : `<div style="font-size:11px;color:var(--ink-3)">👷 İcraçı: <b>${esc(t("notAssigned"))}</b></div>`;
+
+        if (!isAdmin() || !r.contractor) {
+            return summaryHtml;
+        }
+
+        return `
+            ${summaryHtml}
+            <div class="bcg-inline-exec-box" style="margin-top:4px;padding:6px 8px;border-radius:8px;background:rgba(14,165,233,0.08);border:1px dashed rgba(56,189,248,0.35);display:flex;flex-direction:column;gap:5px">
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap">
+                    <span style="font-size:10.5px;font-weight:700;color:#38BDF8">
+                        ${isBcg ? "🏢 BCG — Kim işləyib (Alt seçim / Əlavə et):" : `👷 ${esc(r.contractor)} — Briqada məlumatı:`}
+                    </span>
+                    ${savedLeads.length > 0 ? `
+                    <select class="input" data-exec-lead-pick style="height:22px;padding:0 6px;font-size:10.5px;max-width:190px">
+                        <option value="">— Siyahıdan mühəndis seç —</option>
+                        ${savedLeads.map(l => `<option value="${esc(l.name)}" data-wrk="${esc(l.workers || "")}" data-phn="${esc(l.phone || "")}" ${r.execLead === l.name ? "selected" : ""}>👷 ${esc(l.name)}${l.workers ? ` (${esc(l.workers)} nəf.)` : ""}</option>`).join("")}
+                    </select>` : ""}
+                </div>
+                <div style="display:grid;grid-template-columns:1.25fr 0.65fr 1fr auto;gap:5px;align-items:center">
+                    <input class="input" type="text" data-exec-lead-inp value="${esc(r.execLead || "")}" placeholder="Kim işləyib (Ad Soyad)" style="height:24px;padding:0 6px;font-size:11px">
+                    <input class="input" type="number" min="0" step="1" data-exec-wrk-inp value="${esc(r.execWorkers || "")}" placeholder="Neçə nəfər" style="height:24px;padding:0 6px;font-size:11px">
+                    <input class="input" type="text" data-exec-phn-inp value="${esc(r.execPhone || "")}" placeholder="Əlaqə nömrəsi" style="height:24px;padding:0 6px;font-size:11px">
+                    <button type="button" class="btn btn-primary" data-save-exec-detail="${esc(proj.id)}:${esc(r.id)}" style="height:24px;padding:0 8px;font-size:10.5px;white-space:nowrap" title="Mühəndis / İşçi sayı / Əlaqə nömrəsini yadda saxla">
+                        <i class="fa-solid fa-check"></i> Saxla
+                    </button>
+                </div>
+            </div>
+        `;
     }
 
     function fiberOptionsHtml(currentFo) {
@@ -5567,11 +5860,48 @@ document.addEventListener("DOMContentLoaded", init);
             }
         });
 
-        card.addEventListener("click", e => {
+        card.addEventListener("click", async e => {
             const quickSaveBtn = e.target.closest("[data-pt-quick-save]");
             if (quickSaveBtn) {
                 e.stopPropagation();
                 quickSavePointRow(quickSaveBtn.closest("[data-pick-seg]"));
+                return;
+            }
+            const saveExecBtn = e.target.closest("[data-save-exec-detail]");
+            if (saveExecBtn) {
+                e.stopPropagation();
+                if (!isAdmin()) return;
+                const [projectId, itemId] = saveExecBtn.dataset.saveExecDetail.split(":");
+                const proj = state.projects.find(p => p.id === projectId);
+                const item = proj?.items.find(r => r.id === itemId);
+                const rowEl = saveExecBtn.closest("[data-pick-seg]");
+                if (!proj || !item || !rowEl) return;
+                pushUndoSnapshot(`İcraçı məlumatı (${item.name})`);
+                const leadVal = (rowEl.querySelector("[data-exec-lead-inp]")?.value || "").trim();
+                const wrkVal = (rowEl.querySelector("[data-exec-wrk-inp]")?.value || "").trim();
+                const phnVal = (rowEl.querySelector("[data-exec-phn-inp]")?.value || "").trim();
+                item.execLead = leadVal;
+                item.execWorkers = wrkVal;
+                item.execPhone = phnVal;
+                if (!item.contractor && (leadVal || wrkVal || phnVal)) {
+                    item.contractor = "BCG";
+                }
+                if (leadVal && isBcgContractor(item.contractor)) {
+                    saveBcgLeadEntry(leadVal, wrkVal, phnVal);
+                }
+                saveSegmentOverride(proj.id, item);
+                saveImportedProjects();
+                if (api.configured && item.dbId) {
+                    const packedPtB = typeof api.packPointBMeta === "function"
+                        ? api.packPointBMeta(item.pointB || "", item)
+                        : (item.pointB || "");
+                    try {
+                        await api.saveSegment(proj.id, item.dbId, { contractor: item.contractor, point_b: packedPtB });
+                    } catch {}
+                }
+                recordAuditLog("İcraçı / Mühəndis Yenilənməsi", "🏢 BCG", `${proj.name} → ${item.name}`, `${item.contractor || "BCG"}: ${leadVal || "—"} (${wrkVal || 0} nəfər · ${phnVal || "—"})`);
+                renderAll();
+                toast(`✅ İcraçı məlumatı yadda saxlanıldı: ${leadVal || item.contractor}`);
                 return;
             }
             const editSegBtn = e.target.closest("[data-edit-seg]");
@@ -5645,6 +5975,19 @@ document.addEventListener("DOMContentLoaded", init);
 
         card.addEventListener("change", async e => {
             if (!isAdmin()) return;
+            const leadPick = e.target.closest("[data-exec-lead-pick]");
+            if (leadPick) {
+                const rowEl = leadPick.closest("[data-pick-seg]");
+                if (!rowEl) return;
+                const opt = leadPick.selectedOptions[0];
+                const leadInp = rowEl.querySelector("[data-exec-lead-inp]");
+                const wrkInp = rowEl.querySelector("[data-exec-wrk-inp]");
+                const phnInp = rowEl.querySelector("[data-exec-phn-inp]");
+                if (leadInp && leadPick.value) leadInp.value = leadPick.value;
+                if (wrkInp && opt?.dataset.wrk !== undefined && opt.dataset.wrk !== "") wrkInp.value = opt.dataset.wrk;
+                if (phnInp && opt?.dataset.phn !== undefined && opt.dataset.phn !== "") phnInp.value = opt.dataset.phn;
+                return;
+            }
             if (e.target.closest("[data-pt-status]")) {
                 await quickSavePointRow(e.target.closest("[data-pick-seg]"));
                 return;
@@ -5720,7 +6063,14 @@ document.addEventListener("DOMContentLoaded", init);
             const item = proj?.items.find(r => r.id === itemId);
             if (!proj || !item) return;
             pushUndoSnapshot(`İcraçı dəyişikliyi (${item.name})`);
+            const prevWasBcg = isBcgContractor(item.contractor);
             item.contractor = sel.value;
+            if (isBcgContractor(item.contractor) && !prevWasBcg) {
+                // BCG seçiləndə mühəndis / işçi sayı / nömrə xanaları boş açılır ki Admin özü daxil etsin
+                item.execLead = item.execLead || "";
+                item.execWorkers = item.execWorkers || "";
+                item.execPhone = item.execPhone || "";
+            }
             saveSegmentOverride(proj.id, item);
             saveImportedProjects();
             if (isAdmin() && api.configured) {
@@ -6526,13 +6876,11 @@ document.addEventListener("DOMContentLoaded", init);
                                     </div>
                                     <div class="info-exec-row">
                                         <span class="muted">İcraçı:</span>
-                                        ${executorOptionsHtml(r.contractor)}
+                                        ${executorOptionsHtml(r.contractor, r)}
                                     </div>
+                                    ${renderExecDetailBlockHtml(r, proj)}
                                     <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;font-size:11px;color:var(--ink-2)">
-                                        ${r.contractor ? `
-                                        <span>👷 İşçi: <b>${esc(cInfo.workers)} nəfər</b> · 🚜 Tex.: <b>${esc(cInfo.machinery ?? 0)}</b></span>
-                                        <span>📞 <b>${esc(cInfo.engineer || "—")}</b></span>
-                                        ` : `<span class="muted">${isAdmin() ? `<a href="admin.html#contractors" target="_blank" style="color:#38BDF8;text-decoration:none">⚙️ Admin Paneldə İcraçı əlavə et</a>` : ""}</span>`}
+                                        <span class="muted">${!r.contractor && isAdmin() ? `<a href="admin.html#contractors" target="_blank" style="color:#38BDF8;text-decoration:none">⚙️ Admin Paneldə İcraçı əlavə et</a>` : ""}</span>
                                         ${isAdmin() ? `<button class="btn btn-outline" style="height:22px;padding:0 7px;font-size:10.5px" data-geom-edit="${esc(proj.id)}:${esc(r.id)}" title="Nöqtəni xəritədə sürüşdür"><i class="fa-solid fa-arrows-up-down-left-right"></i> Sürüşdür</button>` : ""}
                                     </div>
                                 </div>
@@ -6549,13 +6897,14 @@ document.addEventListener("DOMContentLoaded", init);
             return;
         }
 
-        // A) NÖQTƏ / ANTENA LAYİHƏSİ (Status panelində edit YOXDUR — nöqtələrin redaktəsi solda qovluq altında hər nöqtənin qarşısındadır)
+        // A) NÖQTƏ / ANTENA LAYİHƏSİ
         if (isPoints) {
             const totalAnt = proj.items.reduce((s, i) => s + (i.antennas || 0), 0);
             const planMVal = Math.round(sum.plan * 1000);
             const doneMVal = Math.round(sum.done * 1000);
             const leftMVal = Math.max(0, planMVal - doneMVal);
-            const sumPct = percent(doneMVal, planMVal);
+            const allPtsDone = proj.items.length > 0 && proj.items.every(i => i.status === "bitmis" || i.status === "tehvil");
+            const sumPct = calcPointPct(doneMVal, planMVal, (proj.status === "bitmis" || proj.status === "tehvil" || allPtsDone) ? "bitmis" : proj.status);
             const projShape = getProjectShape(proj);
             card.innerHTML = `
                 <div class="info-card-head">
@@ -6587,9 +6936,8 @@ document.addEventListener("DOMContentLoaded", init);
                                 : "";
                             const { planM: rVerilenM, doneM: rCekilenM } = getPointMetersPair(r);
                             const rLeftM = Math.max(0, rVerilenM - rCekilenM);
-                            const rPct = percent(rCekilenM, rVerilenM);
+                            const rPct = calcPointPct(rCekilenM, rVerilenM, r.status);
                             const cleanName = String(r.name || "").replace(/\s*\(?\bFaz[-\s]*[12]\b\)?/gi, "").replace(/\s*rayon(u)?\b/gi, "").trim();
-                            const cInfo = findContractorInfo(r.contractor) || { workers: "—", machinery: "—", engineer: "—" };
                             return `
                                 <div class="info-sub-item" data-pick-seg="${esc(proj.id)}:${esc(r.id)}" style="border-color:${entry?.item === r ? rTone : "var(--line)"}">
                                     <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
@@ -6601,14 +6949,15 @@ document.addEventListener("DOMContentLoaded", init);
                                         <span class="pill" style="--tone:${rTone}">${t(`status${r.status}`)}</span>
                                     </div>
                                     <div style="color:var(--ink-2);font-size:11.5px">
-                                        📡 <b style="color:var(--ink)">${r.antennas || 0} antena - ${rVerilenM} / ${rCekilenM} m</b> <span style="color:${rTone};font-weight:700">(${rPct}%)</span> · Qalıb: <b>${rLeftM} m</b>
+                                        📡 <b style="color:var(--ink)">${esc(formatPointAntLabel(r.antennas, rPtType))} - ${rVerilenM} / ${rCekilenM} m</b> <span style="color:${rTone};font-weight:700">(${rPct}%)</span> · Qalıb: <b>${rLeftM} m</b>
                                     </div>
-                                    <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;font-size:11px;color:var(--ink-2)">
-                                        <span>👷 İcraçı: <b>${esc(r.contractor || t("notAssigned"))}</b></span>
-                                        ${r.contractor ? `
-                                         <span>👥 İşçi: <b>${esc(cInfo.workers)} nəfər</b> · 🚜 Tex.: <b>${esc(cInfo.machinery ?? 0)}</b> · 📞 <b>${esc(cInfo.engineer || "—")}</b></span>
-                                        ` : ""}
-                                    </div>
+                                    <div class="progress" style="height:6px;margin:2px 0"><span style="width:${rPct}%;background:${rTone}"></span></div>
+                                    ${isAdmin() ? `
+                                    <div class="info-exec-row">
+                                        <span class="muted">İcraçı:</span>
+                                        ${executorOptionsHtml(r.contractor, r)}
+                                    </div>` : ""}
+                                    ${renderExecDetailBlockHtml(r, proj)}
                                 </div>
                             `;
                         }).join("")}
@@ -6675,7 +7024,7 @@ document.addEventListener("DOMContentLoaded", init);
                                     </div>
                                     <div class="info-exec-row">
                                         <span class="muted">İcraçı:</span>
-                                        ${executorOptionsHtml(r.contractor)}
+                                        ${executorOptionsHtml(r.contractor, r)}
                                     </div>`}
                                     ${isAdmin() ? `
                                     <div class="info-exec-row">
@@ -6684,11 +7033,9 @@ document.addEventListener("DOMContentLoaded", init);
                                             ${STATUSES.map(st => `<option value="${st}" ${r.status === st ? "selected" : ""}>${t("status" + st)}</option>`).join("")}
                                         </select>
                                     </div>` : ""}
+                                    ${!isLifSeg ? renderExecDetailBlockHtml(r, proj) : ""}
                                     <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;font-size:11px;color:var(--ink-2)">
-                                        ${!isLifSeg && r.contractor ? `
-                                        <span>👷 İşçi: <b>${esc(cInfo.workers)} nəfər</b> · 🚜 Tex.: <b>${esc(cInfo.machinery ?? 0)}</b></span>
-                                        <span>📞 <b>${esc(cInfo.engineer || "—")}</b></span>
-                                        ` : `<span class="muted">${!isLifSeg && isAdmin() ? `<a href="admin.html#contractors" target="_blank" style="color:#38BDF8;text-decoration:none">⚙️ Admin Paneldə İcraçı əlavə et</a>` : ""}</span>`}
+                                        <span class="muted">${!isLifSeg && !r.contractor && isAdmin() ? `<a href="admin.html#contractors" target="_blank" style="color:#38BDF8;text-decoration:none">⚙️ Admin Paneldə İcraçı əlavə et</a>` : ""}</span>
                                         ${isAdmin() ? `<div style="display:flex;gap:4px">
                                             <button class="btn btn-outline" style="height:22px;padding:0 7px;font-size:10.5px" data-edit-seg="${esc(proj.id)}:${esc(r.id)}" title="Xətti redaktə et"><i class="fa-solid fa-pen"></i> Redaktə</button>
                                             <button class="btn btn-outline" style="height:22px;padding:0 7px;font-size:10.5px" data-geom-edit="${esc(proj.id)}:${esc(r.id)}" title="Xəttin qırılma nöqtələrini xəritədə sürüşdür"><i class="fa-solid fa-bezier-curve"></i> Xətti sürüşdür</button>

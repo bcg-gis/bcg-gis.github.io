@@ -64,6 +64,9 @@ const api = (() => {
         if (meta.sum !== undefined) seg.summary = Boolean(meta.sum);
         if (meta.ray) seg.rayon = meta.ray;
         if (meta.pTyp) seg.pointType = meta.pTyp;
+        if (meta.eLead) seg.execLead = meta.eLead;
+        if (meta.eWrk !== undefined) seg.execWorkers = meta.eWrk;
+        if (meta.ePhn) seg.execPhone = meta.ePhn;
         if (meta.fo) seg.fiberCount = meta.fo;
         if (meta.uFo) seg.userSetFiber = true;
         if (meta.col) seg.customColor = meta.col;
@@ -460,6 +463,9 @@ const api = (() => {
                     sum: r.summary,
                     ray: r.rayon,
                     pTyp: r.pointType,
+                    eLead: r.execLead,
+                    eWrk: r.execWorkers,
+                    ePhn: r.execPhone,
                     ant: Number(r.antennas) || 0,
                     pt1: isSinglePt
                 });
