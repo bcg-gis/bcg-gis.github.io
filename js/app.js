@@ -686,23 +686,17 @@ function resolveItemExecDetails(r) {
     }
     const isBcg = isBcgContractor(contractor);
     const cInfo = (!isBcg && contractor) ? findContractorInfo(contractor) : null;
-    const lead = String(r.execLead || leadFromContractor || (!isBcg && cInfo?.engineer ? cInfo.engineer : "") || "").trim();
+    const lead = String(r.execLead || leadFromContractor || "").trim();
     const hasCustomWrk = r.execWorkers !== undefined && r.execWorkers !== null && String(r.execWorkers).trim() !== "";
     const workers = hasCustomWrk
         ? Number(r.execWorkers)
         : (!isBcg && cInfo && cInfo.workers !== undefined ? cInfo.workers : "");
-    const phone = String(r.execPhone || "").trim();
+    const phone = String(r.execPhone || (!isBcg && cInfo?.engineer ? cInfo.engineer : "") || "").trim();
     const machinery = !isBcg && cInfo && cInfo.machinery !== undefined ? cInfo.machinery : "";
 
     let cardSummary = contractor;
-    if (contractor) {
-        const parts = [];
-        if (lead) parts.push(lead);
-        if (workers !== "" && workers !== undefined) parts.push(`${workers} nəfər`);
-        if (phone) parts.push(phone);
-        if (parts.length > 0) {
-            cardSummary = `${contractor} (${parts.join(" · ")})`;
-        }
+    if (contractor && lead) {
+        cardSummary = `${contractor} - ${lead}`;
     }
     return { contractor, isBcg, lead, workers, phone, machinery, cardSummary };
 }
@@ -1300,7 +1294,8 @@ function fieldHtml(field, value) {
         control = `<input ${attrs} type="${field.type || "text"}" ${step} value="${esc(value)}">`;
     }
     const after = field.action ? `<button class="link" type="button" data-field-action="${field.key}">${esc(field.action.label)}</button>` : "";
-    return `<label class="${field.wide ? "wide" : ""}"><span>${esc(field.label)}${field.required ? " *" : ""}</span>${control}${after}</label>`;
+    const bcgAttr = field.bcgOnly ? ` data-bcg-only="1"` : "";
+    return `<label class="${field.wide ? "wide" : ""}"${bcgAttr}><span>${esc(field.label)}${field.required ? " *" : ""}</span>${control}${after}</label>`;
 }
 
 function openEditor(config) {
@@ -1308,6 +1303,17 @@ function openEditor(config) {
     $("editTitle").textContent = config.title;
     $("editError").textContent = "";
     $("editFields").innerHTML = config.fields.map(f => fieldHtml(f, config.values[f.key] ?? "")).join("");
+    const contractorSel = $("editFields").querySelector('select[name="contractor"]');
+    const syncBcgOnlyFields = () => {
+        const showBcg = contractorSel && isBcgContractor(contractorSel.value);
+        $("editFields").querySelectorAll("[data-bcg-only]").forEach(el => {
+            el.style.display = showBcg ? "" : "none";
+        });
+    };
+    if (contractorSel) {
+        contractorSel.addEventListener("change", syncBcgOnlyFields);
+        syncBcgOnlyFields();
+    }
     $("editFields").querySelectorAll("[data-color-picker]").forEach(picker => {
         const key = picker.dataset.colorPicker;
         const textInp = $("editFields").querySelector(`input[name="${key}"]`);
@@ -1576,9 +1582,9 @@ function editSegment(project, item) {
                 { key: "done_km", label: isPoints ? "2. Çəkilən məsafə (km və ya m)" : `2. Faktiki iş görülən (km)`, type: "number" },
                 ...(isPoints ? [{ key: "antennas", label: "Antena sayı (ədəd)", type: "number", wide: true }] : []),
                 { key: "contractor", label: "İş icraçısı", type: "select", wide: true, options: [["", t("notAssigned")], ...contractorNames.map(n => [n, n === "BCG" ? "🏢 BCG" : `👷 ${n}`])] },
-                { key: "exec_lead", label: "👨‍🔧 Kim işləyib (Mühəndis / Briqadir)", placeholder: "Məs: Əli Məmmədov", wide: true },
-                { key: "exec_workers", label: "👥 İşçi sayı (neçə nəfər)", type: "number" },
-                { key: "exec_phone", label: "📞 Əlaqə nömrəsi", placeholder: "Məs: 050-000-00-00" }
+                { key: "exec_lead", label: "👨‍🔧 Kim işləyib (Mühəndis / Briqadir)", placeholder: "Məs: Əli Məmmədov", wide: true, bcgOnly: true },
+                { key: "exec_workers", label: "👥 İşçi sayı (neçə nəfər)", type: "number", bcgOnly: true },
+                { key: "exec_phone", label: "📞 Əlaqə nömrəsi", placeholder: "Məs: 050-000-00-00", bcgOnly: true }
             ] : []),
             { key: "coords", label: t("coordsField"), type: "textarea", wide: true, required: true, placeholder: "41.4205, 46.9242", action: { label: t("useLastDrawing"), run: useLastDrawing } }
         ],
@@ -2582,29 +2588,29 @@ function ensureSummaryCardImage({ name, color, shapeSymbol, folderName, antennas
     const folder = folderName || "";
     const sym = shapeSymbol || "";
     const antLabel = formatPointAntLabel(antennas, pointType);
-    const key = `sumcard_v7:${light ? "l" : "d"}:${color}:${sym}:${name}:${folder}:${antLabel}:${doneM}:${totalM}:${pct}:${contractor}`;
+    const key = `sumcard_v8:${light ? "l" : "d"}:${color}:${sym}:${name}:${folder}:${antLabel}:${doneM}:${totalM}:${pct}:${contractor}`;
     if (map.hasImage(key)) return key;
 
     const ratio = 2;
-    const padX = 9;
-    const padY = 5;
-    const stripe = 4;
-    const fFolder = `700 10.5px ${LABEL_FONT}`;
-    const fTitle = `800 13px ${LABEL_FONT}`;
-    const fBody = `600 11.5px ${LABEL_FONT}`;
-    const fSmall = `600 10px ${LABEL_FONT}`;
+    const padX = 7;
+    const padY = 4;
+    const stripe = 3.5;
+    const fFolder = `700 9.5px ${LABEL_FONT}`;
+    const fTitle = `800 11.5px ${LABEL_FONT}`;
+    const fBody = `600 10.5px ${LABEL_FONT}`;
+    const fSmall = `600 9px ${LABEL_FONT}`;
     const bodyText = `${antLabel} - ${totalM} / ${doneM} m`;
     const folderText = folder ? `${sym ? sym + " " : ""}${String(folder).trim()}` : "";
-    const contractorText = contractor ? `İcraçı: ${contractor}` : "";
+    const contractorText = contractor ? `👷 ${contractor}` : "";
 
     const m = document.createElement("canvas").getContext("2d");
     m.font = fTitle; const titleW = m.measureText(name).width;
     m.font = fBody; const bodyW = m.measureText(bodyText).width;
     m.font = fFolder; const folderW = folderText ? m.measureText(folderText).width : 0;
     m.font = fSmall; const pctW = m.measureText("100%").width; const cW = contractorText ? m.measureText(contractorText).width : 0;
-    const innerW = Math.max(titleW, bodyW, folderW, cW, 120);
+    const innerW = Math.max(titleW, bodyW, folderW, cW, 92);
     const W = Math.ceil(stripe + padX * 2 + innerW);
-    const rows = (folderText ? [13] : []).concat([17, 16, 12]).concat(contractorText ? [14] : []);
+    const rows = (folderText ? [11] : []).concat([14, 13, 10]).concat(contractorText ? [11] : []);
     const H = Math.ceil(padY * 2 + rows.reduce((a, b) => a + b, 0));
 
     const canvas = document.createElement("canvas");
@@ -2613,7 +2619,7 @@ function ensureSummaryCardImage({ name, color, shapeSymbol, folderName, antennas
     const ctx = canvas.getContext("2d");
     ctx.scale(ratio, ratio);
 
-    const r = 6;
+    const r = 5;
     ctx.beginPath();
     ctx.moveTo(r, 0); ctx.lineTo(W - r, 0); ctx.quadraticCurveTo(W, 0, W, r);
     ctx.lineTo(W, H - r); ctx.quadraticCurveTo(W, H, W - r, H);
@@ -2657,8 +2663,8 @@ function ensureSummaryCardImage({ name, color, shapeSymbol, folderName, antennas
     y += rows[rIdx];
     rIdx++;
 
-    const barW = innerW - pctW - 6;
-    const barH = 5;
+    const barW = innerW - pctW - 5;
+    const barH = 4;
     const barY = y + (rows[rIdx] - barH) / 2;
     ctx.fillStyle = light ? "rgba(15,23,42,0.12)" : "rgba(255,255,255,0.18)";
     ctx.fillRect(x0, barY, barW, barH);
@@ -2702,16 +2708,16 @@ function ensureMergedSummaryCardImage(rayonName, entries) {
     }
     const light = isLightBaseMap();
     const sig = entries.map(e => `${e.shapeSymbol}:${e.projTitle || e.folderName}:${e.stColor || e.color}:${e.antennas}:${e.pointType || ""}:${e.planM ?? e.totalM}:${e.doneM}:${e.pct}:${e.contractor}`).join("|");
-    const key = `summerged_v3:${light ? "l" : "d"}:${rayonName}:${sig}`;
+    const key = `summerged_v4:${light ? "l" : "d"}:${rayonName}:${sig}`;
     if (map.hasImage(key)) return key;
 
     const ratio = 2;
-    const padX = 10;
-    const padY = 6;
-    const fHead = `800 13px ${LABEL_FONT}`;
-    const fProj = `700 11px ${LABEL_FONT}`;
-    const fBody = `600 11px ${LABEL_FONT}`;
-    const fSmall = `600 9.5px ${LABEL_FONT}`;
+    const padX = 8;
+    const padY = 5;
+    const fHead = `800 11.5px ${LABEL_FONT}`;
+    const fProj = `700 9.5px ${LABEL_FONT}`;
+    const fBody = `600 10px ${LABEL_FONT}`;
+    const fSmall = `600 9px ${LABEL_FONT}`;
 
     const headText = rayonName;
     const m = document.createElement("canvas").getContext("2d");
@@ -2727,18 +2733,18 @@ function ensureMergedSummaryCardImage(rayonName, entries) {
         const antLabel = formatPointAntLabel(e.antennas, e.pointType);
         const projLine = `${e.shapeSymbol || "●"} ${titleStr}`;
         const bodyLine = `${antLabel} - ${planM} / ${e.doneM} m`;
-        const cLine = e.contractor ? `İcraçı: ${e.contractor}` : "";
+        const cLine = e.contractor ? `👷 ${e.contractor}` : "";
         m.font = fProj; const pw = m.measureText(projLine).width;
         m.font = fBody; const bw = m.measureText(bodyLine).width;
         m.font = fSmall; const cw = cLine ? m.measureText(cLine).width : 0;
-        maxW = Math.max(maxW, pw + 10, bw + 10, cw + 10, 135);
-        const blockH = 15 + 15 + 11 + (cLine ? 13 : 0) + 6;
+        maxW = Math.max(maxW, pw + 8, bw + 8, cw + 8, 98);
+        const blockH = 12 + 12 + 9 + (cLine ? 11 : 0) + 4;
         return { ...e, stColor, projLine, bodyLine, cLine, blockH };
     });
 
     const W = Math.ceil(padX * 2 + maxW);
-    const headH = 20;
-    const totalBlocksH = prepared.reduce((s, b) => s + b.blockH, 0) + (prepared.length - 1) * 5;
+    const headH = 16;
+    const totalBlocksH = prepared.reduce((s, b) => s + b.blockH, 0) + (prepared.length - 1) * 4;
     const H = Math.ceil(padY * 2 + headH + totalBlocksH);
 
     const canvas = document.createElement("canvas");
@@ -2747,7 +2753,7 @@ function ensureMergedSummaryCardImage(rayonName, entries) {
     const ctx = canvas.getContext("2d");
     ctx.scale(ratio, ratio);
 
-    const r = 7;
+    const r = 6;
     ctx.beginPath();
     ctx.moveTo(r, 0); ctx.lineTo(W - r, 0); ctx.quadraticCurveTo(W, 0, W, r);
     ctx.lineTo(W, H - r); ctx.quadraticCurveTo(W, H, W - r, H);
@@ -2775,28 +2781,28 @@ function ensureMergedSummaryCardImage(rayonName, entries) {
         if (idx > 0) {
             ctx.fillStyle = light ? "rgba(15,23,42,0.10)" : "rgba(255,255,255,0.12)";
             ctx.fillRect(padX, y + 1, W - padX * 2, 1);
-            y += 5;
+            y += 4;
         }
         // Sol rəngli status zolağı (hər layihənin öz status rəngi)
         ctx.fillStyle = b.stColor;
-        ctx.fillRect(padX, y + 2, 3.5, b.blockH - 5);
+        ctx.fillRect(padX, y + 1.5, 3, b.blockH - 4);
 
-        const bx = padX + 8;
-        const innerBW = maxW - 8;
+        const bx = padX + 7;
+        const innerBW = maxW - 7;
 
         ctx.font = fProj;
         ctx.fillStyle = b.stColor;
-        ctx.fillText(b.projLine, bx, y + 7);
-        y += 14;
+        ctx.fillText(b.projLine, bx, y + 6);
+        y += 12;
 
         ctx.font = fBody;
         ctx.fillStyle = mainColor;
-        ctx.fillText(b.bodyLine, bx, y + 7.5);
-        y += 15;
+        ctx.fillText(b.bodyLine, bx, y + 6);
+        y += 12;
 
-        const barW = innerBW - pctW - 6;
-        const barH = 4.5;
-        const barY = y + 3;
+        const barW = innerBW - pctW - 5;
+        const barH = 3.8;
+        const barY = y + 2.5;
         ctx.fillStyle = light ? "rgba(15,23,42,0.12)" : "rgba(255,255,255,0.18)";
         ctx.fillRect(bx, barY, barW, barH);
         ctx.fillStyle = b.stColor;
@@ -2805,17 +2811,17 @@ function ensureMergedSummaryCardImage(rayonName, entries) {
         ctx.font = fSmall;
         ctx.fillStyle = mainColor;
         ctx.textAlign = "right";
-        ctx.fillText(`${b.pct}%`, bx + innerBW, y + 5.5);
+        ctx.fillText(`${b.pct}%`, bx + innerBW, y + 4.5);
         ctx.textAlign = "left";
-        y += 11;
+        y += 9;
 
         if (b.cLine) {
             ctx.font = fSmall;
             ctx.fillStyle = subColor;
-            ctx.fillText(b.cLine, bx, y + 6.5);
-            y += 13;
+            ctx.fillText(b.cLine, bx, y + 5.5);
+            y += 11;
         }
-        y += 6;
+        y += 4;
     });
 
     map.addImage(key, ctx.getImageData(0, 0, canvas.width, canvas.height), { pixelRatio: ratio });
@@ -4160,7 +4166,7 @@ function renderProjects() {
                                         </select>
                                     </label>
                                 </div>
-                                <div style="display:grid;grid-template-columns:1.25fr 0.65fr 1fr;gap:5px;align-items:end;padding:5px 6px;border-radius:7px;background:rgba(14,165,233,0.08);border:1px dashed rgba(56,189,248,0.3)">
+                                <div data-q-bcg-box style="display:${isBcgContractor(r.contractor) ? "grid" : "none"};grid-template-columns:1.25fr 0.65fr 1fr;gap:5px;align-items:end;padding:5px 6px;border-radius:7px;background:rgba(14,165,233,0.08);border:1px dashed rgba(56,189,248,0.3)">
                                     <label style="display:flex;flex-direction:column;gap:2px;font-size:10px;color:#38BDF8">
                                         <span>👷 Kim işləyib (Mühəndis)</span>
                                         <input class="input" type="text" list="qLeadList_${esc(r.id)}" data-q-lead value="${esc(r.execLead || "")}" placeholder="Ad Soyad..." style="height:24px;padding:0 5px;font-size:11px">
@@ -5460,6 +5466,26 @@ function bindEvents() {
         renderAll();
     });
 
+    $("projectList").addEventListener("change", e => {
+        const qExec = e.target.closest("[data-q-exec]");
+        if (qExec) {
+            const box = qExec.closest(".seg-quick-box")?.querySelector("[data-q-bcg-box]");
+            if (box) box.style.display = isBcgContractor(qExec.value) ? "grid" : "none";
+            return;
+        }
+        const qLead = e.target.closest("[data-q-lead]");
+        if (qLead) {
+            const matched = getSavedBcgLeads().find(l => l.name.toLowerCase() === qLead.value.trim().toLowerCase());
+            if (matched) {
+                const box = qLead.closest(".seg-quick-box");
+                const wrkInp = box?.querySelector("[data-q-wrk]");
+                const phnInp = box?.querySelector("[data-q-phone]");
+                if (wrkInp && !wrkInp.value && matched.workers) wrkInp.value = matched.workers;
+                if (phnInp && !phnInp.value && matched.phone) phnInp.value = matched.phone;
+            }
+        }
+    });
+
     $("tableBody").addEventListener("click", e => {
         const row = e.target.closest("tr");
         if (!row) return;
@@ -5552,45 +5578,43 @@ document.addEventListener("DOMContentLoaded", init);
         }).join("")}</select>`;
     }
 
-    function renderExecDetailBlockHtml(r, proj) {
+    function renderExecDetailBlockHtml(r, proj, allowInlineEdit = true) {
         const execInfo = resolveItemExecDetails(r);
         const savedLeads = getSavedBcgLeads();
         const isBcg = isBcgContractor(r.contractor);
         const showSummary = Boolean(r.contractor || execInfo.lead || execInfo.workers || execInfo.phone);
 
         const summaryHtml = showSummary ? `
-            <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;font-size:11px;color:var(--ink-2)">
-                <span>👷 İcraçı: <b>${esc(r.contractor || t("notAssigned"))}</b>${execInfo.lead ? ` · Mühəndis/Briqadir: <b style="color:#38BDF8">${esc(execInfo.lead)}</b>` : ""}</span>
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;font-size:10.5px;color:var(--ink-2)">
+                <span>👷 <b>${esc(r.contractor || t("notAssigned"))}</b>${execInfo.lead ? ` · <b style="color:#38BDF8">${esc(execInfo.lead)}</b>` : ""}</span>
                 <span>
-                    ${execInfo.workers ? `👥 İşçi: <b>${esc(execInfo.workers)} nəfər</b>` : `<span class="muted">👥 İşçi: —</span>`}
-                    ${!isBcg && execInfo.machinery ? ` · 🚜 Tex.: <b>${esc(execInfo.machinery)}</b>` : ""}
-                    · 📞 <b>${esc(execInfo.phone || "—")}</b>
+                    ${execInfo.workers ? `👥 <b>${esc(execInfo.workers)} nəf.</b>` : ""}
+                    ${!isBcg && execInfo.machinery ? ` · 🚜 <b>${esc(execInfo.machinery)}</b>` : ""}
+                    ${execInfo.phone ? `${execInfo.workers || (!isBcg && execInfo.machinery) ? " · " : ""}📞 <b>${esc(execInfo.phone)}</b>` : ""}
                 </span>
             </div>
-        ` : `<div style="font-size:11px;color:var(--ink-3)">👷 İcraçı: <b>${esc(t("notAssigned"))}</b></div>`;
+        ` : `<div style="font-size:10.5px;color:var(--ink-3)">👷 İcraçı: <b>${esc(t("notAssigned"))}</b></div>`;
 
-        if (!isAdmin() || !r.contractor) {
+        if (!isAdmin() || !isBcg || !allowInlineEdit) {
             return summaryHtml;
         }
 
         return `
             ${summaryHtml}
-            <div class="bcg-inline-exec-box" style="margin-top:4px;padding:6px 8px;border-radius:8px;background:rgba(14,165,233,0.08);border:1px dashed rgba(56,189,248,0.35);display:flex;flex-direction:column;gap:5px">
-                <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap">
-                    <span style="font-size:10.5px;font-weight:700;color:#38BDF8">
-                        ${isBcg ? "🏢 BCG — Kim işləyib (Alt seçim / Əlavə et):" : `👷 ${esc(r.contractor)} — Briqada məlumatı:`}
-                    </span>
+            <div class="bcg-inline-exec-box" style="margin-top:3px;padding:5px 7px;border-radius:7px;background:rgba(14,165,233,0.08);border:1px dashed rgba(56,189,248,0.35);display:flex;flex-direction:column;gap:4px">
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:5px;flex-wrap:wrap">
+                    <span style="font-size:10px;font-weight:700;color:#38BDF8">🏢 BCG — Kim işləyib:</span>
                     ${savedLeads.length > 0 ? `
-                    <select class="input" data-exec-lead-pick style="height:22px;padding:0 6px;font-size:10.5px;max-width:190px">
+                    <select class="input" data-exec-lead-pick style="height:21px;padding:0 5px;font-size:10px;max-width:175px">
                         <option value="">— Siyahıdan mühəndis seç —</option>
                         ${savedLeads.map(l => `<option value="${esc(l.name)}" data-wrk="${esc(l.workers || "")}" data-phn="${esc(l.phone || "")}" ${r.execLead === l.name ? "selected" : ""}>👷 ${esc(l.name)}${l.workers ? ` (${esc(l.workers)} nəf.)` : ""}</option>`).join("")}
                     </select>` : ""}
                 </div>
-                <div style="display:grid;grid-template-columns:1.25fr 0.65fr 1fr auto;gap:5px;align-items:center">
-                    <input class="input" type="text" data-exec-lead-inp value="${esc(r.execLead || "")}" placeholder="Kim işləyib (Ad Soyad)" style="height:24px;padding:0 6px;font-size:11px">
-                    <input class="input" type="number" min="0" step="1" data-exec-wrk-inp value="${esc(r.execWorkers || "")}" placeholder="Neçə nəfər" style="height:24px;padding:0 6px;font-size:11px">
-                    <input class="input" type="text" data-exec-phn-inp value="${esc(r.execPhone || "")}" placeholder="Əlaqə nömrəsi" style="height:24px;padding:0 6px;font-size:11px">
-                    <button type="button" class="btn btn-primary" data-save-exec-detail="${esc(proj.id)}:${esc(r.id)}" style="height:24px;padding:0 8px;font-size:10.5px;white-space:nowrap" title="Mühəndis / İşçi sayı / Əlaqə nömrəsini yadda saxla">
+                <div style="display:grid;grid-template-columns:1.2fr 0.6fr 0.95fr auto;gap:4px;align-items:center">
+                    <input class="input" type="text" data-exec-lead-inp value="${esc(r.execLead || "")}" placeholder="Kim işləyib" style="height:22px;padding:0 5px;font-size:10.5px">
+                    <input class="input" type="number" min="0" step="1" data-exec-wrk-inp value="${esc(r.execWorkers || "")}" placeholder="Nəfər" style="height:22px;padding:0 5px;font-size:10.5px">
+                    <input class="input" type="text" data-exec-phn-inp value="${esc(r.execPhone || "")}" placeholder="Əlaqə nömrəsi" style="height:22px;padding:0 5px;font-size:10.5px">
+                    <button type="button" class="btn btn-primary" data-save-exec-detail="${esc(proj.id)}:${esc(r.id)}" style="height:22px;padding:0 7px;font-size:10px;white-space:nowrap" title="Mühəndis / İşçi sayı / Əlaqə nömrəsini yadda saxla">
                         <i class="fa-solid fa-check"></i> Saxla
                     </button>
                 </div>
@@ -6948,16 +6972,16 @@ document.addEventListener("DOMContentLoaded", init);
                                         </strong>
                                         <span class="pill" style="--tone:${rTone}">${t(`status${r.status}`)}</span>
                                     </div>
-                                    <div style="color:var(--ink-2);font-size:11.5px">
+                                    <div style="color:var(--ink-2);font-size:11px">
                                         📡 <b style="color:var(--ink)">${esc(formatPointAntLabel(r.antennas, rPtType))} - ${rVerilenM} / ${rCekilenM} m</b> <span style="color:${rTone};font-weight:700">(${rPct}%)</span> · Qalıb: <b>${rLeftM} m</b>
                                     </div>
-                                    <div class="progress" style="height:6px;margin:2px 0"><span style="width:${rPct}%;background:${rTone}"></span></div>
-                                    ${isAdmin() ? `
+                                    <div class="progress" style="height:4px;margin:1px 0"><span style="width:${rPct}%;background:${rTone}"></span></div>
+                                    ${isAdmin() && entry ? `
                                     <div class="info-exec-row">
                                         <span class="muted">İcraçı:</span>
                                         ${executorOptionsHtml(r.contractor, r)}
                                     </div>` : ""}
-                                    ${renderExecDetailBlockHtml(r, proj)}
+                                    ${renderExecDetailBlockHtml(r, proj, Boolean(entry))}
                                 </div>
                             `;
                         }).join("")}
