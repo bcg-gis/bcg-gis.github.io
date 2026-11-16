@@ -2157,6 +2157,66 @@ function registerPointShapeImages() {
     });
 
     registerPulsingBeacon();
+    registerFlowArrowImage();
+    startLineFlowAnimation();
+}
+
+function registerFlowArrowImage() {
+    if (!map || map.hasImage("arrow-flow-dir")) return;
+    const w = 24, h = 24;
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+
+    ctx.strokeStyle = "#FFFFFF";
+    ctx.lineWidth = 3.6;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.shadowColor = "rgba(245, 158, 11, 0.95)";
+    ctx.shadowBlur = 4;
+
+    ctx.beginPath();
+    ctx.moveTo(7, 4);
+    ctx.lineTo(17, 12);
+    ctx.lineTo(7, 20);
+    ctx.stroke();
+
+    map.addImage("arrow-flow-dir", ctx.getImageData(0, 0, w, h), { pixelRatio: 2 });
+}
+
+let lineFlowAnimId = null;
+let lineFlowOffset = 0;
+
+function startLineFlowAnimation() {
+    if (lineFlowAnimId) return;
+
+    let lastTime = 0;
+    const period = 7.0;
+
+    function loop(time) {
+        lineFlowAnimId = requestAnimationFrame(loop);
+        if (time - lastTime < 38) return; // ~26 FPS - hamar və yüngül
+        lastTime = time;
+
+        if (!map || !map.getLayer("routes-line-icrada-flow")) return;
+
+        // A-dan B-yə irəli istiqamətdə sürüşmə (offset)
+        lineFlowOffset = (lineFlowOffset + 0.35) % period;
+        const x = lineFlowOffset;
+        let dash;
+        if (x < 4.0) {
+            dash = [0.01, Math.max(0.01, x), 3.0, Math.max(0.01, 4.0 - x)];
+        } else {
+            const d = x - 4.0;
+            dash = [Math.max(0.01, d), 4.0, Math.max(0.01, 3.0 - d), 0.01];
+        }
+
+        try {
+            map.setPaintProperty("routes-line-icrada-flow", "line-dasharray", dash);
+        } catch {}
+    }
+    lineFlowAnimId = requestAnimationFrame(loop);
 }
 
 function registerPulsingBeacon() {
@@ -2285,6 +2345,42 @@ function mapStyle() {
                     "line-color": ["get", "color"],
                     "line-width": ["interpolate", ["linear"], ["zoom"], 5, ["case", ["get", "sel"], 2.6, 1.5], 11, ["case", ["get", "sel"], 3.0, 1.8], 15, ["case", ["get", "sel"], 3.6, 2.2]],
                     "line-opacity": ["case", ["get", "dim"], 0.25, 1]
+                } },
+            /* İcrada olan kabel xətləri: A-dan B-yə çəkilən hissə üçün bütöv xətt, axan işıq və istiqamət oxları */
+            { id: "routes-line-icrada-done", type: "line", source: "routes", filter: ["==", ["get", "isIcradaDoneLine"], true], layout: { "line-cap": "round", "line-join": "round" },
+                paint: {
+                    "line-color": "#F59E0B",
+                    "line-width": ["interpolate", ["linear"], ["zoom"], 5, ["case", ["get", "sel"], 3.8, 2.6], 11, ["case", ["get", "sel"], 4.5, 3.2], 15, ["case", ["get", "sel"], 5.4, 4.0]],
+                    "line-opacity": ["case", ["get", "dim"], 0.28, 0.95]
+                } },
+            { id: "routes-line-icrada-flow", type: "line", source: "routes", filter: ["==", ["get", "isIcradaFlowLine"], true], layout: { "line-cap": "round", "line-join": "round" },
+                paint: {
+                    "line-color": "#FFFFFF",
+                    "line-width": ["interpolate", ["linear"], ["zoom"], 5, ["case", ["get", "sel"], 2.2, 1.4], 11, ["case", ["get", "sel"], 2.8, 1.8], 15, ["case", ["get", "sel"], 3.4, 2.4]],
+                    "line-dasharray": [0.01, 0.01, 3.0, 4.0],
+                    "line-opacity": ["case", ["get", "dim"], 0.35, 1]
+                } },
+            { id: "routes-line-icrada-arrows", type: "symbol", source: "routes", minzoom: 6, filter: ["==", ["get", "isIcradaFlowLine"], true],
+                layout: {
+                    "symbol-placement": "line",
+                    "symbol-spacing": ["interpolate", ["linear"], ["zoom"], 6, 160, 11, 110, 15, 80],
+                    "icon-image": "arrow-flow-dir",
+                    "icon-size": ["interpolate", ["linear"], ["zoom"], 6, 0.55, 11, 0.70, 15, 0.85],
+                    "icon-allow-overlap": true,
+                    "icon-ignore-placement": true
+                },
+                paint: {
+                    "icon-opacity": ["case", ["get", "dim"], 0.25, 0.95]
+                } },
+            { id: "routes-line-icrada-spark", type: "symbol", source: "routes", minzoom: 4, filter: ["==", ["get", "isIcradaFrontier"], true],
+                layout: {
+                    "icon-image": "pulsing-beacon-icrada",
+                    "icon-size": ["interpolate", ["linear"], ["zoom"], 4, 0.45, 9, 0.65, 14, 0.90],
+                    "icon-allow-overlap": true,
+                    "icon-ignore-placement": true
+                },
+                paint: {
+                    "icon-opacity": ["case", ["get", "dim"], 0.25, 1]
                 } },
             { id: "routes-hit", type: "line", source: "routes", filter: ["all", ["==", ["geometry-type"], "LineString"], ["!", ["has", "isPolygon"]]], paint: { "line-color": "#000", "line-width": 14, "line-opacity": 0 } },
             /* Digər (RM və köməkçi xətlər): adları xətt boyu çıxır, sabit ölçü, toqquşma yoxdur */
@@ -2522,7 +2618,7 @@ function initMap() {
     map.on("rotate", () => {
         $("northIcon").style.transform = `rotate(${-45 - map.getBearing()}deg)`;
     });
-    ["routes-poly-fill", "routes-poly-line", "routes-other", "routes-hit", "routes-other-line", "routes-other-points", "routes-fo-points", "routes-ends", "routes-ends-label", "routes-point-pulse", "routes-point-halo", "routes-point-shape", "routes-point-pulse-split", "routes-point-halo-split", "routes-point-shape-split", "routes-point-name", "routes-point-label", "routes-point-label-near", "routes-summary-name", "routes-summary-card-merged", "routes-summary-card"].forEach(layer => {
+    ["routes-poly-fill", "routes-poly-line", "routes-other", "routes-hit", "routes-line-icrada-done", "routes-line-icrada-flow", "routes-line-icrada-arrows", "routes-line-icrada-spark", "routes-other-line", "routes-other-points", "routes-fo-points", "routes-ends", "routes-ends-label", "routes-point-pulse", "routes-point-halo", "routes-point-shape", "routes-point-pulse-split", "routes-point-halo-split", "routes-point-shape-split", "routes-point-name", "routes-point-label", "routes-point-label-near", "routes-summary-name", "routes-summary-card-merged", "routes-summary-card"].forEach(layer => {
         map.on("mousemove", layer, e => {
             if (tools.isActive()) return;
             window.routeHover = true;
@@ -3202,6 +3298,62 @@ function isSummaryItem(r) {
     return Object.keys(p).some(k => /^(kabel_?verilen|kabel_?cekilen|antena|verilen|cekilen|plan|faktiki|m$)/i.test(k.replace(/[\s_\-\.]+/g, "_")));
 }
 
+function sliceLineByDistance(lineCoords, doneKm, totalKm) {
+    if (!Array.isArray(lineCoords) || lineCoords.length < 2) return [];
+    const dKm = Number(doneKm) || 0;
+    const tKm = Number(totalKm) || 0;
+    if (dKm <= 0) return [];
+
+    let totalMeters = 0;
+    const segs = [];
+    for (let i = 0; i < lineCoords.length - 1; i++) {
+        const p1 = lineCoords[i];
+        const p2 = lineCoords[i + 1];
+        let segDist = 0;
+        try {
+            segDist = new maplibregl.LngLat(p1[0], p1[1]).distanceTo(new maplibregl.LngLat(p2[0], p2[1]));
+        } catch {
+            const dx = (p2[0] - p1[0]) * Math.cos(((p1[1] + p2[1]) * 0.5 * Math.PI) / 180) * 111320;
+            const dy = (p2[1] - p1[1]) * 111320;
+            segDist = Math.hypot(dx, dy);
+        }
+        if (segDist > 0) {
+            segs.push({ p1, p2, len: segDist, start: totalMeters });
+            totalMeters += segDist;
+        }
+    }
+    if (totalMeters <= 0 || segs.length === 0) return lineCoords;
+
+    let targetMeters = totalMeters;
+    if (tKm > 0) {
+        const fraction = Math.min(1.0, Math.max(0.005, dKm / tKm));
+        targetMeters = totalMeters * fraction;
+    } else {
+        targetMeters = Math.min(totalMeters, dKm * 1000);
+    }
+
+    if (targetMeters >= totalMeters - 1) {
+        return lineCoords;
+    }
+
+    const sliced = [lineCoords[0]];
+    for (let i = 0; i < segs.length; i++) {
+        const s = segs[i];
+        if (targetMeters >= s.start + s.len - 0.5) {
+            sliced.push(s.p2);
+        } else if (targetMeters > s.start) {
+            const ratio = (targetMeters - s.start) / s.len;
+            const cutLng = s.p1[0] + (s.p2[0] - s.p1[0]) * ratio;
+            const cutLat = s.p1[1] + (s.p2[1] - s.p1[1]) * ratio;
+            sliced.push([cutLng, cutLat]);
+            break;
+        } else {
+            break;
+        }
+    }
+    return sliced.length >= 2 ? sliced : [];
+}
+
 function drawRoutes() {
     if (!map) return;
     const source = map.getSource("routes");
@@ -3211,6 +3363,8 @@ function drawRoutes() {
         return;
     }
     registerPointShapeImages();
+    registerFlowArrowImage();
+    startLineFlowAnimation();
     const selected = selectedEntry();
     const activeProjId = selected ? selected.project.id : window.__activeProjectId || null;
     const features = [];
@@ -3562,6 +3716,63 @@ function drawRoutes() {
                 }
             });
 
+            // İcrada olan kabel xətləri: A-dan B-yə doğru yalnız çəkilən kabel məsafəsinə (doneKm) qədər hərəkət edən işıq axını
+            if (r.status === "icrada" && !isLifLine) {
+                const doneGeom = sliceLineByDistance(line, r.doneKm, r.totalKm);
+                if (doneGeom.length >= 2) {
+                    const doneKmVal = formatKm(r.doneKm);
+                    const totalKmVal = formatKm(r.totalKm);
+                    const flowTip = `<b>${esc(lineDisplayName)} · İcrada olan xətt</b><small><span style="color:#F59E0B">⚡ A ➔ B istiqamətində çəkilən kabel:</span> <b>${doneKmVal} / ${totalKmVal} km (${percent(r.doneKm, r.totalKm)}%)</b>${routePart}</small>`;
+
+                    // 1. Çəkilən kabelin bütöv parlaq narıncı bazası
+                    features.push({
+                        type: "Feature",
+                        geometry: { type: "LineString", coordinates: doneGeom },
+                        properties: {
+                            isIcradaDoneLine: true,
+                            color: "#F59E0B",
+                            dim,
+                            sel: Boolean(selected?.item === r),
+                            projectId: project.id,
+                            itemId: r.id,
+                            tip: flowTip
+                        }
+                    });
+
+                    // 2. A-dan B-yə doğru hərəkət edən axan işıq dalğası və istiqamət oxları
+                    features.push({
+                        type: "Feature",
+                        geometry: { type: "LineString", coordinates: doneGeom },
+                        properties: {
+                            isIcradaFlowLine: true,
+                            color: "#FEF08A",
+                            dim,
+                            sel: Boolean(selected?.item === r),
+                            projectId: project.id,
+                            itemId: r.id,
+                            tip: flowTip
+                        }
+                    });
+
+                    // 3. Əgər kabel hələ tam bitməyibsə (doneKm < totalKm), çəkilən son nöqtədə (iş cəbhəsində) yanıb-sönən mayak
+                    if (Number(r.doneKm) < Number(r.totalKm) && doneGeom.length >= 2) {
+                        const frontierCoord = doneGeom[doneGeom.length - 1];
+                        features.push({
+                            type: "Feature",
+                            geometry: { type: "Point", coordinates: frontierCoord },
+                            properties: {
+                                isIcradaFrontier: true,
+                                color: "#F59E0B",
+                                dim,
+                                projectId: project.id,
+                                itemId: r.id,
+                                tip: `<b>⚡ ${esc(lineDisplayName)}</b><small>İşin hazırda çatdığı nöqtə: <b>${doneKmVal} km</b> (A-dan B-yə)</small>`
+                            }
+                        });
+                    }
+                }
+            }
+
             // Kabel üzərində FO lif sayı (yalnız faylda/obyektdə lif sayı varsa göstərilir — şərti rəqəm atılmır)
             if (foImg) {
                 const itemSegs = [];
@@ -3851,7 +4062,7 @@ function onMapClick(e) {
         setDrawer(false);
     }
     const box = [[e.point.x - 5, e.point.y - 5], [e.point.x + 5, e.point.y + 5]];
-    const hit = map.queryRenderedFeatures(box, { layers: ["routes-summary-card", "routes-summary-card-merged", "routes-summary-name", "routes-point-halo-split", "routes-point-shape-split", "routes-point-halo", "routes-point-shape", "routes-point-label", "routes-point-label-near", "routes-point-name", "routes-ends", "routes-ends-label", "routes-other-points", "routes-other-line", "routes-fo-points", "routes-hit", "routes-other", "routes-poly-line", "routes-poly-fill"] })[0];
+    const hit = map.queryRenderedFeatures(box, { layers: ["routes-summary-card", "routes-summary-card-merged", "routes-summary-name", "routes-point-halo-split", "routes-point-shape-split", "routes-point-halo", "routes-point-shape", "routes-point-label", "routes-point-label-near", "routes-point-name", "routes-ends", "routes-ends-label", "routes-other-points", "routes-other-line", "routes-fo-points", "routes-line-icrada-spark", "routes-line-icrada-flow", "routes-line-icrada-done", "routes-hit", "routes-other", "routes-poly-line", "routes-poly-fill"] })[0];
     if (!hit) return;
     if (hit.properties?.isMultiRayon && map.getZoom() < 10.2) {
         const cLng = Number(hit.properties.centerLng) || e.lngLat.lng;
