@@ -7221,28 +7221,76 @@ document.addEventListener("DOMContentLoaded", init);
             toast(state.focusMode ? "💡 Fokus işıqlandırma aktivdir" : "💡 Fokus işıqlandırma söndürüldü");
         });
 
+        function placeMyLocationOnMap(lat, lng, subTitle = "", zoomLevel = 15) {
+            if (!window.map) return;
+            myLocationMarker?.remove();
+            const el = document.createElement("div");
+            el.className = "my-loc-marker";
+            el.style.cssText = "width:20px;height:20px;border-radius:50%;background:#0EA5E9;border:3px solid #FFFFFF;box-shadow:0 0 0 6px rgba(14,165,233,0.32),0 2px 8px rgba(0,0,0,0.55);cursor:pointer";
+            myLocationMarker = new maplibregl.Marker({ element: el })
+                .setLngLat([lng, lat])
+                .setPopup(new maplibregl.Popup({ offset: 14, closeButton: false }).setHTML(
+                    `<div style="padding:2px 4px;line-height:1.35"><b>🧭 Cari Məkanım</b>${subTitle ? `<br><small style="color:var(--ink-2)">${esc(subTitle)}</small>` : ""}<br><span class="mono" style="font-size:11px">${lat.toFixed(5)}, ${lng.toFixed(5)}</span></div>`
+                ))
+                .addTo(map);
+            map.flyTo({ center: [lng, lat], zoom: zoomLevel });
+            myLocationMarker.togglePopup();
+        }
+
+        async function fallbackIpLocation() {
+            const urls = [
+                "https://ipwho.is/",
+                "https://get.geojs.io/v1/ip/geo.json",
+                "https://ipapi.co/json/"
+            ];
+            for (const url of urls) {
+                try {
+                    const res = await fetch(url, { cache: "no-store" });
+                    if (!res.ok) continue;
+                    const data = await res.json();
+                    const lat = Number(data.latitude);
+                    const lng = Number(data.longitude);
+                    if (Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) > 0.1 && Math.abs(lng) > 0.1) {
+                        const city = data.city || data.region || "";
+                        placeMyLocationOnMap(lat, lng, city ? `Şəbəkə mövqeyi (${city})` : "Şəbəkə mövqeyi", 14);
+                        toast(`🧭 Cari mövqeyiniz xəritədə göstərildi (${lat.toFixed(4)}, ${lng.toFixed(4)})`);
+                        return;
+                    }
+                } catch {}
+            }
+            const lat = 40.4093, lng = 49.8671;
+            placeMyLocationOnMap(lat, lng, "Bakı (GPS icazəsi bağlıdır)", 13);
+            toast("🧭 Cari mövqeyə yönləndirildi (40.4093, 49.8671) — Dəqiq GPS üçün brauzerdə məkan icazəsini aktiv edin");
+        }
+
         $("myLocationBtn")?.addEventListener("click", () => {
             if (!navigator.geolocation) {
-                toast("Cihazınızda GPS dəstəklənmir", true);
+                fallbackIpLocation();
                 return;
             }
-            navigator.geolocation.getCurrentPosition(pos => {
-                const { latitude: lat, longitude: lng } = pos.coords;
-                myLocationMarker?.remove();
-                const el = document.createElement("div");
-                el.className = "pin";
-                myLocationMarker = new maplibregl.Marker({ element: el })
-                    .setLngLat([lng, lat])
-                    .setPopup(new maplibregl.Popup({ offset: 12 }).setHTML(`<b>🧭 Mənim Konumum</b><br>${lat.toFixed(5)}, ${lng.toFixed(5)}`))
-                    .addTo(map);
-                map.flyTo({ center: [lng, lat], zoom: 15 });
-                myLocationMarker.togglePopup();
-            }, () => {
-                // Demo/ehtiyat olaraq Bakı mərkəzinə apar
-                const lat = 40.4093, lng = 49.8671;
-                map.flyTo({ center: [lng, lat], zoom: 13 });
-                toast("🧭 Cari mövqeyə yönləndirildi (40.4093, 49.8671)");
-            });
+            toast("🧭 Məkanınız müəyyən edilir...");
+            navigator.geolocation.getCurrentPosition(
+                pos => {
+                    const { latitude: lat, longitude: lng, accuracy } = pos.coords;
+                    const accText = accuracy ? `GPS dəqiqliyi: ~${Math.round(accuracy)} m` : "GPS mövqeyi";
+                    placeMyLocationOnMap(lat, lng, accText, 16);
+                    toast(`🧭 Cari məkanınız göstərildi (${lat.toFixed(5)}, ${lng.toFixed(5)})`);
+                },
+                () => {
+                    navigator.geolocation.getCurrentPosition(
+                        pos2 => {
+                            const { latitude: lat, longitude: lng } = pos2.coords;
+                            placeMyLocationOnMap(lat, lng, "Cihaz mövqeyi", 15);
+                            toast(`🧭 Cari məkanınız göstərildi (${lat.toFixed(5)}, ${lng.toFixed(5)})`);
+                        },
+                        () => {
+                            fallbackIpLocation();
+                        },
+                        { enableHighAccuracy: false, timeout: 6000, maximumAge: 300000 }
+                    );
+                },
+                { enableHighAccuracy: true, timeout: 7000, maximumAge: 60000 }
+            );
         });
 
         const pegBtn = $("pegmanBtn");
