@@ -260,6 +260,317 @@ const STORAGE_IMPORTED_KEY = "bcg.imported_projects.v2";
 const SEG_META_STORE_KEY = "bcg.seg.meta.v1";
 const PROJ_META_STORE_KEY = "bcg.proj.meta.v1";
 const ADMIN_CONTRACTORS_KEY = "bcg.admin.contractors.v2";
+const HIDDEN_PROJ_STORE_KEY = "bcg.hidden_projects.v1";
+
+function getHiddenProjectIds() {
+    const arr = readStore(HIDDEN_PROJ_STORE_KEY, []);
+    return new Set(Array.isArray(arr) ? arr : []);
+}
+
+function setProjectHiddenState(projId, isHidden) {
+    if (!projId) return;
+    const set = getHiddenProjectIds();
+    if (isHidden) set.add(projId);
+    else set.delete(projId);
+    writeStore(HIDDEN_PROJ_STORE_KEY, [...set]);
+}
+
+/* === CTRL + Z (Geri Qaytarma / Undo) Sistemi === */
+const undoStack = [];
+const MAX_UNDO_STEPS = 25;
+
+function pushUndoSnapshot(label = "Son əməliyyat") {
+    try {
+        undoStack.push({
+            label,
+            projects: JSON.parse(JSON.stringify(state.projects || [])),
+            visibleIds: [...state.visibleIds],
+            activeFolders: [...state.activeFolders],
+            expandedIds: [...state.expandedIds],
+            selected: state.selected ? { ...state.selected } : null,
+            stores: {
+                [PROJ_META_STORE_KEY]: localStorage.getItem(PROJ_META_STORE_KEY),
+                [SEG_META_STORE_KEY]: localStorage.getItem(SEG_META_STORE_KEY),
+                [STORAGE_IMPORTED_KEY]: localStorage.getItem(STORAGE_IMPORTED_KEY),
+                [HIDDEN_PROJ_STORE_KEY]: localStorage.getItem(HIDDEN_PROJ_STORE_KEY),
+                "bcg.geom.overrides.v1": localStorage.getItem("bcg.geom.overrides.v1"),
+                "bcg.custom.items.v1": localStorage.getItem("bcg.custom.items.v1")
+            }
+        });
+        if (undoStack.length > MAX_UNDO_STEPS) undoStack.shift();
+    } catch (e) {
+        console.warn("pushUndoSnapshot xətası:", e);
+    }
+}
+window.pushUndoSnapshot = pushUndoSnapshot;
+
+async function performUndo() {
+    if (undoStack.length === 0) {
+        toast("ℹ️ Geri qaytarılacaq əməliyyat yoxdur (Ctrl+Z)");
+        return;
+    }
+    const snap = undoStack.pop();
+    try {
+        for (const [k, v] of Object.entries(snap.stores || {})) {
+            if (v === null || v === undefined) localStorage.removeItem(k);
+            else localStorage.setItem(k, v);
+        }
+        state.projects = JSON.parse(JSON.stringify(snap.projects || []));
+        state.visibleIds = new Set(snap.visibleIds || []);
+        state.activeFolders = new Set(snap.activeFolders || ["project"]);
+        state.expandedIds = new Set(snap.expandedIds || []);
+        state.selected = snap.selected ? { ...snap.selected } : null;
+        state.quickEditKey = null;
+
+        renderAll();
+        toast(`↩️ Geri qaytarıldı (Ctrl+Z): ${snap.label}`);
+
+        if (isAdmin() && api.configured) {
+            for (const p of state.projects) {
+                try { await api.saveProject(p); } catch {}
+            }
+        }
+    } catch (e) {
+        console.warn("performUndo xətası:", e);
+    }
+}
+window.performUndo = performUndo;
+
+window.addEventListener("keydown", e => {
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "z") {
+        const tag = (e.target?.tagName || "").toUpperCase();
+        const type = (e.target?.type || "").toLowerCase();
+        const isTextInput = (tag === "INPUT" && type !== "checkbox" && type !== "radio" && type !== "button") || tag === "TEXTAREA" || e.target?.isContentEditable;
+        if (isTextInput) return;
+        e.preventDefault();
+        performUndo();
+    }
+});
+
+/* === ÇAP (Cari Ekran Zoomu ilə PDF) VƏ KMZ EXPORT === */
+function prepareExactPrintSnapshot() {
+    try {
+        if (!window.map) return;
+        const stage = document.querySelector(".map-stage");
+        if (!stage) return;
+        let img = $("printExactMapImg");
+        if (!img) {
+            img = document.createElement("img");
+            img.id = "printExactMapImg";
+            img.className = "print-exact-map-img";
+            img.alt = "Xəritə Çap Görünüşü";
+            stage.appendChild(img);
+        }
+        map.triggerRepaint?.();
+        const dataUrl = map.getCanvas().toDataURL("image/png");
+        if (dataUrl && dataUrl.startsWith("data:image/")) {
+            img.src = dataUrl;
+        }
+    } catch (e) {
+        console.warn("prepareExactPrintSnapshot xətası:", e);
+    }
+}
+
+window.addEventListener("beforeprint", prepareExactPrintSnapshot);
+window.addEventListener("afterprint", () => {
+    const img = $("printExactMapImg");
+    if (img) img.removeAttribute("src");
+});
+
+function executePrintExactView() {
+    if ($("exportPrintModal")?.open) $("exportPrintModal").close();
+    prepareExactPrintSnapshot();
+    setTimeout(() => {
+        prepareExactPrintSnapshot();
+        window.print();
+    }, 120);
+}
+window.executePrintExactView = executePrintExactView;
+
+function escXml(str) {
+    return String(str ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&apos;");
+}
+
+function hexToKmlColor(hex, alphaHex = "ff") {
+    const norm = normalizeColorCode(hex, "#38BDF8").replace("#", "");
+    if (norm.length !== 6) return `${alphaHex}f8bd38`;
+    const r = norm.slice(0, 2).toLowerCase();
+    const g = norm.slice(2, 4).toLowerCase();
+    const b = norm.slice(4, 6).toLowerCase();
+    return `${alphaHex}${b}${g}${r}`;
+}
+
+async function exportActiveToKmz() {
+    const activeProjects = state.projects.filter(p =>
+        state.visibleIds.has(p.id) && state.activeFolders.has(p.category || "project")
+    );
+    const projectsWithItems = activeProjects
+        .map(p => ({ project: p, items: filteredItems(p) }))
+        .filter(g => g.items.length > 0);
+
+    if (projectsWithItems.length === 0) {
+        toast("⚠️ Ekranda aktiv layihə və ya obyekt yoxdur!", true);
+        return;
+    }
+
+    if ($("exportPrintModal")?.open) $("exportPrintModal").close();
+
+    const foldersXml = projectsWithItems.map(({ project: p, items }) => {
+        const isPts = p.type === "points" || p.category === "nim";
+        const isOther = p.category === "other";
+        const placemarksXml = items.map(r => {
+            const rawColor = isOther
+                ? (r.customColor || p.customColor || "#38BDF8")
+                : (r.customColor || statusTone(r.status));
+            const kmlLineCol = hexToKmlColor(rawColor, "ff");
+            const kmlFillCol = hexToKmlColor(r.fillColor || rawColor, r.polyFilled ? "78" : "00");
+            const width = Number(r.lineWidth || p.lineWidth || 2.5);
+            const coords = Array.isArray(r.coords) ? r.coords : [];
+            if (coords.length === 0) return "";
+
+            const isPointGeom = isPts || coords.length === 1;
+            const isPolyGeom = !isPointGeom && Boolean(r.isPolygon) && coords.length >= 3;
+
+            let geomXml = "";
+            if (isPointGeom) {
+                const [lat, lng] = coords[0];
+                geomXml = `<Point><coordinates>${lng},${lat},0</coordinates></Point>`;
+            } else if (isPolyGeom) {
+                const ring = [...coords];
+                if (ring[0][0] !== ring[ring.length - 1][0] || ring[0][1] !== ring[ring.length - 1][1]) {
+                    ring.push(ring[0]);
+                }
+                const coordStr = ring.map(([lat, lng]) => `${lng},${lat},0`).join(" ");
+                geomXml = `<Polygon><outerBoundaryIs><LinearRing><coordinates>${coordStr}</coordinates></LinearRing></outerBoundaryIs></Polygon>`;
+            } else {
+                const coordStr = coords.map(([lat, lng]) => `${lng},${lat},0`).join(" ");
+                geomXml = `<LineString><tessellate>1</tessellate><coordinates>${coordStr}</coordinates></LineString>`;
+            }
+
+            const { planM, doneM } = isPointGeom ? getPointMetersPair(r) : { planM: 0, doneM: 0 };
+            const extData = `
+                <ExtendedData>
+                    <Data name="status"><value>${escXml(r.status || p.status || "layihe")}</value></Data>
+                    <Data name="category"><value>${escXml(p.category || "project")}</value></Data>
+                    <Data name="pointA"><value>${escXml(r.pointA || "")}</value></Data>
+                    <Data name="pointB"><value>${escXml(r.pointB || "")}</value></Data>
+                    <Data name="totalKm"><value>${escXml(isPointGeom ? planM : (r.totalKm ?? 0))}</value></Data>
+                    <Data name="doneKm"><value>${escXml(isPointGeom ? doneM : (r.doneKm ?? 0))}</value></Data>
+                    <Data name="antennas"><value>${escXml(r.antennas ?? 0)}</value></Data>
+                    <Data name="fiberCount"><value>${escXml(r.fiberCount || "")}</value></Data>
+                    <Data name="contractor"><value>${escXml(r.contractor || "")}</value></Data>
+                    <Data name="customColor"><value>${escXml(normalizeColorCode(rawColor, "#38BDF8"))}</value></Data>
+                </ExtendedData>`;
+
+            return `
+            <Placemark>
+                <name>${escXml(r.name || p.name)}</name>
+                <Style>
+                    <LineStyle><color>${kmlLineCol}</color><width>${width}</width></LineStyle>
+                    <PolyStyle><color>${kmlFillCol}</color><fill>${r.polyFilled ? 1 : 0}</fill><outline>1</outline></PolyStyle>
+                    <IconStyle><color>${kmlLineCol}</color><scale>1.1</scale></IconStyle>
+                </Style>
+                ${extData}
+                ${geomXml}
+            </Placemark>`;
+        }).join("\n");
+
+        return `
+        <Folder>
+            <name>${escXml(p.name)}</name>
+            ${placemarksXml}
+        </Folder>`;
+    }).join("\n");
+
+    const kmlContent = `<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+    <Document>
+        <name>BCG GIS Export</name>
+        ${foldersXml}
+    </Document>
+</kml>`;
+
+    const dateStr = new Date().toISOString().slice(0, 10);
+    if (typeof JSZip !== "undefined") {
+        const zip = new JSZip();
+        zip.file("doc.kml", kmlContent);
+        const blob = await zip.generateAsync({ type: "blob", compression: "DEFLATE" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `BCG_Export_${dateStr}.kmz`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 4000);
+        toast(`✅ Aktiv layihələr KMZ olaraq yükləndi (${projectsWithItems.length} layihə)`);
+    } else {
+        const blob = new Blob([kmlContent], { type: "application/vnd.google-earth.kml+xml" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `BCG_Export_${dateStr}.kml`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 4000);
+        toast(`✅ Aktiv layihələr KML olaraq yükləndi`);
+    }
+}
+window.exportActiveToKmz = exportActiveToKmz;
+
+function openExportPrintModal() {
+    let modal = $("exportPrintModal");
+    if (!modal) {
+        modal = document.createElement("dialog");
+        modal.id = "exportPrintModal";
+        modal.className = "modal";
+        modal.style.width = "min(440px, 94vw)";
+        modal.innerHTML = `
+            <div class="modal-head">
+                <div>
+                    <h2>🖨️ Çap və Export Seçimi</h2>
+                    <p class="muted" id="exportModalSub">Ekranda hazırda aktiv olan layihələr avtomatik ixrac olunur</p>
+                </div>
+                <button class="icon-btn" type="button" data-exp-close title="Bağla"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div style="padding:14px 18px 18px;display:flex;flex-direction:column;gap:10px">
+                <button type="button" class="btn btn-primary" id="expPdfBtn" style="height:46px;justify-content:flex-start;gap:12px;padding:0 16px;font-size:13.5px">
+                    <i class="fa-solid fa-file-pdf" style="font-size:18px"></i>
+                    <span style="display:flex;flex-direction:column;align-items:flex-start;line-height:1.25">
+                        <b>PDF / Çap et (Cari ekran miqyası ilə)</b>
+                        <small style="opacity:0.85;font-size:11px;font-weight:400">Əsas ekran hansı zoomdadırsa eynilə o miqyasda çap / PDF edir</small>
+                    </span>
+                </button>
+                <button type="button" class="btn btn-outline" id="expKmzBtn" style="height:46px;justify-content:flex-start;gap:12px;padding:0 16px;font-size:13.5px;border-color:rgba(56,189,248,0.45)">
+                    <i class="fa-solid fa-earth-americas" style="font-size:18px;color:#38BDF8"></i>
+                    <span style="display:flex;flex-direction:column;align-items:flex-start;line-height:1.25">
+                        <b>KMZ Formatında Yüklə (Aktiv layihələr)</b>
+                        <small style="color:var(--ink-3);font-size:11px;font-weight:400">Ekranda aktiv olan bütün xətt, nöqtə və poliqonları .kmz kimi endirir</small>
+                    </span>
+                </button>
+            </div>
+        `;
+        document.body.appendChild(modal);
+        modal.addEventListener("click", e => {
+            if (e.target === modal || e.target.closest("[data-exp-close]")) modal.close();
+        });
+        $("expPdfBtn")?.addEventListener("click", executePrintExactView);
+        $("expKmzBtn")?.addEventListener("click", exportActiveToKmz);
+    }
+    const activeProjs = state.projects.filter(p => state.visibleIds.has(p.id) && state.activeFolders.has(p.category || "project"));
+    const activeSegs = visibleEntries().length;
+    if ($("exportModalSub")) {
+        $("exportModalSub").textContent = `Hazırda ekranda ${activeProjs.length} aktiv layihə (${activeSegs} obyekt) seçilib`;
+    }
+    modal.showModal();
+}
+window.openExportPrintModal = openExportPrintModal;
 
 const LEGACY_DEMO_CONTRACTORS = new Set([
     "bcg (öz briqadamız)",
@@ -749,7 +1060,10 @@ async function enterApp(user) {
     });
 
     applySavedMetaOverrides();
-    state.projects.forEach(p => state.visibleIds.add(p.id));
+    const hiddenSet = getHiddenProjectIds();
+    state.projects.forEach(p => {
+        if (!hiddenSet.has(p.id)) state.visibleIds.add(p.id);
+    });
     tools.setUser(user.id);
     renderRole();
     renderNotes();
@@ -811,8 +1125,14 @@ async function reloadData() {
     }
 
     applySavedMetaOverrides();
+    const hiddenSet = getHiddenProjectIds();
+    state.visibleIds.clear();
     state.projects.forEach(p => {
-        if (!known.has(p.id) || knownVisible.has(p.id) || p.imported) state.visibleIds.add(p.id);
+        if (known.has(p.id)) {
+            if (knownVisible.has(p.id)) state.visibleIds.add(p.id);
+        } else if (!hiddenSet.has(p.id)) {
+            state.visibleIds.add(p.id);
+        }
     });
 
     saveImportedProjects();
@@ -886,6 +1206,7 @@ async function submitEditor(event) {
             const dCmp = editor.isPoints ? normalizePointMetersInput(values.done_km) : values.done_km;
             if (dCmp > pCmp) throw new Error("km");
         }
+        pushUndoSnapshot(editor.title || "Redaktə");
         await editor.onSave(values);
         await reloadData();
     } catch (error) {
@@ -900,6 +1221,7 @@ async function submitEditor(event) {
 async function deleteFromEditor() {
     if (!confirm(t("confirmRemove"))) return;
     try {
+        pushUndoSnapshot("Silmə əməliyyatı");
         await editor.onDelete();
         await reloadData();
     } catch {
@@ -3292,7 +3614,6 @@ function renderLegend() {
         : "";
 
     $("legend").innerHTML = STATUSES.map(s => `<div class="legend-row"><span class="legend-line" style="background:${STATUS_COLORS[s]}"></span>${t(`status${s}`)}</div>`).join("")
-        + `<div class="legend-row"><span class="legend-line" style="background:#94A3B8"></span>Lif götürülən kabel</div>`
         + rmHtml
         + pointProjectsHtml;
 }
@@ -4434,6 +4755,7 @@ function projectFromFile(fileName, lines, polyFillMode = "auto") {
 let pendingImportCategory = "other";
 
 async function handleImportFiles(fileList, targetCategory) {
+    if (fileList && fileList.length > 0) pushUndoSnapshot("Fayl idxalı");
     const added = [];
     const cat = isAdmin() ? (targetCategory || pendingImportCategory || "project") : "other";
     const polyFillMode = $("importPolyFillMode")?.value || "auto";
@@ -4519,7 +4841,7 @@ function bindEvents() {
 
     $("notesBtn").addEventListener("click", () => $("notesModal").showModal());
     $("materialsBtn").addEventListener("click", () => $("materialsModal").showModal());
-    $("printBtn").addEventListener("click", () => window.print());
+    $("printBtn").addEventListener("click", () => openExportPrintModal());
     $("toolDock").addEventListener("click", async e => {
         if (!e.target.closest("#shareBtn")) return;
         $("shareModal").showModal();
@@ -4630,11 +4952,15 @@ function bindEvents() {
         renderAll();
     });
     $("showAllBtn").addEventListener("click", () => {
+        pushUndoSnapshot("Hamısını göstər");
+        writeStore(HIDDEN_PROJ_STORE_KEY, []);
         state.projects.forEach(p => state.visibleIds.add(p.id));
         renderAll();
     });
     $("hideAllBtn").addEventListener("click", () => {
+        pushUndoSnapshot("Hamısını gizlət");
         state.visibleIds.clear();
+        writeStore(HIDDEN_PROJ_STORE_KEY, state.projects.map(p => p.id));
         renderAll();
     });
 
@@ -4652,14 +4978,21 @@ function bindEvents() {
         const now = Date.now();
 
         if (action === "toggle") {
-            if (state.visibleIds.has(project.id)) state.visibleIds.delete(project.id);
-            else state.visibleIds.add(project.id);
+            pushUndoSnapshot(`Layihə görünüşü (${project.name})`);
+            if (state.visibleIds.has(project.id)) {
+                state.visibleIds.delete(project.id);
+                setProjectHiddenState(project.id, true);
+            } else {
+                state.visibleIds.add(project.id);
+                setProjectHiddenState(project.id, false);
+            }
         } else if (action === "expand") {
             const clickKey = `expand:${project.id}`;
             if (now - lastListClickTime < 450 && lastListClickKey === clickKey) {
                 lastListClickTime = 0;
                 state.expandedIds.add(project.id);
                 state.visibleIds.add(project.id);
+                setProjectHiddenState(project.id, false);
                 renderAll();
                 flyToCoords(project.items.flatMap(i => i.coords));
                 return;
@@ -4676,6 +5009,7 @@ function bindEvents() {
                 // 2x Sol klik: Xəritədə həmin xəttə / nöqtəyə yaxınlaş və göstər
                 lastListClickTime = 0;
                 state.visibleIds.add(project.id);
+                setProjectHiddenState(project.id, false);
                 selectSegment(project, item, true);
                 return;
             }
@@ -4704,6 +5038,7 @@ function bindEvents() {
             if (!item) return;
             const wrap = button.closest("[data-seg-wrap]");
             if (!wrap) return;
+            pushUndoSnapshot(`Nöqtə redaktəsi (${item.name})`);
             const isPts = project.type === "points";
             const isNim = project.category === "nim";
             const antInp = wrap.querySelector("[data-q-ant]");
@@ -5075,6 +5410,7 @@ document.addEventListener("DOMContentLoaded", init);
             const proj = state.projects.find(p => p.id === projectId);
             const item = proj?.items.find(r => r.id === itemId);
             if (!proj || !item) return;
+            pushUndoSnapshot(`Nöqtə redaktəsi (${item.name})`);
 
             const antInp = rowEl.querySelector("[data-pt-ant]");
             const planInp = rowEl.querySelector("[data-pt-plan]");
@@ -5209,6 +5545,7 @@ document.addEventListener("DOMContentLoaded", init);
                 const proj = state.projects.find(p => p.id === projectId);
                 const item = proj?.items.find(r => r.id === itemId);
                 if (!proj || !item) return;
+                pushUndoSnapshot(`Status dəyişikliyi (${item.name})`);
                 item.status = nimSt.value;
                 saveSegmentOverride(proj.id, item);
                 saveImportedProjects();
@@ -5226,6 +5563,7 @@ document.addEventListener("DOMContentLoaded", init);
                 const proj = state.projects.find(p => p.id === projectId);
                 const item = proj?.items.find(r => r.id === itemId);
                 if (!proj || !item) return;
+                pushUndoSnapshot(`Status dəyişikliyi (${item.name})`);
                 item.status = lineSt.value;
                 if (item.status === "lif_goturulen") {
                     item.totalKm = 0;
@@ -5253,6 +5591,7 @@ document.addEventListener("DOMContentLoaded", init);
                 const proj = state.projects.find(p => p.id === projectId);
                 const item = proj?.items.find(r => r.id === itemId);
                 if (!proj || !item) return;
+                pushUndoSnapshot(`Kabel lif sayı (${item.name})`);
                 item.fiberCount = normalizeFiberCount(foSel.value, "");
                 item.userSetFiber = Boolean(item.fiberCount);
                 saveSegmentOverride(proj.id, item);
@@ -5270,6 +5609,7 @@ document.addEventListener("DOMContentLoaded", init);
             const proj = state.projects.find(p => p.id === projectId);
             const item = proj?.items.find(r => r.id === itemId);
             if (!proj || !item) return;
+            pushUndoSnapshot(`İcraçı dəyişikliyi (${item.name})`);
             item.contractor = sel.value;
             saveSegmentOverride(proj.id, item);
             saveImportedProjects();
@@ -5440,8 +5780,11 @@ document.addEventListener("DOMContentLoaded", init);
 
     async function saveGeomEdit() {
         if (!geomEditState) return;
-        const { project, item } = geomEditState;
+        const { project, item, origCoords } = geomEditState;
         const newCoords = item.coords.map(c => [Number(Number(c[0]).toFixed(6)), Number(Number(c[1]).toFixed(6))]);
+        // Ctrl+Z üçün əvvəlki koordinatlarla snapshot saxla
+        item.coords = (origCoords || []).map(c => [c[0], c[1]]);
+        pushUndoSnapshot(`Xəritədə sürüşdürmə (${item.name})`);
         item.coords = newCoords;
 
         // Lokal yaddaşda saxla
@@ -5779,6 +6122,8 @@ document.addEventListener("DOMContentLoaded", init);
         let targetProj = state.projects.find(p => p.id === projVal);
         let newProjectMeta = null;
 
+        pushUndoSnapshot(`Yeni obyekt əlavəsi (${itemName})`);
+
         if (projVal === "__new__") {
             const newProjName = $("mmNewProjName").value.trim();
             if (!newProjName) {
@@ -5932,8 +6277,9 @@ document.addEventListener("DOMContentLoaded", init);
                 ]
             };
             state.projects.push(nim1, nim2);
-            state.visibleIds.add(nim1.id);
-            state.visibleIds.add(nim2.id);
+            const hiddenSet = getHiddenProjectIds();
+            if (!hiddenSet.has(nim1.id)) state.visibleIds.add(nim1.id);
+            if (!hiddenSet.has(nim2.id)) state.visibleIds.add(nim2.id);
         }
         if (!state.projects.some(p => p.category === "azconnect")) {
             const azc1 = {
@@ -5959,8 +6305,9 @@ document.addEventListener("DOMContentLoaded", init);
                 ]
             };
             state.projects.push(azc1, azc2);
-            state.visibleIds.add(azc1.id);
-            state.visibleIds.add(azc2.id);
+            const hiddenSet = getHiddenProjectIds();
+            if (!hiddenSet.has(azc1.id)) state.visibleIds.add(azc1.id);
+            if (!hiddenSet.has(azc2.id)) state.visibleIds.add(azc2.id);
         }
     }
 
@@ -6569,7 +6916,10 @@ document.addEventListener("DOMContentLoaded", init);
                 } else {
                     state.activeFolders.add(folder);
                     state.sidebarCategory = folder;
-                    state.projects.filter(p => (p.category || "project") === folder).forEach(p => state.visibleIds.add(p.id));
+                    const hiddenSet = getHiddenProjectIds();
+                    state.projects.filter(p => (p.category || "project") === folder).forEach(p => {
+                        if (!hiddenSet.has(p.id)) state.visibleIds.add(p.id);
+                    });
                     toast(`${fNames[folder]} aktiv edildi`);
                 }
                 recordAuditLog("Qovluq Seçimi", fNames[folder] || folder, "Yarım dairə menyu", `${fNames[folder]} qovluğu ${state.activeFolders.has(folder) ? "aktiv edildi" : "deaktiv edildi"}`);

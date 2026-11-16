@@ -466,12 +466,31 @@ body.shared .user, body.shared #logoutBtn, body.shared .bar-sep, body.shared .ta
 }
 
 /* Çap */
+.print-exact-map-img {
+    display: none;
+}
 @media print {
-    @page { size: landscape; margin: 6mm; }
-    html, body { display: block; height: 100vh !important; overflow: hidden !important; background: #fff; color: #000; }
-    .appbar, .sidebar, .toolbar, .popover, .cursor-coords, .tool-area, .measure-tip, .toasts, .login, .dock, #drawer, .info-card, .reopen-sidebar-btn { display: none !important; }
+    @page { size: landscape; margin: 5mm; }
+    html, body { display: block; height: 100vh !important; overflow: hidden !important; background: #0e1a2b; color: #000; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+    .appbar, .sidebar, .toolbar, .popover, .cursor-coords, .tool-area, .measure-tip, .toasts, .login, .dock, #drawer, .info-card, .reopen-sidebar-btn, dialog { display: none !important; }
     .workspace, .map-column { display: block !important; height: 100vh !important; width: 100vw !important; }
-    .map-stage { position: relative !important; height: 96vh !important; width: 100% !important; }
+    .map-stage { position: relative !important; height: 96vh !important; width: 100% !important; background: #0e1a2b !important; }
+    .print-exact-map-img[src]:not([src=""]) {
+        display: block !important;
+        position: absolute !important;
+        inset: 0 !important;
+        width: 100% !important;
+        height: 100% !important;
+        object-fit: contain !important;
+        z-index: 500 !important;
+        background: #0e1a2b !important;
+    }
+    .legend:not([hidden]) {
+        display: flex !important;
+        z-index: 550 !important;
+        bottom: 12px !important;
+        left: 12px !important;
+    }
 }
 
 /* === YENİLİKLƏR VƏ ÖNBAXIŞ ƏLAVƏLƏRİ === */
