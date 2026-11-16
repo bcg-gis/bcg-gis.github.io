@@ -677,6 +677,9 @@
         </section>
     </main>
 
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js" crossorigin="anonymous"></script>
+    <script src="js/config.js?v=20261116i"></script>
+    <script src="js/api.js?v=20261116i"></script>
     <script>
         const USERS_KEY = "bcg.admin.users.v1";
         const LOGS_KEY = "bcg.audit.logs.v1";
@@ -695,6 +698,9 @@
 
         function saveContractors(map) {
             localStorage.setItem(CONTRACTORS_KEY, JSON.stringify(map || {}));
+            if (typeof api !== "undefined" && api.syncCloudRegistry) {
+                api.syncCloudRegistry().catch(() => {});
+            }
         }
 
         function toast(msg) {
@@ -743,6 +749,9 @@
 
         function saveUsers(list) {
             localStorage.setItem(USERS_KEY, JSON.stringify(list));
+            if (typeof api !== "undefined" && api.syncCloudRegistry) {
+                api.syncCloudRegistry().catch(() => {});
+            }
         }
 
         function getLogs() {
@@ -969,7 +978,7 @@
 
             const cleanEmail = email.toLowerCase();
             const users = getUsers().filter(u => String(u.email || "").trim().toLowerCase() !== cleanEmail);
-            users.unshift({
+            const newUserObj = {
                 id: Date.now(),
                 name,
                 email,
@@ -979,8 +988,12 @@
                 authMode: pass ? `🔑 Şifrə (${pass})` : "📧 Email kodu ilə (OTP)",
                 lastLogin: "Hələ daxil olmayıb",
                 lastAction: "Admin tərəfindən yaradıldı"
-            });
+            };
+            users.unshift(newUserObj);
             saveUsers(users);
+            if (typeof api !== "undefined" && api.registerAdminUserInCloud) {
+                api.registerAdminUserInCloud(newUserObj).catch(() => {});
+            }
 
             const logs = getLogs();
             const now = new Date();
@@ -1118,6 +1131,12 @@
         });
 
         renderAll();
+        if (typeof api !== "undefined" && api.pullCloudRegistry) {
+            api.pullCloudRegistry().then(() => {
+                renderAll();
+                return api.syncCloudRegistry?.();
+            }).catch(() => {});
+        }
     </script>
 </body>
 </html>

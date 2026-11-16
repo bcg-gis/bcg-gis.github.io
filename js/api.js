@@ -128,14 +128,128 @@ const api = (() => {
     const USERS_STORAGE_KEY = "bcg.admin.users.v1";
     const LOCAL_SESSION_KEY = "bcg.local.session.v1";
     const DB_SNAPSHOT_KEY = "bcg.db.snapshot.v1";
+    const CLOUD_SYNC_TOKEN = "00000000-0000-4000-8000-00000000bc60";
+
+    const DEFAULT_ADMIN_USERS = [
+        { id: 1, name: "Bağır (Baş Admin)", email: "admin@bcg.az", role: "admin", authMode: "🔑 Şifrə + Email" },
+        { id: 2, name: "Rəşad Məmmədov", email: "rashad@bcg.az", role: "editor", authMode: "📧 Email kodu ilə (OTP)", passMask: "OTP" },
+        { id: 3, name: "Elvin Hüseynov", email: "elvin@bcg.az", role: "editor", password: "Bcg#2026", passMask: "Bcg#2026", authMode: "🔑 Şifrə (Bcg#2026)" },
+        { id: 4, name: "Orxan Quliyev", email: "orxan@bcg.az", role: "viewer", authMode: "📧 Email kodu ilə (OTP)", passMask: "OTP" },
+        { id: 5, name: "Kamran Əliyev", email: "kamran@bcg.az", role: "editor", password: "Kam#901", passMask: "Kam#901", authMode: "🔑 Şifrə (Kam#901)" }
+    ];
 
     function getAdminUsersList() {
+        let stored = [];
         try {
             const raw = JSON.parse(localStorage.getItem(USERS_STORAGE_KEY) || "[]");
-            return Array.isArray(raw) ? raw : [];
+            if (Array.isArray(raw)) stored = raw;
+        } catch {}
+        const byEmail = new Map();
+        DEFAULT_ADMIN_USERS.forEach(u => byEmail.set(String(u.email).toLowerCase(), { ...u }));
+        stored.forEach(u => {
+            if (u && u.email) {
+                const k = String(u.email).trim().toLowerCase();
+                byEmail.set(k, { ...(byEmail.get(k) || {}), ...u });
+            }
+        });
+        return [...byEmail.values()];
+    }
+
+    async function pullCloudRegistry() {
+        if (!client) return null;
+        try {
+            const { data, error } = await client.rpc("get_shared_extras", { link: CLOUD_SYNC_TOKEN });
+            if (error || !data || !data.view || typeof data.view !== "object") return null;
+            const v = data.view;
+            if (Array.isArray(v.adminUsers) && v.adminUsers.length > 0) {
+                const localRaw = JSON.parse(localStorage.getItem(USERS_STORAGE_KEY) || "[]");
+                const mergedMap = new Map();
+                DEFAULT_ADMIN_USERS.forEach(u => mergedMap.set(String(u.email).toLowerCase(), { ...u }));
+                (Array.isArray(localRaw) ? localRaw : []).forEach(u => {
+                    if (u?.email) mergedMap.set(String(u.email).trim().toLowerCase(), u);
+                });
+                v.adminUsers.forEach(u => {
+                    if (u?.email) {
+                        const k = String(u.email).trim().toLowerCase();
+                        mergedMap.set(k, { ...(mergedMap.get(k) || {}), ...u });
+                    }
+                });
+                localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify([...mergedMap.values()]));
+            }
+            if (v.contractors && typeof v.contractors === "object" && !Array.isArray(v.contractors)) {
+                const curC = JSON.parse(localStorage.getItem("bcg.admin.contractors.v2") || "{}");
+                localStorage.setItem("bcg.admin.contractors.v2", JSON.stringify({ ...v.contractors, ...curC }));
+            }
+            if (Array.isArray(v.bcgLeads) && v.bcgLeads.length > 0) {
+                const curL = JSON.parse(localStorage.getItem("bcg.exec.leads.v1") || "[]");
+                const lMap = new Map();
+                [...v.bcgLeads, ...(Array.isArray(curL) ? curL : [])].forEach(item => {
+                    if (item?.name) lMap.set(String(item.name).trim().toLowerCase(), item);
+                });
+                localStorage.setItem("bcg.exec.leads.v1", JSON.stringify([...lMap.values()]));
+            }
+            if (v.snapshot && typeof v.snapshot === "object") {
+                localStorage.setItem(DB_SNAPSHOT_KEY, JSON.stringify(v.snapshot));
+            }
+            return v;
         } catch {
-            return [];
+            return null;
         }
+    }
+
+    async function syncCloudRegistry(extraSnapshot = null) {
+        if (!client) return;
+        try {
+            const adminUsers = getAdminUsersList();
+            let contractors = {};
+            let bcgLeads = [];
+            let snapshot = extraSnapshot;
+            try { contractors = JSON.parse(localStorage.getItem("bcg.admin.contractors.v2") || "{}"); } catch {}
+            try { bcgLeads = JSON.parse(localStorage.getItem("bcg.exec.leads.v1") || "[]"); } catch {}
+            if (!snapshot) {
+                try { snapshot = JSON.parse(localStorage.getItem(DB_SNAPSHOT_KEY) || "null"); } catch {}
+            }
+            let projectIds = [];
+            try {
+                const { data: projRows } = await client.from("projects").select("id");
+                if (Array.isArray(projRows) && projRows.length > 0) {
+                    projectIds = projRows.map(r => r.id).filter(Boolean);
+                }
+            } catch {}
+            if (projectIds.length === 0 && Array.isArray(snapshot?.projects)) {
+                projectIds = snapshot.projects.map(p => p.id).filter(Boolean);
+            }
+            await client.from("share_links").upsert({
+                token: CLOUD_SYNC_TOKEN,
+                project_ids: projectIds,
+                expires_at: null,
+                drawings: [],
+                view: {
+                    adminUsers,
+                    contractors,
+                    bcgLeads,
+                    snapshot,
+                    updatedAt: new Date().toISOString()
+                }
+            }, { onConflict: "token" });
+        } catch (e) {
+            console.warn("syncCloudRegistry xətası:", e);
+        }
+    }
+
+    async function registerAdminUserInCloud(userObj) {
+        if (configured && userObj?.email && userObj?.password && String(userObj.password).length >= 6) {
+            try {
+                const tempClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+                    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }
+                });
+                await tempClient.auth.signUp({
+                    email: String(userObj.email).trim(),
+                    password: String(userObj.password).trim()
+                });
+            } catch {}
+        }
+        await syncCloudRegistry();
     }
 
     function extractUserPassword(u) {
@@ -250,7 +364,8 @@ const api = (() => {
         /* { user } və ya { error: "credentials" | "network" } */
         async signIn(email, password) {
             const cleanEmail = String(email || "").trim();
-            const localMatch = findAdminPanelUser(cleanEmail, password);
+            await pullCloudRegistry();
+            let localMatch = findAdminPanelUser(cleanEmail, password);
 
             try {
                 const { data, error } = await client.auth.signInWithPassword({ email: cleanEmail, password });
@@ -264,7 +379,11 @@ const api = (() => {
                     return { user: data.user };
                 }
 
-                // Əgər Supabase Auth-da tapılmadısa, amma Admin Paneldə yaradılıbsa:
+                // Əgər Supabase Auth-da tapılmadısa, amma Admin Paneldə yaradılıbsa (başqa kompüterdə belə):
+                if (!localMatch) {
+                    await pullCloudRegistry();
+                    localMatch = findAdminPanelUser(cleanEmail, password);
+                }
                 if (localMatch) {
                     markAdminUserLogin(cleanEmail);
                     localStorage.setItem(LOCAL_SESSION_KEY, JSON.stringify(localMatch));
@@ -288,6 +407,7 @@ const api = (() => {
         },
 
         async loadAll(userId) {
+            await pullCloudRegistry();
             let contractorMap = {};
             try {
                 const savedAdminContractors = JSON.parse(localStorage.getItem("bcg.admin.contractors.v2") || "{}");
@@ -320,25 +440,36 @@ const api = (() => {
                 const mappedProjects = projects.map(toProject);
                 const mappedNotes = notes.map(toNote);
 
-                // Əgər bazadan məlumat gəlibsə (məs. Admin sessiyası zamanı), lokal istifadəçilər üçün keşi yenilə
+                // Əgər bazadan məlumat gəlibsə (məs. Admin sessiyası zamanı), lokal istifadəçilər və digər kompüterlər üçün keşi yenilə
                 if (mappedProjects.length > 0) {
+                    const snapPayload = {
+                        projects: mappedProjects,
+                        materials,
+                        notes: mappedNotes,
+                        users: [...new Set([...profiles.map(p => p.email), ...adminUserEmails])]
+                    };
                     try {
-                        localStorage.setItem(DB_SNAPSHOT_KEY, JSON.stringify({
-                            projects: mappedProjects,
-                            materials,
-                            notes: mappedNotes,
-                            users: [...new Set([...profiles.map(p => p.email), ...adminUserEmails])]
-                        }));
+                        localStorage.setItem(DB_SNAPSHOT_KEY, JSON.stringify(snapPayload));
                     } catch {}
+                    if (own?.role === "admin" || matchedAdminUser?.role === "admin") {
+                        syncCloudRegistry(snapPayload).catch(() => {});
+                    }
                 }
 
-                // Əgər lokal istifadəçi ilə girilibsə və RLS səbəbindən bazadan 0 layihə qayıdıbsa, keşdən götür
+                // Əgər lokal istifadəçi ilə başqa kompüterdən girilibsə və RLS səbəbindən bazadan 0 layihə qayıdıbsa, bulud sinxron tokenindən və ya keşdən götür
                 if (mappedProjects.length === 0 && localSession) {
+                    let sharedProjects = [];
+                    try {
+                        const sharedRaw = await client.rpc("get_shared_view", { link: CLOUD_SYNC_TOKEN });
+                        if (Array.isArray(sharedRaw.data) && sharedRaw.data.length > 0) {
+                            sharedProjects = sharedRaw.data.map(toProject);
+                        }
+                    } catch {}
                     const snap = JSON.parse(localStorage.getItem(DB_SNAPSHOT_KEY) || "null");
                     return {
                         role: matchedAdminUser?.role || localSession.role || "viewer",
                         users: snap?.users || adminUserEmails,
-                        projects: snap?.projects?.length ? snap.projects : fallbackSeedProjects(),
+                        projects: sharedProjects.length ? sharedProjects : (snap?.projects?.length ? snap.projects : fallbackSeedProjects()),
                         contractors: contractorMap,
                         materials: snap?.materials || [],
                         notes: snap?.notes || []
@@ -356,16 +487,23 @@ const api = (() => {
                     notes: mappedNotes
                 };
             } catch (err) {
-                // Lokal Admin Panel istifadəçisi üçün keşdən və ya ehtiyat bazadan yüklə
+                // Lokal Admin Panel istifadəçisi üçün buluddan və ya keşdən yüklə
                 if (localSession) {
                     const ownEmail = String(localSession.email || "").trim().toLowerCase();
                     const matchedAdminUser = adminUsers.find(u => String(u.email || "").trim().toLowerCase() === ownEmail);
+                    let sharedProjects = [];
+                    try {
+                        const sharedRaw = await client.rpc("get_shared_view", { link: CLOUD_SYNC_TOKEN });
+                        if (Array.isArray(sharedRaw.data) && sharedRaw.data.length > 0) {
+                            sharedProjects = sharedRaw.data.map(toProject);
+                        }
+                    } catch {}
                     let snap = null;
                     try { snap = JSON.parse(localStorage.getItem(DB_SNAPSHOT_KEY) || "null"); } catch {}
                     return {
                         role: matchedAdminUser?.role || localSession.role || "viewer",
                         users: snap?.users || adminUserEmails,
-                        projects: snap?.projects?.length ? snap.projects : fallbackSeedProjects(),
+                        projects: sharedProjects.length ? sharedProjects : (snap?.projects?.length ? snap.projects : fallbackSeedProjects()),
                         contractors: contractorMap,
                         materials: snap?.materials || [],
                         notes: snap?.notes || []
@@ -593,8 +731,12 @@ const api = (() => {
         },
 
         async listShares() {
-            return unwrap(await client.from("share_links").select("*").order("created_at", { ascending: false }));
+            return unwrap(await client.from("share_links").select("*").neq("token", CLOUD_SYNC_TOKEN).order("created_at", { ascending: false }));
         },
+
+        syncCloudRegistry,
+        pullCloudRegistry,
+        registerAdminUserInCloud,
 
         async loadSharedExtras(token) {
             return unwrap(await client.rpc("get_shared_extras", { link: token }));

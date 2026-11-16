@@ -598,8 +598,27 @@ function isBcgContractor(name) {
 }
 
 function getSavedBcgLeads() {
-    const stored = readStore(BCG_LEADS_STORE_KEY, {}) || {};
-    const map = typeof stored === "object" && !Array.isArray(stored) ? { ...stored } : {};
+    const stored = readStore(BCG_LEADS_STORE_KEY, null);
+    const map = {};
+    if (Array.isArray(stored)) {
+        stored.forEach(entry => {
+            if (entry?.name) {
+                map[String(entry.name).trim()] = {
+                    workers: entry.workers ?? "",
+                    phone: entry.phone || ""
+                };
+            }
+        });
+    } else if (stored && typeof stored === "object") {
+        for (const [k, v] of Object.entries(stored)) {
+            if (k && v && typeof v === "object") {
+                map[k.trim()] = {
+                    workers: v.workers ?? "",
+                    phone: v.phone || ""
+                };
+            }
+        }
+    }
     (state.projects || []).forEach(p => {
         (p.items || []).forEach(r => {
             const lead = String(r?.execLead || "").trim();
@@ -611,18 +630,26 @@ function getSavedBcgLeads() {
             }
         });
     });
-    return map;
+    return Object.entries(map).map(([name, info]) => ({
+        name,
+        workers: info?.workers ?? "",
+        phone: info?.phone || ""
+    }));
 }
 
 function saveBcgLeadEntry(leadName, workers, phone) {
     const cleanLead = String(leadName || "").trim();
     if (!cleanLead) return;
-    const map = readStore(BCG_LEADS_STORE_KEY, {}) || {};
-    map[cleanLead] = {
+    const list = getSavedBcgLeads().filter(l => l.name.toLowerCase() !== cleanLead.toLowerCase());
+    list.unshift({
+        name: cleanLead,
         workers: workers !== undefined && workers !== "" ? Number(workers) || 0 : "",
         phone: String(phone || "").trim()
-    };
-    writeStore(BCG_LEADS_STORE_KEY, map);
+    });
+    writeStore(BCG_LEADS_STORE_KEY, list);
+    if (typeof api !== "undefined" && api.syncCloudRegistry) {
+        api.syncCloudRegistry().catch(() => {});
+    }
 }
 
 function parseContractorAndLead(rawContractor, props) {
@@ -7589,16 +7616,17 @@ document.addEventListener("DOMContentLoaded", init);
             try { await navigator.clipboard.writeText(text); } catch {}
             toast("📋 Giriş məlumatları kopyalandı!");
         });
-        $("userAddForm")?.addEventListener("submit", e => {
+        ($("userAddForm") || $("addUserForm"))?.addEventListener("submit", e => {
             e.preventDefault();
-            const name = $("uName")?.value.trim();
-            const email = $("uEmail")?.value.trim();
-            const pass = $("uPass")?.value.trim();
-            const role = $("uRole")?.value || "viewer";
+            const name = ($("uName") || $("newUserName"))?.value.trim();
+            const email = ($("uEmail") || $("newUserEmail"))?.value.trim();
+            const pass = ($("uPass") || $("newUserPass"))?.value.trim();
+            const rawRole = ($("uRole") || $("newUserPerm"))?.value || "viewer";
+            const role = rawRole === "view" ? "viewer" : (rawRole === "edit" ? "editor" : rawRole);
             if (!name || !email) return;
             const cleanEmail = email.toLowerCase();
             const list = loadUsersRegistry().filter(u => String(u.email || "").trim().toLowerCase() !== cleanEmail);
-            list.unshift({
+            const newUserObj = {
                 id: Date.now(),
                 name,
                 email,
@@ -7608,14 +7636,21 @@ document.addEventListener("DOMContentLoaded", init);
                 passMask: pass || "OTP",
                 lastLogin: "Hələ daxil olmayıb",
                 lastAction: "Admin tərəfindən yaradıldı"
-            });
+            };
+            list.unshift(newUserObj);
             writeStore(USERS_STORE_KEY, list);
-            $("uName").value = "";
-            $("uEmail").value = "";
-            $("uPass").value = "";
+            if (typeof api !== "undefined" && api.registerAdminUserInCloud) {
+                api.registerAdminUserInCloud(newUserObj).catch(() => {});
+            }
+            if ($("uName")) $("uName").value = "";
+            if ($("newUserName")) $("newUserName").value = "";
+            if ($("uEmail")) $("uEmail").value = "";
+            if ($("newUserEmail")) $("newUserEmail").value = "";
+            if ($("uPass")) $("uPass").value = "";
+            if ($("newUserPass")) $("newUserPass").value = "";
             renderUsersModal();
             populateNoteRecipients();
-            toast(`✅ İstifadəçi əlavə olundu: ${email}`);
+            toast(`✅ İstifadəçi əlavə olundu və bulud bazasına sinxronlaşdırıldı: ${email}`);
         });
         $("usersTableBody")?.addEventListener("click", e => {
             const del = e.target.closest("[data-del-user]");
@@ -7623,6 +7658,9 @@ document.addEventListener("DOMContentLoaded", init);
             const id = Number(del.dataset.delUser);
             const list = loadUsersRegistry().filter(u => u.id !== id);
             writeStore(USERS_STORE_KEY, list);
+            if (typeof api !== "undefined" && api.syncCloudRegistry) {
+                api.syncCloudRegistry().catch(() => {});
+            }
             renderUsersModal();
             populateNoteRecipients();
             toast("🗑️ İstifadəçi silindi");
