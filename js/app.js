@@ -92,6 +92,64 @@ function getPointMetersPair(r) {
 const formatDistance = m => m >= 1000 ? `${formatKm(m / 1000)} km` : `${Math.round(m)} m`;
 const percent = (done, total) => total > 0 ? Math.min(100, Math.round(done / total * 100)) : 0;
 
+// BRAUZER YADDAŞ LİMİTİNİ (5 MB) GİQABAYTLARA QALDIRAN İNDEXEDDB ADAPTERİ
+const IDB_NAME = "bcg_large_storage_v1";
+const IDB_STORE = "kv_store";
+let idbPromise = null;
+
+function getIDB() {
+    if (!window.indexedDB) return Promise.resolve(null);
+    if (!idbPromise) {
+        idbPromise = new Promise((resolve) => {
+            const req = indexedDB.open(IDB_NAME, 1);
+            req.onupgradeneeded = () => {
+                const db = req.result;
+                if (!db.objectStoreNames.contains(IDB_STORE)) {
+                    db.createObjectStore(IDB_STORE);
+                }
+            };
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = () => resolve(null);
+        });
+    }
+    return idbPromise;
+}
+
+async function saveToIndexedDB(key, value) {
+    try {
+        const db = await getIDB();
+        if (!db) return false;
+        return new Promise((resolve) => {
+            const tx = db.transaction(IDB_STORE, "readwrite");
+            tx.objectStore(IDB_STORE).put(value, key);
+            tx.oncomplete = () => resolve(true);
+            tx.onerror = () => resolve(false);
+        });
+    } catch {
+        return false;
+    }
+}
+
+async function getFromIndexedDB(key) {
+    try {
+        const db = await getIDB();
+        if (!db) return null;
+        return new Promise((resolve) => {
+            const tx = db.transaction(IDB_STORE, "readonly");
+            const req = tx.objectStore(IDB_STORE).get(key);
+            req.onsuccess = () => resolve(req.result ?? null);
+            req.onerror = () => resolve(null);
+        });
+    } catch {
+        return null;
+    }
+}
+
+// Brauzerə daimi və geniş disk yaddaşı icazəsi sorğusu (Chrome/Edge Storage Persist)
+if (navigator.storage && navigator.storage.persist) {
+    navigator.storage.persist().catch(() => {});
+}
+
 function readStore(key, fallback) {
     try {
         const raw = localStorage.getItem(key);
@@ -104,8 +162,9 @@ function readStore(key, fallback) {
 function writeStore(key, value) {
     try {
         localStorage.setItem(key, JSON.stringify(value));
-    } catch {
-        toast(t("storageFull"), true);
+    } catch (e) {
+        console.warn(`localStorage doldu (${key}), limitsiz IndexedDB-yə yazıldı.`);
+        saveToIndexedDB(key, value);
     }
 }
 
@@ -1279,6 +1338,8 @@ function saveImportedProjects() {
         const toSave = (state.projects || []).filter(p =>
             p && (p.imported || p.isLocal || p.category === "other" || String(p.id).startsWith("imp_") || String(p.id).startsWith("proj_custom_") || String(p.id).startsWith("proj_local_"))
         );
+        // Həm limitsiz IndexedDB disk bazasına, həm də kiçikdirsə localStorage-a yaz
+        saveToIndexedDB(STORAGE_IMPORTED_KEY, toSave);
         writeStore(STORAGE_IMPORTED_KEY, toSave);
     } catch (e) {
         console.warn("saveImportedProjects error:", e);
@@ -1311,6 +1372,23 @@ async function enterApp(user) {
             state.projects.push(localProj);
         }
     });
+
+    // Əgər localStorage dolubsa və ya layihələr limitsiz IndexedDB-də saxlanılıbsa, onları da daxil et
+    getFromIndexedDB(STORAGE_IMPORTED_KEY).then(idbProjs => {
+        if (Array.isArray(idbProjs) && idbProjs.length > 0) {
+            let changed = false;
+            idbProjs.forEach(lp => {
+                if (!lp || !lp.id) return;
+                const idx = state.projects.findIndex(p => p.id === lp.id);
+                if (idx < 0) {
+                    state.projects.push(lp);
+                    state.visibleIds.add(lp.id);
+                    changed = true;
+                }
+            });
+            if (changed) renderAll();
+        }
+    }).catch(() => {});
 
     applySavedMetaOverrides();
     const hiddenSet = getHiddenProjectIds();
@@ -2201,45 +2279,6 @@ function registerPointShapeImages() {
     });
 
     registerPulsingBeacon();
-    registerFlowArrowImage();
-    startLineFlowAnimation();
-}
-
-function registerFlowArrowImage() {
-    if (!map || map.hasImage("arrow-flow-dir")) return;
-    const w = 24, h = 24;
-    const canvas = document.createElement("canvas");
-    canvas.width = w;
-    canvas.height = h;
-    const ctx = canvas.getContext("2d");
-
-    ctx.strokeStyle = "#FFFFFF";
-    ctx.lineWidth = 3.6;
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
-    ctx.shadowColor = "rgba(245, 158, 11, 0.95)";
-    ctx.shadowBlur = 4;
-
-    ctx.beginPath();
-    ctx.moveTo(7, 4);
-    ctx.lineTo(17, 12);
-    ctx.lineTo(7, 20);
-    ctx.stroke();
-
-    map.addImage("arrow-flow-dir", ctx.getImageData(0, 0, w, h), { pixelRatio: 2 });
-}
-
-let lineFlowAnimId = null;
-
-function startLineFlowAnimation() {
-    // WebGL xəritəsində hər kadrda (requestAnimationFrame) setPaintProperty("line-dasharray") çağırmaq
-    // CPU-nu 100% yükləyir və donmalar (lag) yaradır.
-    // Xətt animasiyası MapLibre-nin GPU daxili axın şaderi (arrow-flow-dir istiqamət oxları)
-    // və tikinti nöqtəsindəki mayak işığı ilə təmin olunur, CPU yükü tam aradan qaldırıldı.
-    if (lineFlowAnimId) {
-        cancelAnimationFrame(lineFlowAnimId);
-        lineFlowAnimId = null;
-    }
 }
 
 function registerPulsingBeacon() {
@@ -2379,42 +2418,6 @@ function mapStyle() {
                     "line-color": ["get", "color"],
                     "line-width": ["interpolate", ["linear"], ["zoom"], 5, ["case", ["get", "sel"], 2.6, 1.5], 11, ["case", ["get", "sel"], 3.0, 1.8], 15, ["case", ["get", "sel"], 3.6, 2.2]],
                     "line-opacity": ["case", ["get", "dim"], 0.25, 1]
-                } },
-            /* İcrada olan kabel xətləri: A-dan B-yə çəkilən hissə üçün bütöv xətt, axan işıq və istiqamət oxları */
-            { id: "routes-line-icrada-done", type: "line", source: "routes", filter: ["==", ["get", "isIcradaDoneLine"], true], layout: { "line-cap": "round", "line-join": "round" },
-                paint: {
-                    "line-color": "#F59E0B",
-                    "line-width": ["interpolate", ["linear"], ["zoom"], 5, ["case", ["get", "sel"], 3.8, 2.6], 11, ["case", ["get", "sel"], 4.5, 3.2], 15, ["case", ["get", "sel"], 5.4, 4.0]],
-                    "line-opacity": ["case", ["get", "dim"], 0.28, 0.95]
-                } },
-            { id: "routes-line-icrada-flow", type: "line", source: "routes", filter: ["==", ["get", "isIcradaFlowLine"], true], layout: { "line-cap": "round", "line-join": "round" },
-                paint: {
-                    "line-color": "#FFFFFF",
-                    "line-width": ["interpolate", ["linear"], ["zoom"], 5, ["case", ["get", "sel"], 2.2, 1.4], 11, ["case", ["get", "sel"], 2.8, 1.8], 15, ["case", ["get", "sel"], 3.4, 2.4]],
-                    "line-dasharray": [0.01, 0.01, 3.0, 4.0],
-                    "line-opacity": ["case", ["get", "dim"], 0.35, 1]
-                } },
-            { id: "routes-line-icrada-arrows", type: "symbol", source: "routes", minzoom: 6, filter: ["==", ["get", "isIcradaFlowLine"], true],
-                layout: {
-                    "symbol-placement": "line",
-                    "symbol-spacing": ["interpolate", ["linear"], ["zoom"], 6, 160, 11, 110, 15, 80],
-                    "icon-image": "arrow-flow-dir",
-                    "icon-size": ["interpolate", ["linear"], ["zoom"], 6, 0.55, 11, 0.70, 15, 0.85],
-                    "icon-allow-overlap": true,
-                    "icon-ignore-placement": true
-                },
-                paint: {
-                    "icon-opacity": ["case", ["get", "dim"], 0.25, 0.95]
-                } },
-            { id: "routes-line-icrada-spark", type: "symbol", source: "routes", minzoom: 4, filter: ["==", ["get", "isIcradaFrontier"], true],
-                layout: {
-                    "icon-image": "pulsing-beacon-icrada",
-                    "icon-size": ["interpolate", ["linear"], ["zoom"], 4, 0.45, 9, 0.65, 14, 0.90],
-                    "icon-allow-overlap": true,
-                    "icon-ignore-placement": true
-                },
-                paint: {
-                    "icon-opacity": ["case", ["get", "dim"], 0.25, 1]
                 } },
             { id: "routes-hit", type: "line", source: "routes", filter: ["all", ["==", ["geometry-type"], "LineString"], ["!", ["has", "isPolygon"]]], paint: { "line-color": "#000", "line-width": 14, "line-opacity": 0 } },
             /* Digər (RM və köməkçi xətlər): adları xətt boyu çıxır, sabit ölçü, toqquşma yoxdur */
@@ -2652,7 +2655,7 @@ function initMap() {
     map.on("rotate", () => {
         $("northIcon").style.transform = `rotate(${-45 - map.getBearing()}deg)`;
     });
-    ["routes-poly-fill", "routes-poly-line", "routes-other", "routes-hit", "routes-line-icrada-done", "routes-line-icrada-flow", "routes-line-icrada-arrows", "routes-line-icrada-spark", "routes-other-line", "routes-other-points", "routes-fo-points", "routes-ends", "routes-ends-label", "routes-point-pulse", "routes-point-halo", "routes-point-shape", "routes-point-pulse-split", "routes-point-halo-split", "routes-point-shape-split", "routes-point-name", "routes-point-label", "routes-point-label-near", "routes-summary-name", "routes-summary-card-merged", "routes-summary-card"].forEach(layer => {
+    ["routes-poly-fill", "routes-poly-line", "routes-other", "routes-hit", "routes-other-line", "routes-other-points", "routes-fo-points", "routes-ends", "routes-ends-label", "routes-point-pulse", "routes-point-halo", "routes-point-shape", "routes-point-pulse-split", "routes-point-halo-split", "routes-point-shape-split", "routes-point-name", "routes-point-label", "routes-point-label-near", "routes-summary-name", "routes-summary-card-merged", "routes-summary-card"].forEach(layer => {
         map.on("mousemove", layer, e => {
             if (tools.isActive()) return;
             window.routeHover = true;
@@ -3397,8 +3400,6 @@ function drawRoutes() {
         return;
     }
     registerPointShapeImages();
-    registerFlowArrowImage();
-    startLineFlowAnimation();
     const selected = selectedEntry();
     const activeProjId = selected ? selected.project.id : window.__activeProjectId || null;
     const features = [];
@@ -3750,63 +3751,6 @@ function drawRoutes() {
                 }
             });
 
-            // İcrada olan kabel xətləri: A-dan B-yə doğru yalnız çəkilən kabel məsafəsinə (doneKm) qədər hərəkət edən işıq axını
-            if (r.status === "icrada" && !isLifLine) {
-                const doneGeom = sliceLineByDistance(line, r.doneKm, r.totalKm);
-                if (doneGeom.length >= 2) {
-                    const doneKmVal = formatKm(r.doneKm);
-                    const totalKmVal = formatKm(r.totalKm);
-                    const flowTip = `<b>${esc(lineDisplayName)} · İcrada olan xətt</b><small><span style="color:#F59E0B">⚡ A ➔ B istiqamətində çəkilən kabel:</span> <b>${doneKmVal} / ${totalKmVal} km (${percent(r.doneKm, r.totalKm)}%)</b>${routePart}</small>`;
-
-                    // 1. Çəkilən kabelin bütöv parlaq narıncı bazası
-                    features.push({
-                        type: "Feature",
-                        geometry: { type: "LineString", coordinates: doneGeom },
-                        properties: {
-                            isIcradaDoneLine: true,
-                            color: "#F59E0B",
-                            dim,
-                            sel: Boolean(selected?.item === r),
-                            projectId: project.id,
-                            itemId: r.id,
-                            tip: flowTip
-                        }
-                    });
-
-                    // 2. A-dan B-yə doğru hərəkət edən axan işıq dalğası və istiqamət oxları
-                    features.push({
-                        type: "Feature",
-                        geometry: { type: "LineString", coordinates: doneGeom },
-                        properties: {
-                            isIcradaFlowLine: true,
-                            color: "#FEF08A",
-                            dim,
-                            sel: Boolean(selected?.item === r),
-                            projectId: project.id,
-                            itemId: r.id,
-                            tip: flowTip
-                        }
-                    });
-
-                    // 3. Əgər kabel hələ tam bitməyibsə (doneKm < totalKm), çəkilən son nöqtədə (iş cəbhəsində) yanıb-sönən mayak
-                    if (Number(r.doneKm) < Number(r.totalKm) && doneGeom.length >= 2) {
-                        const frontierCoord = doneGeom[doneGeom.length - 1];
-                        features.push({
-                            type: "Feature",
-                            geometry: { type: "Point", coordinates: frontierCoord },
-                            properties: {
-                                isIcradaFrontier: true,
-                                color: "#F59E0B",
-                                dim,
-                                projectId: project.id,
-                                itemId: r.id,
-                                tip: `<b>⚡ ${esc(lineDisplayName)}</b><small>İşin hazırda çatdığı nöqtə: <b>${doneKmVal} km</b> (A-dan B-yə)</small>`
-                            }
-                        });
-                    }
-                }
-            }
-
             // Kabel üzərində FO lif sayı (yalnız faylda/obyektdə lif sayı varsa göstərilir — şərti rəqəm atılmır)
             if (foImg) {
                 const itemSegs = [];
@@ -4096,7 +4040,7 @@ function onMapClick(e) {
         setDrawer(false);
     }
     const box = [[e.point.x - 5, e.point.y - 5], [e.point.x + 5, e.point.y + 5]];
-    const hit = map.queryRenderedFeatures(box, { layers: ["routes-summary-card", "routes-summary-card-merged", "routes-summary-name", "routes-point-halo-split", "routes-point-shape-split", "routes-point-halo", "routes-point-shape", "routes-point-label", "routes-point-label-near", "routes-point-name", "routes-ends", "routes-ends-label", "routes-other-points", "routes-other-line", "routes-fo-points", "routes-line-icrada-spark", "routes-line-icrada-flow", "routes-line-icrada-done", "routes-hit", "routes-other", "routes-poly-line", "routes-poly-fill"] })[0];
+    const hit = map.queryRenderedFeatures(box, { layers: ["routes-summary-card", "routes-summary-card-merged", "routes-summary-name", "routes-point-halo-split", "routes-point-shape-split", "routes-point-halo", "routes-point-shape", "routes-point-label", "routes-point-label-near", "routes-point-name", "routes-ends", "routes-ends-label", "routes-other-points", "routes-other-line", "routes-fo-points", "routes-hit", "routes-other", "routes-poly-line", "routes-poly-fill"] })[0];
     if (!hit) return;
     if (hit.properties?.isMultiRayon && map.getZoom() < 10.2) {
         const cLng = Number(hit.properties.centerLng) || e.lngLat.lng;
