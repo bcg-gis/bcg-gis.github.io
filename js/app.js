@@ -1,4 +1,4 @@
-﻿/* BCG GIS paneli: vəziyyət, xəritə, panellər */
+/* BCG GIS paneli: vəziyyət, xəritə, panellər */
 
 const AZERBAIJAN_BOUNDS = [[38.39, 44.77], [41.91, 50.63]];
 
@@ -7221,23 +7221,79 @@ document.addEventListener("DOMContentLoaded", init);
             toast(state.focusMode ? "💡 Fokus işıqlandırma aktivdir" : "💡 Fokus işıqlandırma söndürüldü");
         });
 
-        function placeMyLocationOnMap(lat, lng, subTitle = "", zoomLevel = 15) {
+        const MY_CUSTOM_LOC_KEY = "bcg.my.custom.loc.v1";
+        let myLocWatchId = null;
+
+        function placeMyLocationOnMap(lat, lng, subTitle = "", zoomLevel = 15, isCoarse = false) {
             if (!window.map) return;
             myLocationMarker?.remove();
             const el = document.createElement("div");
             el.className = "my-loc-marker";
-            el.style.cssText = "width:20px;height:20px;border-radius:50%;background:#0EA5E9;border:3px solid #FFFFFF;box-shadow:0 0 0 6px rgba(14,165,233,0.32),0 2px 8px rgba(0,0,0,0.55);cursor:pointer";
-            myLocationMarker = new maplibregl.Marker({ element: el })
+            el.title = "Cari məkanınızı dəqiqləşdirmək üçün tutub sürüşdürə bilərsiniz";
+            el.style.cssText = "width:22px;height:22px;border-radius:50%;background:#0EA5E9;border:3px solid #FFFFFF;box-shadow:0 0 0 7px rgba(14,165,233,0.32),0 2px 8px rgba(0,0,0,0.55);cursor:grab";
+
+            const hasSavedCustom = Boolean(readStore(MY_CUSTOM_LOC_KEY, null));
+            const buildPopupHtml = (cLat, cLng, noteText) => `
+                <div style="padding:3px 5px;line-height:1.4;min-width:195px">
+                    <div style="display:flex;align-items:center;justify-content:space-between;gap:6px">
+                        <b>🧭 Cari Məkanım</b>
+                        <span class="mono" style="font-size:10.5px;color:#38BDF8">${cLat.toFixed(5)}, ${cLng.toFixed(5)}</span>
+                    </div>
+                    ${noteText ? `<small style="display:block;color:var(--ink-2);margin-top:2px">${esc(noteText)}</small>` : ""}
+                    ${isCoarse ? `<small style="display:block;color:#F59E0B;margin-top:3px;font-size:10.5px">⚠️ Kompüterdə GPS çipi olmadığı üçün provayder ünvanı göstərilir. Nöqtəni sürüşdürüb dəqiq yerinizi qeyd edə bilərsiniz.</small>` : `<small style="display:block;color:var(--ink-3);margin-top:2px;font-size:10px">💡 Nöqtəni sürüşdürərək dəqiq yerinizi düzəldə bilərsiniz</small>`}
+                    <div style="display:flex;gap:5px;margin-top:6px">
+                        <button type="button" class="btn btn-outline" id="pickExactMyLocBtn" style="height:22px;padding:0 7px;font-size:10.5px;flex:1">📌 Xəritədə kliklə seç</button>
+                        ${hasSavedCustom ? `<button type="button" class="btn btn-outline" id="resetMyLocGpsBtn" style="height:22px;padding:0 7px;font-size:10.5px">🔄 Canlı GPS</button>` : ""}
+                    </div>
+                </div>
+            `;
+
+            myLocationMarker = new maplibregl.Marker({ element: el, draggable: true })
                 .setLngLat([lng, lat])
-                .setPopup(new maplibregl.Popup({ offset: 14, closeButton: false }).setHTML(
-                    `<div style="padding:2px 4px;line-height:1.35"><b>🧭 Cari Məkanım</b>${subTitle ? `<br><small style="color:var(--ink-2)">${esc(subTitle)}</small>` : ""}<br><span class="mono" style="font-size:11px">${lat.toFixed(5)}, ${lng.toFixed(5)}</span></div>`
-                ))
+                .setPopup(new maplibregl.Popup({ offset: 14, closeButton: true }).setHTML(buildPopupHtml(lat, lng, subTitle)))
                 .addTo(map);
+
+            myLocationMarker.on("dragend", () => {
+                const pos = myLocationMarker.getLngLat();
+                const nLat = Number(pos.lat.toFixed(6));
+                const nLng = Number(pos.lng.toFixed(6));
+                writeStore(MY_CUSTOM_LOC_KEY, { lat: nLat, lng: nLng });
+                placeMyLocationOnMap(nLat, nLng, "📌 Sizin təyin etdiyiniz dəqiq məkan", map.getZoom(), false);
+                toast(`✅ Dəqiq məkanınız yadda saxlanıldı (${nLat.toFixed(5)}, ${nLng.toFixed(5)})`);
+            });
+
             map.flyTo({ center: [lng, lat], zoom: zoomLevel });
             myLocationMarker.togglePopup();
+
+            setTimeout(() => {
+                $("pickExactMyLocBtn")?.addEventListener("click", () => {
+                    toast("📌 Xəritədə olduğunuz dəqiq nöqtəyə 1 dəfə klikləyin");
+                    map.getCanvas().style.cursor = "crosshair";
+                    const oncePick = ev => {
+                        map.getCanvas().style.cursor = "";
+                        const pLat = Number(ev.lngLat.lat.toFixed(6));
+                        const pLng = Number(ev.lngLat.lng.toFixed(6));
+                        writeStore(MY_CUSTOM_LOC_KEY, { lat: pLat, lng: pLng });
+                        placeMyLocationOnMap(pLat, pLng, "📌 Sizin təyin etdiyiniz dəqiq məkan", Math.max(map.getZoom(), 16), false);
+                        toast(`✅ Dəqiq məkanınız qeyd olundu (${pLat.toFixed(5)}, ${pLng.toFixed(5)})`);
+                    };
+                    map.once("click", oncePick);
+                });
+                $("resetMyLocGpsBtn")?.addEventListener("click", () => {
+                    localStorage.removeItem(MY_CUSTOM_LOC_KEY);
+                    toast("🔄 Canlı GPS axtarılır...");
+                    requestLiveGpsLocation(true);
+                });
+            }, 80);
         }
 
         async function fallbackIpLocation() {
+            const savedLoc = readStore(MY_CUSTOM_LOC_KEY, null);
+            if (savedLoc && Number.isFinite(savedLoc.lat) && Number.isFinite(savedLoc.lng)) {
+                placeMyLocationOnMap(savedLoc.lat, savedLoc.lng, "📌 Yadda saxlanılmış dəqiq məkanınız", 16, false);
+                toast(`🧭 Cari məkanınız göstərildi (${savedLoc.lat.toFixed(5)}, ${savedLoc.lng.toFixed(5)})`);
+                return;
+            }
             const urls = [
                 "https://ipwho.is/",
                 "https://get.geojs.io/v1/ip/geo.json",
@@ -7252,45 +7308,70 @@ document.addEventListener("DOMContentLoaded", init);
                     const lng = Number(data.longitude);
                     if (Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) > 0.1 && Math.abs(lng) > 0.1) {
                         const city = data.city || data.region || "";
-                        placeMyLocationOnMap(lat, lng, city ? `Şəbəkə mövqeyi (${city})` : "Şəbəkə mövqeyi", 14);
-                        toast(`🧭 Cari mövqeyiniz xəritədə göstərildi (${lat.toFixed(4)}, ${lng.toFixed(4)})`);
+                        placeMyLocationOnMap(lat, lng, city ? `İnternet provayder mövqeyi (${city})` : "İnternet provayder mövqeyi", 14, true);
+                        toast(`🧭 Təxmini şəbəkə mövqeyi göstərildi — Dəqiqləşdirmək üçün nöqtəni sürüşdürün`);
                         return;
                     }
                 } catch {}
             }
             const lat = 40.4093, lng = 49.8671;
-            placeMyLocationOnMap(lat, lng, "Bakı (GPS icazəsi bağlıdır)", 13);
-            toast("🧭 Cari mövqeyə yönləndirildi (40.4093, 49.8671) — Dəqiq GPS üçün brauzerdə məkan icazəsini aktiv edin");
+            placeMyLocationOnMap(lat, lng, "Bakı (GPS icazəsi bağlıdır)", 13, true);
+            toast("🧭 GPS icazəsi bağlıdır — nöqtəni sürüşdürərək dəqiq yerinizi seçə bilərsiniz");
         }
 
-        $("myLocationBtn")?.addEventListener("click", () => {
+        function requestLiveGpsLocation(ignoreSaved = false) {
+            const savedLoc = !ignoreSaved ? readStore(MY_CUSTOM_LOC_KEY, null) : null;
+            if (savedLoc && Number.isFinite(savedLoc.lat) && Number.isFinite(savedLoc.lng)) {
+                placeMyLocationOnMap(savedLoc.lat, savedLoc.lng, "📌 Yadda saxlanılmış dəqiq məkanınız", 16, false);
+                return;
+            }
             if (!navigator.geolocation) {
                 fallbackIpLocation();
                 return;
             }
-            toast("🧭 Məkanınız müəyyən edilir...");
-            navigator.geolocation.getCurrentPosition(
+            if (myLocWatchId !== null) {
+                navigator.geolocation.clearWatch(myLocWatchId);
+                myLocWatchId = null;
+            }
+            toast("🧭 Dəqiq GPS koordinatınız müəyyən edilir...");
+            let bestAcc = Infinity;
+            let settled = false;
+
+            const stopWatch = () => {
+                if (myLocWatchId !== null) {
+                    navigator.geolocation.clearWatch(myLocWatchId);
+                    myLocWatchId = null;
+                }
+            };
+
+            myLocWatchId = navigator.geolocation.watchPosition(
                 pos => {
                     const { latitude: lat, longitude: lng, accuracy } = pos.coords;
-                    const accText = accuracy ? `GPS dəqiqliyi: ~${Math.round(accuracy)} m` : "GPS mövqeyi";
-                    placeMyLocationOnMap(lat, lng, accText, 16);
-                    toast(`🧭 Cari məkanınız göstərildi (${lat.toFixed(5)}, ${lng.toFixed(5)})`);
+                    const acc = Number(accuracy) || 9999;
+                    if (acc < bestAcc || !settled) {
+                        bestAcc = acc;
+                        settled = true;
+                        const isCoarsePc = acc > 1200;
+                        const accText = isCoarsePc
+                            ? `Təxmini provayder/Wi-Fi mövqeyi (±${Math.round(acc)} m)`
+                            : `Canlı GPS dəqiqliyi: ±${Math.round(acc)} m`;
+                        placeMyLocationOnMap(lat, lng, accText, isCoarsePc ? 14 : 16, isCoarsePc);
+                    }
+                    if (acc <= 35) {
+                        stopWatch();
+                    }
                 },
                 () => {
-                    navigator.geolocation.getCurrentPosition(
-                        pos2 => {
-                            const { latitude: lat, longitude: lng } = pos2.coords;
-                            placeMyLocationOnMap(lat, lng, "Cihaz mövqeyi", 15);
-                            toast(`🧭 Cari məkanınız göstərildi (${lat.toFixed(5)}, ${lng.toFixed(5)})`);
-                        },
-                        () => {
-                            fallbackIpLocation();
-                        },
-                        { enableHighAccuracy: false, timeout: 6000, maximumAge: 300000 }
-                    );
+                    stopWatch();
+                    if (!settled) fallbackIpLocation();
                 },
-                { enableHighAccuracy: true, timeout: 7000, maximumAge: 60000 }
+                { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
             );
+            setTimeout(stopWatch, 8000);
+        }
+
+        $("myLocationBtn")?.addEventListener("click", () => {
+            requestLiveGpsLocation(false);
         });
 
         const pegBtn = $("pegmanBtn");
@@ -7400,6 +7481,26 @@ document.addEventListener("DOMContentLoaded", init);
     document.addEventListener("DOMContentLoaded", () => {
         ensureMapWidgets();
         initRightTools();
+
+        if ("serviceWorker" in navigator) {
+            navigator.serviceWorker.register("sw.js").catch(() => {});
+        }
+        let deferredPwaPrompt = null;
+        window.addEventListener("beforeinstallprompt", e => {
+            e.preventDefault();
+            deferredPwaPrompt = e;
+            if ($("installPwaBtn")) $("installPwaBtn").hidden = false;
+        });
+        $("installPwaBtn")?.addEventListener("click", async () => {
+            if (!deferredPwaPrompt) {
+                toast("📲 Telefonda brauzer menyusundan 'Əsas ekrana əlavə et' (Add to Home Screen) seçin");
+                return;
+            }
+            deferredPwaPrompt.prompt();
+            await deferredPwaPrompt.userChoice.catch(() => {});
+            deferredPwaPrompt = null;
+            if ($("installPwaBtn")) $("installPwaBtn").hidden = true;
+        });
 
         window.addEventListener("storage", e => {
             if (e.key === ADMIN_CONTRACTORS_KEY) {

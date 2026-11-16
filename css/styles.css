@@ -1296,4 +1296,31 @@ body.shared .user, body.shared #logoutBtn, body.shared .bar-sep, body.shared .ta
 .legend-sec-title { font-size: 9.5px; }
 .legend-proj-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+/* Mobil PWA (Telefon tətbiqi) üçün tam uyğunlaşdırma */
+@media (max-width: 860px) {
+    .appbar {
+        padding-top: env(safe-area-inset-top, 0px);
+        height: calc(var(--appbar-h) + env(safe-area-inset-top, 0px));
+    }
+    .sidebar {
+        height: 44dvh;
+        padding-bottom: env(safe-area-inset-bottom, 0px);
+    }
+    .info-card {
+        left: 8px !important;
+        right: 8px !important;
+        top: 8px !important;
+        width: auto !important;
+        max-width: calc(100% - 56px) !important;
+        max-height: 46dvh !important;
+    }
+    .semi-folder-stage {
+        height: 205px;
+        transform: scale(0.9);
+        transform-origin: top left;
+        margin-bottom: -18px;
+    }
+}
+
+
 

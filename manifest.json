@@ -1,0 +1,18 @@
+{
+  "name": "BCG – Fiber Optik GIS Paneli",
+  "short_name": "BCG GIS",
+  "description": "Baku Communications Group fiber optik şəbəkəsinin GIS idarəetmə paneli",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0e1a2b",
+  "theme_color": "#0e1a2b",
+  "icons": [
+    {
+      "src": "favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
