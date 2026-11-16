@@ -308,7 +308,7 @@ const api = (() => {
     function fallbackSeedProjects() {
         return [
             {
-                id: "proj_magistral", name: "1. Milli Magistral Fiber Optik", status: "icrada", category: "project", type: "lines",
+                id: "proj_magistral", name: "1. BCG — Bakı-Quba-Qusar Magistralı", status: "icrada", category: "project", type: "lines",
                 startDate: "2026-03-01", endDate: "2026-12-15", imported: false,
                 items: [
                     { id: "MAG-01", name: "Bakı - Sumqayıt Magistralı", pointA: "Bakı HQ", pointB: "Sumqayıt ATS", startDate: "2026-03-01", endDate: "2026-06-30", contractor: "", totalKm: 45, doneKm: 45, status: "bitmis", closures: 15, manholes: 10, antennas: 0, coords: [[40.4093, 49.8671], [40.45, 49.8], [40.5897, 49.6686]] },
@@ -316,28 +316,28 @@ const api = (() => {
                 ]
             },
             {
-                id: "proj_gpon_north", name: "2. GPON Şimal Bölgəsi", status: "icrada", category: "project", type: "lines",
+                id: "proj_gpon_north", name: "2. BCG — Bakı-Şamaxı-Yevlax Magistralı", status: "icrada", category: "project", type: "lines",
                 startDate: "2026-04-01", endDate: "2026-11-30", imported: false,
                 items: [
                     { id: "NOR-01", name: "Quba Şəhər İçi GPON", pointA: "Quba ATS", pointB: "Zərdabi Qəsəbəsi", startDate: "2026-04-01", endDate: "2026-07-30", contractor: "", totalKm: 35, doneKm: 35, status: "bitmis", closures: 8, manholes: 5, antennas: 0, coords: [[41.3611, 48.5134], [41.39, 48.48]] }
                 ]
             },
             {
-                id: "proj_gpon_west", name: "3. GPON Qərb Bölgəsi", status: "icrada", category: "project", type: "lines",
+                id: "proj_gpon_west", name: "3. BCG — Gəncə-Qazax Magistralı", status: "icrada", category: "project", type: "lines",
                 startDate: "2026-05-01", endDate: "2026-12-20", imported: false,
                 items: [
                     { id: "WES-01", name: "Gəncə Şəhər İçi GPON", pointA: "Gəncə ATS-1", pointB: "Gəncə Mərkəz", startDate: "2026-05-01", endDate: "2026-08-30", contractor: "", totalKm: 65, doneKm: 65, status: "bitmis", closures: 16, manholes: 10, antennas: 0, coords: [[40.6828, 46.3606], [40.72, 46.33]] }
                 ]
             },
             {
-                id: "proj_absheron", name: "4. Abşeron & Bakı Kəndləri", status: "bitmis", category: "project", type: "lines",
+                id: "proj_absheron", name: "4. Azconnect — Bakı-Sumqayıt Magistralı", status: "bitmis", category: "azconnect", type: "lines",
                 startDate: "2025-10-01", endDate: "2026-03-30", imported: false,
                 items: [
                     { id: "ABS-01", name: "Xırdalan Şəhər İçi", pointA: "Xırdalan ATS", pointB: "Masazır Qəsəbəsi", startDate: "2025-10-01", endDate: "2025-12-15", contractor: "", totalKm: 35, doneKm: 35, status: "bitmis", closures: 9, manholes: 6, antennas: 0, coords: [[40.4481, 49.755], [40.49, 49.7]] }
                 ]
             },
             {
-                id: "proj_karabakh", name: "5. Qarabağ & Şərqi Zəngəzur", status: "tehvil", category: "project", type: "lines",
+                id: "proj_karabakh", name: "5. BCG — Cənub və Qərb Antena Layihələri", status: "tehvil", category: "project", type: "lines",
                 startDate: "2025-05-01", endDate: "2026-02-28", imported: false,
                 items: [
                     { id: "KAR-01", name: "Şuşa - Xankəndi Magistralı", pointA: "Şuşa Sub-station", pointB: "Xankəndi Hub", startDate: "2025-05-01", endDate: "2025-09-30", contractor: "", totalKm: 35, doneKm: 35, status: "tehvil", closures: 9, manholes: 6, antennas: 0, coords: [[39.7539, 46.7469], [39.8231, 46.7561]] }

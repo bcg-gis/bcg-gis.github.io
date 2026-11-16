@@ -1932,26 +1932,70 @@ function editContractor(name) {
 const MATERIAL_STATES = ["ordered", "instock", "issued", "installed"];
 const materialStateLabel = s => I18N[state.lang][`state${s}`] || s;
 
+const LEGACY_PROJECT_RENAME_MAP = {
+    "1. Milli Magistral Fiber Optik": "BCG — Bakı-Quba-Qusar Magistralı",
+    "Milli Magistral Fiber Optik": "BCG — Bakı-Quba-Qusar Magistralı",
+    "2. GPON Şimal Bölgəsi": "BCG — Bakı-Şamaxı-Yevlax Magistralı",
+    "GPON Şimal Bölgəsi": "BCG — Bakı-Şamaxı-Yevlax Magistralı",
+    "3. GPON Qərb Bölgəsi": "BCG — Gəncə-Qazax Magistralı",
+    "GPON Qərb Bölgəsi": "BCG — Gəncə-Qazax Magistralı",
+    "4. Abşeron & Bakı Kəndləri": "Azconnect — Bakı-Sumqayıt Magistralı",
+    "Abşeron & Bakı Kəndləri": "Azconnect — Bakı-Sumqayıt Magistralı",
+    "5. Qarabağ & Şərqi Zəngəzur": "BCG — Cənub Antena Layihəsi",
+    "Qarabağ & Şərqi Zəngəzur": "BCG — Cənub Antena Layihəsi"
+};
+
 function editMaterial(material) {
     const current = material?.state;
     const states = current && !MATERIAL_STATES.includes(current) ? [...MATERIAL_STATES, current] : MATERIAL_STATES;
     const today = new Date().toISOString().slice(0, 10);
+
+    const activeProjectNames = [
+        ...state.projects.map(p => p.name),
+        "BCG — Bakı-Quba-Qusar Magistralı",
+        "BCG — Bakı-Şamaxı-Yevlax Magistralı",
+        "BCG — Gəncə-Qazax Magistralı",
+        "BCG — Cənub Antena Layihəsi",
+        "BCG — Qərb Antena Layihəsi",
+        "Azconnect — Bakı-Sumqayıt Magistralı",
+        "Azconnect — Xırdalan-Masazır Xətti",
+        "Azconnect — Ələt-Şirvan Xətti",
+        "NİM — Svetofor və Kəsişmələr (Bakı)"
+    ];
+    const uniqueProjects = [...new Set(activeProjectNames.filter(Boolean))];
+
+    let currentProj = material?.project;
+    if (currentProj && LEGACY_PROJECT_RENAME_MAP[currentProj]) {
+        currentProj = LEGACY_PROJECT_RENAME_MAP[currentProj];
+    }
+    if (!currentProj) currentProj = uniqueProjects[0] || "BCG — Bakı-Quba-Qusar Magistralı";
+    if (!uniqueProjects.includes(currentProj)) uniqueProjects.unshift(currentProj);
+
     openEditor({
         title: t(material ? "editMaterial" : "addMaterial"),
         values: material ? {
             ...material,
+            project: currentProj,
             invoice_no: material.invoice_no || `QAİMƏ-2026-0${140 + (material.id || 1)}`,
             issued_qty: material.issued_qty || material.quantity || "",
             used_qty: material.used_qty || material.quantity || "",
             used_date: material.used_date || today
         } : {
+            project: currentProj,
             invoice_no: `QAİMƏ-2026-${Math.floor(100 + Math.random() * 900)}`,
             state: "issued",
             used_date: today
         },
         fields: [
             { key: "invoice_no", label: "📄 Anbar Qaiməsi №", required: true, wide: true },
-            { key: "project", label: t("thProject"), required: true, wide: true },
+            {
+                key: "project",
+                label: t("thProject"),
+                type: "select",
+                required: true,
+                wide: true,
+                options: uniqueProjects.map(p => [p, p])
+            },
             { key: "material", label: t("thMaterial"), required: true, wide: true },
             { key: "issued_qty", label: "📦 Anbardan verilən (göndərilən)", required: true },
             { key: "used_qty", label: "🛠️ İstifadə olunan (faktiki sərf)", required: true },
@@ -2660,12 +2704,12 @@ function initMap() {
             if (tools.isActive()) return;
             window.routeHover = true;
             map.getCanvas().style.cursor = "pointer";
-            routePopup.setLngLat(e.lngLat).setHTML(e.features[0].properties.tip).addTo(map);
+            // İstifadəçinin istəyi ilə: maus yaxınlaşanda açılan kiçik status pəncərəsi ləğv edildi
         });
         map.on("mouseleave", layer, () => {
             window.routeHover = false;
             map.getCanvas().style.cursor = tools.isActive() ? "crosshair" : "";
-            routePopup.remove();
+            if (routePopup) routePopup.remove();
         });
     });
 
@@ -8250,12 +8294,42 @@ document.addEventListener("DOMContentLoaded", init);
 
     // Material Reyestri: Anbardan çıxan + İstifadə olunan + Anbar Qaiməsi № ilə (Qaimə əlavə etmək yalnız Admin üçündür)
     window.renderMaterials = function () {
+        // Material Reyestrindəki köhnə layihə adlarını avtomatik olaraq aktiv BCG və Azconnect layihələrinə yenilə
+        let changed = false;
+        (state.materials || []).forEach(m => {
+            if (m.project && LEGACY_PROJECT_RENAME_MAP[m.project]) {
+                m.project = LEGACY_PROJECT_RENAME_MAP[m.project];
+                changed = true;
+                if (isAdmin() && api.configured && m.id) {
+                    api.saveMaterial(m.id, { ...m, project: m.project }).catch(() => {});
+                }
+            }
+        });
+        if (changed) {
+            try {
+                const snap = JSON.parse(localStorage.getItem("bcg.db.snapshot.v1") || "null");
+                if (snap) {
+                    snap.materials = state.materials;
+                    localStorage.setItem("bcg.db.snapshot.v1", JSON.stringify(snap));
+                }
+            } catch {}
+        }
+
         const projSel = $("matFilterProject");
         const typeSel = $("matFilterType");
         if (projSel && typeSel) {
             const pCur = projSel.value || "all";
             const tCur = typeSel.value || "all";
-            const projects = [...new Set(state.materials.map(m => m.project))];
+            const projects = [...new Set([
+                ...state.projects.map(p => p.name),
+                ...state.materials.map(m => m.project),
+                "BCG — Bakı-Quba-Qusar Magistralı",
+                "BCG — Bakı-Şamaxı-Yevlax Magistralı",
+                "BCG — Gəncə-Qazax Magistralı",
+                "BCG — Cənub Antena Layihəsi",
+                "BCG — Qərb Antena Layihəsi",
+                "Azconnect — Bakı-Sumqayıt Magistralı"
+            ])].filter(Boolean);
             const types = [...new Set(state.materials.map(m => m.material))];
             projSel.innerHTML = `<option value="all">Bütün layihələr</option>` + projects.map(p => `<option value="${esc(p)}">${esc(p)}</option>`).join("");
             typeSel.innerHTML = `<option value="all">Bütün materiallar</option>` + types.map(m => `<option value="${esc(m)}">${esc(m)}</option>`).join("");
