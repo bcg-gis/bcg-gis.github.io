@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="az">
 <head>
     <meta charset="UTF-8">
@@ -20,7 +20,7 @@
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap">
     <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" integrity="sha384-MinO0mNliZ3vwppuPOUnGa+iq619pfMhLVUXfC4LHwSCvF9H+6P/KO4Q7qBOYV5V" crossorigin="anonymous">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" integrity="sha384-iw3OoTErCYJJB9mCa8LNS2hbsQ7M3C0EpIsO/H5+EGAkPGc6rk+V8i04oW/K5xq0" crossorigin="anonymous">
-    <link rel="stylesheet" href="css/styles.css?v=20261117a">
+    <link rel="stylesheet" href="css/styles.css?v=20261117d">
 </head>
 <body>
 
@@ -123,10 +123,10 @@
                     <svg class="semi-arc-svg" viewBox="0 0 220 250" preserveAspectRatio="none" aria-hidden="true">
                         <defs>
                             <linearGradient id="semiArcGrad" x1="0" y1="0" x2="1" y2="1">
-                                <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.7"/>
-                                <stop offset="35%" stop-color="#f59e0b" stop-opacity="0.7"/>
-                                <stop offset="70%" stop-color="#06b6d4" stop-opacity="0.7"/>
-                                <stop offset="100%" stop-color="#a855f7" stop-opacity="0.7"/>
+                                <stop offset="0%" stop-color="#00B5E2" stop-opacity="0.75"/>
+                                <stop offset="50%" stop-color="#EF3340" stop-opacity="0.75"/>
+                                
+                                <stop offset="100%" stop-color="#509E2F" stop-opacity="0.75"/>
                             </linearGradient>
                             <linearGradient id="cableJacketGrad" x1="0" y1="0" x2="1" y2="0">
                                 <stop offset="0%" stop-color="#070d19"/>
@@ -154,7 +154,7 @@
                         </g>
 
                         <!-- 1) BCG lifi: bir ucu BCG qovluğuna, qalan hissəsi kabel daxilində aşağıya -->
-                        <g class="fo-system-group" data-fo-group="project" style="--fo-color:#38bdf8">
+                        <g class="fo-system-group" data-fo-group="project" style="--fo-color:#00B5E2">
                             <path class="fo-trunk-base"   d="M 18,108 L 18,250"/>
                             <path class="fo-trunk-active" d="M 18,108 L 18,250"/>
                             <path class="fo-trunk-pulse"  d="M 18,250 L 18,108"/>
@@ -165,7 +165,7 @@
                         </g>
 
                         <!-- 2) NİM lifi -->
-                        <g class="fo-system-group" data-fo-group="nim" style="--fo-color:#f59e0b">
+                        <g class="fo-system-group" data-fo-group="nim" style="--fo-color:#EF3340">
                             <path class="fo-trunk-base"   d="M 22,108 L 22,250"/>
                             <path class="fo-trunk-active" d="M 22,108 L 22,250"/>
                             <path class="fo-trunk-pulse"  d="M 22,250 L 22,108"/>
@@ -176,7 +176,7 @@
                         </g>
 
                         <!-- 3) Azconnect lifi -->
-                        <g class="fo-system-group" data-fo-group="azconnect" style="--fo-color:#06b6d4">
+                        <g class="fo-system-group" data-fo-group="azconnect" style="--fo-color:#509E2F">
                             <path class="fo-trunk-base"   d="M 26,108 L 26,250"/>
                             <path class="fo-trunk-active" d="M 26,108 L 26,250"/>
                             <path class="fo-trunk-pulse"  d="M 26,250 L 26,108"/>
@@ -187,7 +187,7 @@
                         </g>
 
                         <!-- 4) Digər lifi -->
-                        <g class="fo-system-group" data-fo-group="other" style="--fo-color:#a855f7">
+                        <g class="fo-system-group" data-fo-group="other" style="--fo-color:#F8FAFC">
                             <path class="fo-trunk-base"   d="M 30,108 L 30,250"/>
                             <path class="fo-trunk-active" d="M 30,108 L 30,250"/>
                             <path class="fo-trunk-pulse"  d="M 30,250 L 30,108"/>
@@ -202,19 +202,19 @@
                             <circle cx="0" cy="0" r="22" fill="#070d19" stroke="#475569" stroke-width="2.4"/>
                             <circle cx="0" cy="0" r="18.8" fill="none" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="2.5 2" stroke-opacity="0.65"/>
                             <circle cx="0" cy="0" r="16.2" fill="#0c1628" stroke="#eab308" stroke-width="1.3" stroke-dasharray="4 1.5" stroke-opacity="0.7"/>
-                            <g class="fo-core-tube" data-fo-core="project" style="--fo-color:#38bdf8">
+                            <g class="fo-core-tube" data-fo-core="project" style="--fo-color:#00B5E2">
                                 <circle class="fo-tube-ring" cx="-4.5" cy="-8.2" r="4.6"/>
                                 <circle class="fo-tube-glass" cx="-4.5" cy="-8.2" r="2.2"/>
                             </g>
-                            <g class="fo-core-tube" data-fo-core="nim" style="--fo-color:#f59e0b">
+                            <g class="fo-core-tube" data-fo-core="nim" style="--fo-color:#EF3340">
                                 <circle class="fo-tube-ring" cx="7.2" cy="-5.2" r="4.6"/>
                                 <circle class="fo-tube-glass" cx="7.2" cy="-5.2" r="2.2"/>
                             </g>
-                            <g class="fo-core-tube" data-fo-core="azconnect" style="--fo-color:#06b6d4">
+                            <g class="fo-core-tube" data-fo-core="azconnect" style="--fo-color:#509E2F">
                                 <circle class="fo-tube-ring" cx="7.2" cy="5.2" r="4.6"/>
                                 <circle class="fo-tube-glass" cx="7.2" cy="5.2" r="2.2"/>
                             </g>
-                            <g class="fo-core-tube" data-fo-core="other" style="--fo-color:#a855f7">
+                            <g class="fo-core-tube" data-fo-core="other" style="--fo-color:#F8FAFC">
                                 <circle class="fo-tube-ring" cx="-4.5" cy="8.2" r="4.6"/>
                                 <circle class="fo-tube-glass" cx="-4.5" cy="8.2" r="2.2"/>
                             </g>
@@ -611,10 +611,10 @@
 
     <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js" integrity="sha384-SYKAG6cglRMN0RVvhNeBY0r3FYKNOJtznwA0v7B5Vp9tr31xAHsZC0DqkQ/pZDmj" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js" integrity="sha384-0w2KAL2YHP6wKOkUDzkCDGgVvfmHnj02DHeQ6XcHOgTfFsGyonKOpShMH1x6nk9o" crossorigin="anonymous"></script>
-    <script src="js/config.js?v=20261117a"></script>
-    <script src="js/api.js?v=20261117a"></script>
-    <script src="js/i18n.js?v=20261117a"></script>
-    <script src="js/app.js?v=20261117a"></script>
-    <script src="js/tools.js?v=20261117a"></script>
+    <script src="js/config.js?v=20261117d"></script>
+    <script src="js/api.js?v=20261117d"></script>
+    <script src="js/i18n.js?v=20261117d"></script>
+    <script src="js/app.js?v=20261117d"></script>
+    <script src="js/tools.js?v=20261117d"></script>
 </body>
 </html>

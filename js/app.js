@@ -338,8 +338,16 @@ async function handleLogin(event) {
         $("loginError").textContent = t("loginRequired");
         return;
     }
+    const submitBtn = event.submitter || event.target?.querySelector?.('button[type="submit"], button:not([type])');
+    const oldBtnHtml = submitBtn ? submitBtn.innerHTML : "";
+    if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin"></i> Giriş edilir…`;
+    }
+    const restoreBtn = () => { if (submitBtn) { submitBtn.disabled = false; submitBtn.innerHTML = oldBtnHtml; } };
     const result = await api.signIn(email, password);
     if (result.error) {
+        restoreBtn();
         $("loginError").textContent = t(result.error === "credentials" ? "loginFailed" : "loginNetwork");
         return;
     }
@@ -347,6 +355,7 @@ async function handleLogin(event) {
     $("loginError").textContent = "";
     $("loginPass").value = "";
     await enterApp(result.user);
+    restoreBtn();
 }
 
 function resetState() {
@@ -361,6 +370,7 @@ function showLogin(message = "") {
     $("loginUser").value = "";
     $("login").hidden = false;
     $("topActions").classList.remove("open");
+    if (api.configured) api.prefetch();
 }
 
 async function handleLogout() {
@@ -1369,14 +1379,45 @@ async function enterApp(user) {
     state.user = user;
     $("login").hidden = true;
 
-    // 1. DƏRHAL AÇILIŞ (INSTANT ZERO-LATENCY LOAD):
-    // Telefonda və kompüterdə şəbəkə gözləmədən əvvəlcə yerli keşdəki layihələri 0.1 saniyədə ekrana ver!
-    const snap = readStore("bcg.db.snapshot.v1", null);
-    if (snap && Array.isArray(snap.projects) && snap.projects.length > 0) {
-        state.projects = snap.projects;
-        if (snap.materials) state.materials = snap.materials;
-        if (snap.notes) state.notes = snap.notes;
-        state.role = user.role || snap.role || "viewer";
+    // 1. YALNIZ TƏZƏ MƏLUMAT: köhnə keş ekrana çıxmır; yükləmə ekranı göstərilir, buluddan təzə məlumat gələn kimi açılır
+    const showBootLoader = () => {
+        let el = document.getElementById("bootLoader");
+        if (!el) {
+            el = document.createElement("div");
+            el.id = "bootLoader";
+            el.style.cssText = "position:fixed;inset:0;z-index:99999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:#0e1a2b;color:#e2e8f0;font:600 14px Inter,system-ui,sans-serif";
+            el.innerHTML = `<img src="favicon.svg" alt="BCG" style="width:56px;height:56px"><div style="width:38px;height:38px;border:4px solid rgba(255,255,255,.15);border-top-color:#4c9bf5;border-radius:50%;animation:bootSpin .8s linear infinite"></div><div>Təzə məlumatlar yüklənir…</div><style>@keyframes bootSpin{to{transform:rotate(360deg)}}</style>`;
+            document.body.appendChild(el);
+        }
+        el.hidden = false;
+    };
+    const hideBootLoader = () => document.getElementById("bootLoader")?.remove();
+
+    let fresh = null;
+    if (api.configured) {
+        showBootLoader();
+        try {
+            fresh = await Promise.race([
+                api.loadAll(user.id),
+                new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 20000))
+            ]);
+        } catch (err) {
+            console.warn("Buluddan yükləmə alınmadı:", err);
+        }
+    }
+
+    if (fresh && Array.isArray(fresh.projects)) {
+        Object.assign(state, fresh);
+    } else {
+        // Yalnız internet tamamilə yoxdursa: son saxlanmış məlumatla açılır və aydın xəbərdarlıq verilir
+        const snap = readStore("bcg.db.snapshot.v1", null);
+        if (snap && Array.isArray(snap.projects)) {
+            state.projects = snap.projects;
+            if (snap.materials) state.materials = snap.materials;
+            if (snap.notes) state.notes = snap.notes;
+            state.role = user.role || snap.role || "viewer";
+        }
+        if (api.configured) setTimeout(() => toast("⚠️ İnternet bağlantısı yoxdur — son saxlanmış məlumat göstərilir", true), 300);
     }
 
     // Baza layihələri ilə lokal/idxal olunmuş layihələri birləşdir
@@ -1401,35 +1442,8 @@ async function enterApp(user) {
     renderRole();
     renderNotes();
     renderMaterials();
-    renderAll(); // Səhifə heç bir gecikmə olmadan dərhal açılır!
-
-    // 2. ARXA PLANDA SƏSSİZ SİNXRONİZASİYA (ASYNC BACKGROUND SYNC):
-    // İstifadəçi artıq xəritəni görür və işləyir; buluddan yeni dəyişikliklər gələndə səssizcə yenilənir
-    if (api.configured) {
-        api.loadAll(user.id).then(data => {
-            if (data && Array.isArray(data.projects) && data.projects.length > 0) {
-                Object.assign(state, data);
-                const freshImported = getStoredImportedProjects();
-                freshImported.forEach(localProj => {
-                    if (!localProj || !localProj.id) return;
-                    const idx = state.projects.findIndex(p => p.id === localProj.id);
-                    if (idx >= 0) {
-                        state.projects[idx] = mergeLocalProjectIntoDb(state.projects[idx], localProj);
-                    } else {
-                        state.projects.push(localProj);
-                    }
-                });
-                applySavedMetaOverrides();
-                state.projects.forEach(p => {
-                    if (!hiddenSet.has(p.id)) state.visibleIds.add(p.id);
-                });
-                renderAll();
-            }
-        }).catch(err => {
-            console.warn("Offline or slow network, continuing with cached data:", err);
-            // Şəbəkə zəifdirsə və ya gecikirsə, istifadəçini sistemdən ATILMIR, işini davam etdirir.
-        });
-    }
+    renderAll();
+    hideBootLoader();
 
     // Əgər localStorage dolubsa və ya layihələr limitsiz IndexedDB-də saxlanılıbsa, onları da daxil et
     getFromIndexedDB(STORAGE_IMPORTED_KEY).then(idbProjs => {
@@ -5998,7 +6012,10 @@ async function init() {
 
     const user = api.configured ? await api.getUser() : null;
     if (user) await enterApp(user);
-    else $("login").hidden = false;
+    else {
+        $("login").hidden = false;
+        if (api.configured) api.prefetch();
+    }
 }
 
 document.addEventListener("DOMContentLoaded", init);

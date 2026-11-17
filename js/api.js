@@ -155,7 +155,15 @@ const api = (() => {
         return [...byEmail.values()];
     }
 
-    async function pullCloudRegistry() {
+    // Bulud reyestri bir dəfə yüklənir və 60 saniyə ərzində təkrar istifadə olunur (girişdə 2 dəfə yüklənməsin)
+    let registryCache = { promise: null, at: 0 };
+    function pullCloudRegistry(force = false) {
+        if (!force && registryCache.promise && Date.now() - registryCache.at < 60000) return registryCache.promise;
+        registryCache = { promise: pullCloudRegistryRaw(), at: Date.now() };
+        return registryCache.promise;
+    }
+
+    async function pullCloudRegistryRaw() {
         if (!client) return null;
         try {
             const { data, error } = await client.rpc("get_shared_extras", { link: CLOUD_SYNC_TOKEN });
@@ -349,6 +357,11 @@ const api = (() => {
     return {
         configured,
 
+        // Giriş səhifəsi açılan kimi bulud reyestrini öncədən yüklə (istifadəçi şifrəni yazarkən)
+        prefetch() {
+            if (client) pullCloudRegistry().catch(() => {});
+        },
+
         async getUser() {
             // Əvvəlcə lokal sessiyanı yoxla (telefonda və kompüterdə 0 millisaniyədə dərhal açılır)
             try {
@@ -365,11 +378,29 @@ const api = (() => {
         /* { user } və ya { error: "credentials" | "network" } */
         async signIn(email, password) {
             const cleanEmail = String(email || "").trim();
-            await pullCloudRegistry();
+            // Reyestr (artıq səhifə açılanda öncədən yüklənməyə başlayıb) və giriş sorğusu PARALEL gedir
+            const registryPromise = pullCloudRegistry().catch(() => null);
+            const authPromise = client.auth.signInWithPassword({ email: cleanEmail, password })
+                .catch(err => ({ data: null, error: err || { message: "network" }, thrown: true }));
+            const authRes = await authPromise;
+            if (!authRes.error && authRes.data?.user) {
+                // Uğurlu girişdə reyestri gözləmədən dərhal davam et
+                registryPromise.then(() => {
+                    const m = findAdminPanelUser(cleanEmail, password);
+                    markAdminUserLogin(cleanEmail);
+                    if (m) localStorage.setItem(LOCAL_SESSION_KEY, JSON.stringify({ ...m, id: authRes.data.user.id, isLocalUser: false }));
+                });
+                const m0 = findAdminPanelUser(cleanEmail, password);
+                if (m0) localStorage.setItem(LOCAL_SESSION_KEY, JSON.stringify({ ...m0, id: authRes.data.user.id, isLocalUser: false }));
+                else localStorage.removeItem(LOCAL_SESSION_KEY);
+                return { user: authRes.data.user };
+            }
+            await registryPromise;
             let localMatch = findAdminPanelUser(cleanEmail, password);
 
             try {
-                const { data, error } = await client.auth.signInWithPassword({ email: cleanEmail, password });
+                const { data, error, thrown } = authRes;
+                if (thrown) throw error;
                 if (!error && data?.user) {
                     markAdminUserLogin(cleanEmail);
                     if (localMatch) {
@@ -408,7 +439,22 @@ const api = (() => {
         },
 
         async loadAll(userId) {
-            await pullCloudRegistry();
+            // Bulud reyestri və əsas cədvəllər PARALEL yüklənir (əvvəl ardıcıl idi → 2x gecikmə)
+            const registryPromise = pullCloudRegistry().catch(() => null);
+            const queriesPromise = Promise.all([
+                client.from("profiles").select("id, email, role").order("email"),
+                client.from("projects").select("*, segments(*)").order("name"),
+                client.from("contractors").select("*"),
+                client.from("materials").select("*").order("id"),
+                client.from("notes").select("*").order("created_at", { ascending: false })
+            ].map(query => query.then(unwrap)));
+            queriesPromise.catch(() => {});
+            // Admin Paneldə yaradılmış lokal istifadəçilər üçün paylaşılan görünüşü də ƏVVƏLCƏDƏN paralel yüklə
+            let preSession = null;
+            try { preSession = JSON.parse(localStorage.getItem(LOCAL_SESSION_KEY) || "null"); } catch {}
+            let sharedViewPromise = preSession?.isLocalUser ? client.rpc("get_shared_view", { link: CLOUD_SYNC_TOKEN }).then(r => r, () => ({ data: null })) : null;
+            const getSharedView = () => sharedViewPromise || (sharedViewPromise = client.rpc("get_shared_view", { link: CLOUD_SYNC_TOKEN }).then(r => r, () => ({ data: null })));
+            await registryPromise;
             let contractorMap = {};
             try {
                 const savedAdminContractors = JSON.parse(localStorage.getItem("bcg.admin.contractors.v2") || "{}");
@@ -426,13 +472,7 @@ const api = (() => {
             const adminUserEmails = adminUsers.map(u => u.email).filter(Boolean);
 
             try {
-                const [profiles, projects, contractors, materials, notes] = await Promise.all([
-                    client.from("profiles").select("id, email, role").order("email"),
-                    client.from("projects").select("*, segments(*)").order("name"),
-                    client.from("contractors").select("*"),
-                    client.from("materials").select("*").order("id"),
-                    client.from("notes").select("*").order("created_at", { ascending: false })
-                ].map(query => query.then(unwrap)));
+                const [profiles, projects, contractors, materials, notes] = await queriesPromise;
 
                 const own = profiles.find(p => p.id === userId);
                 const ownEmail = (own?.email || localSession?.email || "").toLowerCase();
@@ -453,7 +493,8 @@ const api = (() => {
                         localStorage.setItem(DB_SNAPSHOT_KEY, JSON.stringify(snapPayload));
                     } catch {}
                     if (own?.role === "admin" || matchedAdminUser?.role === "admin") {
-                        syncCloudRegistry(snapPayload).catch(() => {});
+                        // Sinxronizasiya açılışı yavaşlatmasın: 20 saniyə sonra arxa fonda
+                        setTimeout(() => syncCloudRegistry(snapPayload).catch(() => {}), 20000);
                     }
                 }
 
@@ -461,7 +502,7 @@ const api = (() => {
                 if (mappedProjects.length === 0 && localSession) {
                     let sharedProjects = [];
                     try {
-                        const sharedRaw = await client.rpc("get_shared_view", { link: CLOUD_SYNC_TOKEN });
+                        const sharedRaw = await getSharedView();
                         if (Array.isArray(sharedRaw.data) && sharedRaw.data.length > 0) {
                             sharedProjects = sharedRaw.data.map(toProject);
                         }
@@ -494,7 +535,7 @@ const api = (() => {
                     const matchedAdminUser = adminUsers.find(u => String(u.email || "").trim().toLowerCase() === ownEmail);
                     let sharedProjects = [];
                     try {
-                        const sharedRaw = await client.rpc("get_shared_view", { link: CLOUD_SYNC_TOKEN });
+                        const sharedRaw = await getSharedView();
                         if (Array.isArray(sharedRaw.data) && sharedRaw.data.length > 0) {
                             sharedProjects = sharedRaw.data.map(toProject);
                         }

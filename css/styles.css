@@ -448,48 +448,82 @@ body.shared .user, body.shared #logoutBtn, body.shared .bar-sep, body.shared .ta
 }
 
 @media (max-width: 860px) {
+    body { font-size: 15px; line-height: 1.5; }
     .login { grid-template-columns: 1fr; }
     .login-aside { display: none; }
+    .login-form .input { height: 44px; font-size: 16px; }
+    .login-form .btn-block { height: 46px; font-size: 15px; }
     .brand-sub { display: none; }
-    .menu-btn { display: grid; }
+    .brand-name { font-size: 15px; }
+    .menu-btn { display: grid; width: 38px; height: 38px; font-size: 17px; }
     .top-actions {
-        display: none; position: absolute; top: calc(100% + 4px); right: 6px; padding: 6px;
+        display: none; position: absolute; top: calc(100% + 4px); right: 6px; padding: 8px;
         background: var(--bar); border-radius: var(--radius); box-shadow: var(--shadow);
+        gap: 6px;
     }
     .top-actions.open { display: flex; }
 
     #sidebarToggle { display: none; }
     .workspace, .workspace.sidebar-closed { display: flex; flex-direction: column; }
     .map-column { flex: 1; }
-    .sidebar { order: 2; flex: none; height: 50dvh; border-right: 0; }
-    .side-view { width: 100%; }
+    .sidebar { order: 2; flex: none; height: 52dvh; border-right: 0; border-top: 1px solid var(--line); }
+    .side-view { width: 100%; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+    .project-list { overflow: visible; flex: none; }
     .tab[data-tab="projects"] { display: block; }
     .dock.sheet .tab[data-tab="projects"] { color: var(--brand); }
     .dock.sheet .tab[data-tab="projects"]::after { content: ""; position: absolute; left: 12px; right: 12px; bottom: 0; height: 2px; background: var(--brand); }
-    .tab { padding: 0 10px; font-size: 13px; }
-    .summary { padding: 10px 12px; }
-    .filters { padding: 8px 12px; gap: 8px; }
-    .list-head { padding: 8px 12px 4px; gap: 6px; }
-    .list-head h2, .list-head .link { white-space: nowrap; }
-    .list-head .link { font-size: 11px; }
-    .link + .link { margin-left: 6px; }
-    .project-row { padding: 6px 4px 6px 12px; }
-    .kpi { padding-left: 6px; }
-    .kpi b { font-size: 14px; }
-    .chip { height: 24px; padding: 0 6px; font-size: 11px; }
+    .dock-head { height: 46px; }
+    .tab { padding: 0 14px; font-size: 14px; }
+    .summary { padding: 12px 14px; }
+    .filters { padding: 10px 14px; gap: 10px; }
+    .input, select.input { height: 42px; font-size: 16px; }
+    .search i { top: 14px; left: 12px; font-size: 14px; }
+    .search .input { padding-left: 34px; }
+    .btn { height: 40px; padding: 0 16px; font-size: 14px; }
+    .icon-btn { width: 38px; height: 38px; font-size: 15px; }
+    .list-head { padding: 10px 14px 6px; gap: 8px; }
+    .list-head h2 { font-size: 15px; white-space: nowrap; }
+    .list-head .link { font-size: 13px; white-space: nowrap; padding: 4px 2px; }
+    .link + .link { margin-left: 8px; }
+    .project-row { padding: 11px 10px 11px 14px; gap: 10px; }
+    .check input { width: 20px; height: 20px; }
+    .project-main strong { font-size: 14.5px; }
+    .project-main small { font-size: 12.5px; margin-top: 2px; }
+    .project-pct { font-size: 13.5px; }
+    .segments { padding: 0 10px 10px 30px; }
+    .segment { padding: 10px 10px; font-size: 13.5px; }
+    .kpi { padding-left: 8px; }
+    .kpi b { font-size: 17px; }
+    .kpi span { font-size: 12px; }
+    .chip { height: 34px; padding: 0 11px; font-size: 13px; border-radius: 8px; }
+    .detail-body { padding: 14px; gap: 14px; }
+    .detail-title h2 { font-size: 19px; }
+    .detail-title small { font-size: 13px; }
+    .pill { height: 28px; padding: 0 11px; font-size: 13px; }
+    .meter-row b { font-size: 20px; }
+    .spec { font-size: 14px; gap: 10px 14px; }
     .workspace.sidebar-closed .sidebar { display: none; }
     .legend, .cursor-coords, .maplibregl-ctrl-scale { display: none; }
     .toolbar { top: 8px; right: 8px; }
-    .tool, .dock-btn { width: 38px; height: 32px; font-size: 14px; }
-    .tool-area { top: 8px; left: 8px; right: 54px; max-width: none; align-items: stretch; }
-    .tool-hint { justify-content: space-between; }
+    .tool, .dock-btn { width: 42px; height: 38px; font-size: 16px; }
+    .tool-area { top: 8px; left: 8px; right: 58px; max-width: none; align-items: stretch; }
+    .tool-hint { justify-content: space-between; font-size: 13px; }
     .draw-panel { justify-content: flex-start; }
     .save-menu { align-self: flex-end; }
-    .popover { top: 8px; right: 54px; width: auto; left: 8px; }
+    .popover { top: 8px; right: 58px; width: auto; left: 8px; font-size: 14px; }
+    .popover h3 { font-size: 15px; }
+    .popover label { font-size: 13.5px; }
+    .layer-opt { padding: 10px 10px; font-size: 14px; }
     .maplibregl-ctrl-attrib { max-width: 60vw; }
-    .dock.open { height: calc(50dvh + 40px); }
+    .dock.open { height: calc(54dvh + 46px); }
     .dock-summary { display: none; }
     .tabs { flex: 1; }
+    table { font-size: 13.5px; }
+    th, td { padding: 10px 12px; }
+    .modal { width: calc(100vw - 16px); max-height: 90dvh; padding: 16px; }
+    .modal-head h2 { font-size: 18px; }
+    .edit-fields { grid-template-columns: 1fr; gap: 12px; }
+    .edit-fields label { font-size: 13.5px; }
 }
 
 /* Çap */
@@ -580,30 +614,30 @@ body.shared .user, body.shared #logoutBtn, body.shared .bar-sep, body.shared .ta
     background: var(--ink-3);
     transition: all 0.18s;
 }
-/* Aktiv qovluqların fərqli və parlaq rəngləri (baxanda dərhal aktiv olduğu bilinir) */
+/* Aktiv qovluqların Azərbaycan bayrağı rəngləri (Mavi, Qırmızı, Yaşıl, Ay-ulduz ağ) */
 .semi-folder-node[data-folder-tab="project"].active {
-    background: linear-gradient(135deg, #2563eb, #0284c7);
+    background: linear-gradient(135deg, #0095c7, #00B5E2);
     border-color: #7dd3fc;
     color: #ffffff;
-    box-shadow: 0 0 16px rgba(56, 189, 248, 0.6);
+    box-shadow: 0 0 16px rgba(0, 181, 226, 0.55);
 }
 .semi-folder-node[data-folder-tab="nim"].active {
-    background: linear-gradient(135deg, #d97706, #ea580c);
-    border-color: #fde047;
+    background: linear-gradient(135deg, #c81e2b, #EF3340);
+    border-color: #fda4af;
     color: #ffffff;
-    box-shadow: 0 0 16px rgba(245, 158, 11, 0.6);
+    box-shadow: 0 0 16px rgba(239, 51, 64, 0.55);
 }
 .semi-folder-node[data-folder-tab="azconnect"].active {
-    background: linear-gradient(135deg, #0891b2, #0d9488);
-    border-color: #67e8f9;
+    background: linear-gradient(135deg, #3a7d1e, #509E2F);
+    border-color: #86efac;
     color: #ffffff;
-    box-shadow: 0 0 16px rgba(6, 182, 212, 0.6);
+    box-shadow: 0 0 16px rgba(80, 158, 47, 0.55);
 }
 .semi-folder-node[data-folder-tab="other"].active {
-    background: linear-gradient(135deg, #7c3aed, #9333ea);
-    border-color: #d8b4fe;
+    background: linear-gradient(135deg, #334155, #475569);
+    border-color: #f8fafc;
     color: #ffffff;
-    box-shadow: 0 0 16px rgba(168, 85, 247, 0.6);
+    box-shadow: 0 0 16px rgba(248, 250, 252, 0.45);
 }
 .semi-folder-node.active .semi-dot {
     background: #ffffff;
@@ -1295,12 +1329,12 @@ body.shared .user, body.shared #logoutBtn, body.shared .bar-sep, body.shared .ta
 .fo-led { width: 9px; height: 9px; border-radius: 50%; background: #334155; border: 1px solid #1e293b; transition: all 0.3s; }
 .fo-led.active { background: var(--fo-color); box-shadow: 0 0 7px var(--fo-color); }
 
-/* Kabel başlanğıcının daxil olduğu status paneli: aktiv olanda işıqlanır */
+/* Kabel başlanğıcının daxil olduğu status paneli: aktiv olanda Azərbaycan bayrağı rənglərində işıqlanır */
 #listView .filters { border-top: 3px solid #1e293b; transition: border-color 0.3s, box-shadow 0.3s; }
 #listView .filters.fo-fed {
     border-top-color: transparent;
-    border-image: linear-gradient(90deg, #38bdf8, #f59e0b, #06b6d4, #a855f7) 1;
-    box-shadow: inset 0 8px 14px -10px rgba(56, 189, 248, 0.55);
+    border-image: linear-gradient(90deg, #00B5E2, #EF3340, #509E2F) 1;
+    box-shadow: inset 0 8px 14px -10px rgba(0, 181, 226, 0.45);
 }
 
 /* Kabel gövdəsindəki liflər bir-birinə yaxın olduğu üçün nazik çəkilir */
@@ -1309,7 +1343,7 @@ body.shared .user, body.shared #logoutBtn, body.shared .bar-sep, body.shared .ta
 .fo-trunk-pulse { stroke-width: 1.1; }
 .fo-status-coupler { display: none !important; }
 
-/* Daha dar sol panel üçün yığcam sətirlər */
+/* Daha dar sol panel üçün yığcam sətirlər (Masaüstü) */
 .filters { padding: 10px 12px; }
 .list-head { padding: 10px 12px 6px; }
 .project-row { padding: 7px 6px 7px 12px; gap: 6px; }
@@ -1323,29 +1357,50 @@ body.shared .user, body.shared #logoutBtn, body.shared .bar-sep, body.shared .ta
 .legend-sec-title { font-size: 9.5px; }
 .legend-proj-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* Mobil PWA (Telefon tətbiqi) üçün tam uyğunlaşdırma */
+/* Mobil PWA (Telefon tətbiqi) üçün tam uyğunlaşdırma və oxunaqlı ölçülər */
 @media (max-width: 860px) {
     .appbar {
         padding-top: env(safe-area-inset-top, 0px);
         height: calc(var(--appbar-h) + env(safe-area-inset-top, 0px));
     }
     .sidebar {
-        height: 44dvh;
+        height: 52dvh;
         padding-bottom: env(safe-area-inset-bottom, 0px);
     }
+    .filters { padding: 10px 14px; }
+    .list-head { padding: 10px 14px 6px; }
+    .project-row { padding: 11px 10px 11px 14px; gap: 10px; }
+    .segments { padding: 0 10px 10px 30px; }
+    .chip { height: 34px; padding: 0 11px; font-size: 13px; }
     .info-card {
         left: 8px !important;
         right: 8px !important;
-        top: 8px !important;
+        top: auto !important;
+        bottom: 8px !important;
         width: auto !important;
-        max-width: calc(100% - 56px) !important;
-        max-height: 46dvh !important;
+        max-width: none !important;
+        max-height: 54dvh !important;
+        overflow-y: auto;
+        border-radius: 12px;
     }
+    .info-card-head { padding: 10px 12px; }
+    .info-card-head small { font-size: 12px; }
+    .info-card-head strong { font-size: 14.5px; }
+    .info-card-head .icon-btn { width: 34px; height: 34px; font-size: 15px; }
+    .info-card-body { padding: 12px; gap: 10px; font-size: 14px; }
+    .info-stat { padding: 8px 10px; }
+    .info-stat small { font-size: 11.5px; }
+    .info-stat b { font-size: 15px; }
+    .info-kv { gap: 6px 12px; font-size: 13.5px; }
+    .info-sub-item { padding: 10px 12px; font-size: 13.5px; }
+    .info-exec-row { font-size: 13.5px; }
+    .info-exec-row select { height: 36px; font-size: 14px; }
+    .info-card-foot { padding: 10px 12px; font-size: 12.5px; }
     .semi-folder-stage {
-        height: 205px;
-        transform: scale(0.9);
+        height: 196px;
+        transform: scale(0.95);
         transform-origin: top left;
-        margin-bottom: -18px;
+        margin-bottom: -8px;
     }
 }
 
