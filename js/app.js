@@ -33,7 +33,7 @@ const state = {
     dockTab: "segments",
     notes: [],
     sidebarCategory: "project",
-    activeFolders: new Set(["project"]),
+    activeFolders: new Set(),
     focusMode: false,
     quickEditKey: null
 };
@@ -362,6 +362,7 @@ function resetState() {
     Object.assign(state, { user: null, role: "manager", projects: [], contractors: {}, materials: [], notes: [], selected: null, statusFilter: "all", query: "" });
     state.visibleIds.clear();
     state.expandedIds.clear();
+    state.activeFolders.clear();
     if ($("searchInput")) $("searchInput").value = "";
 }
 
@@ -2391,7 +2392,7 @@ function registerPointShapeImages() {
     const colors = [...Object.values(STATUS_COLORS), "#38BDF8"];
     const size = 48;
     const half = size / 2;
-    const r = 15;
+    const r = 12.5;
 
     POINT_SHAPES.forEach(shape => {
         colors.forEach(color => {
@@ -2446,21 +2447,128 @@ function registerPointShapeImages() {
                 ctx.closePath();
             }
 
-            // İçi tam rəngli dolu həndəsi fiqur (daxili ağ naxış olmadan, təmiz və aydın)
+            // İçi tam rəngli dolu həndəsi fiqur (əvvəlki tərz, bir az yığcam ölçüdə)
             ctx.shadowColor = "rgba(0, 0, 0, 0.55)";
             ctx.shadowBlur = 4;
             ctx.fillStyle = color;
             ctx.fill();
 
             ctx.shadowBlur = 0;
-            ctx.lineWidth = 2.2;
+            ctx.lineWidth = 2.0;
             ctx.strokeStyle = "#ffffff";
             ctx.stroke();
-
             ctx.restore();
 
             map.addImage(id, ctx.getImageData(0, 0, size, size), { pixelRatio: 2 });
         });
+    });
+
+    // 🚦 NİİM Svetofor Kəsişmələri üçün 3D effektli, günlüklü (kozeroklu) 3 lampalı svetofor ikonları
+    const nimW = 40;
+    const nimH = 72;
+    const nimConfigs = [
+        { key: "layihe", lit: 0, fill: "#EF4444", rim: "#FCA5A5" },
+        { key: "icrada", lit: 1, fill: "#FACC15", rim: "#FEF08A" },
+        { key: "bitmis", lit: 2, fill: "#22C55E", rim: "#86EFAC" }
+    ];
+    const drawRoundRect = (g, x, y, w, h, rad) => {
+        g.beginPath();
+        g.moveTo(x + rad, y);
+        g.lineTo(x + w - rad, y);
+        g.quadraticCurveTo(x + w, y, x + w, y + rad);
+        g.lineTo(x + w, y + h - rad);
+        g.quadraticCurveTo(x + w, y + h, x + w - rad, y + h);
+        g.lineTo(x + rad, y + h);
+        g.quadraticCurveTo(x, y + h, x, y + h - rad);
+        g.lineTo(x, y + rad);
+        g.quadraticCurveTo(x, y, x + rad, y);
+        g.closePath();
+    };
+    nimConfigs.forEach(cfg => {
+        const imgId = `nim-tl-${cfg.key}`;
+        if (map.hasImage(imgId)) map.removeImage(imgId);
+        const c = document.createElement("canvas");
+        c.width = nimW;
+        c.height = nimH;
+        const g = c.getContext("2d");
+
+        const bx = 6, by = 3, bw = 25, bh = 57, br = 7;
+        const cx = bx + bw / 2;
+
+        g.save();
+        // 1) 3D yan/alt qalınlıq (extrusion) + yer kölgəsi
+        g.shadowColor = "rgba(0,0,0,0.7)";
+        g.shadowBlur = 5;
+        g.shadowOffsetX = 2;
+        g.shadowOffsetY = 2;
+        g.fillStyle = "#090f1a";
+        drawRoundRect(g, bx + 3, by + 2.5, bw, bh, br);
+        g.fill();
+        g.shadowBlur = 0;
+        g.shadowOffsetX = 0;
+        g.shadowOffsetY = 0;
+
+        // 2) Ön metal korpus (3D işıq-kölgə qradienti)
+        const bodyGrad = g.createLinearGradient(bx, by, bx + bw, by + bh);
+        bodyGrad.addColorStop(0, "#475569");
+        bodyGrad.addColorStop(0.35, "#283548");
+        bodyGrad.addColorStop(1, "#0f172a");
+        g.fillStyle = bodyGrad;
+        drawRoundRect(g, bx, by, bw, bh, br);
+        g.fill();
+
+        // Sol-üst işıqlı metal kənar (bevel)
+        g.lineWidth = 1.4;
+        g.strokeStyle = "#cbd5e1";
+        g.stroke();
+
+        // 3) 3D silindrik dirək (aşağıda)
+        const poleGrad = g.createLinearGradient(cx - 2.6, 0, cx + 2.6, 0);
+        poleGrad.addColorStop(0, "#475569");
+        poleGrad.addColorStop(0.45, "#e2e8f0");
+        poleGrad.addColorStop(1, "#334155");
+        g.fillStyle = poleGrad;
+        g.fillRect(cx - 2.6, by + bh - 1, 5.2, 8);
+
+        // 4) 3 Lampa: sönülü yuvalar neytral tünd boz, yalnız aktiv status lampası təmiz parlaq rəngdə yanır
+        const ys = [14.5, 31.5, 48.5];
+        ys.forEach((ly, idx) => {
+            // Dərin yuva
+            g.beginPath();
+            g.arc(cx, ly, 7.2, 0, Math.PI * 2);
+            g.fillStyle = "#090d14";
+            g.fill();
+
+            if (cfg.lit === idx) {
+                // Təmiz, dolğun aktiv lampa
+                g.beginPath();
+                g.arc(cx, ly, 6.5, 0, Math.PI * 2);
+                g.fillStyle = cfg.fill;
+                g.fill();
+
+                // İncə üst parıltı qövsü (3D şüşə effekti)
+                g.beginPath();
+                g.arc(cx, ly, 5.1, Math.PI * 1.15, Math.PI * 1.85);
+                g.lineWidth = 1.4;
+                g.strokeStyle = cfg.rim;
+                g.stroke();
+            } else {
+                // Sönülü lampa (tünd neytral boz — aktiv lampa ilə qarışmasın)
+                g.beginPath();
+                g.arc(cx, ly, 5.8, 0, Math.PI * 2);
+                g.fillStyle = "#2b3340";
+                g.fill();
+            }
+
+            // Üst günlük / Kozerok (3D forma)
+            g.beginPath();
+            g.arc(cx, ly + 0.5, 7.6, Math.PI * 1.08, Math.PI * 1.92);
+            g.lineWidth = 2.3;
+            g.strokeStyle = "#94a3b8";
+            g.stroke();
+        });
+        g.restore();
+        map.addImage(imgId, g.getImageData(0, 0, nimW, nimH), { pixelRatio: 2 });
     });
 
     // A və B başlanğıc/son nöqtələri üçün Qırmızı Sorma Konfet (Lollipop) ikonu: yuxarısı bütöv qırmızı dairə (içi ağ deyil), aşağıya düz xətt
@@ -2728,20 +2836,20 @@ function mapStyle() {
                 paint: {
                     "icon-opacity": ["case", ["get", "dim"], 0.28, 1]
                 } },
-            /* Layihə nöqtələri: hər layihənin öz fərqli həndəsi və daxili simvollu ikonu bütün miqyaslarda seçilir */
+            /* Layihə nöqtələri: əvvəlki vəziyyət, bir az yığcam ölçüdə */
             { id: "routes-point-halo", type: "circle", source: "routes", minzoom: 3, maxzoom: 10.2, filter: ["all", ["==", ["geometry-type"], "Point"], ["has", "isRayonPoint"], ["!", ["has", "splitOnly"]]],
                 paint: {
-                    "circle-radius": ["interpolate", ["linear"], ["zoom"], 4, ["case", ["get", "sel"], 9, 6.5], 8, ["case", ["get", "sel"], 13, 9.5]],
+                    "circle-radius": ["interpolate", ["linear"], ["zoom"], 4, ["case", ["get", "sel"], 7.5, 5.5], 8, ["case", ["get", "sel"], 11, 8]],
                     "circle-color": ["get", "color"],
                     "circle-opacity": ["case", ["get", "dim"], 0.12, ["case", ["get", "sel"], 0.38, 0.22]],
                     "circle-stroke-color": ["case", ["get", "sel"], "#ffffff", ["get", "color"]],
-                    "circle-stroke-width": ["case", ["get", "sel"], 2.2, 1.2],
+                    "circle-stroke-width": ["case", ["get", "sel"], 2.0, 1.2],
                     "circle-stroke-opacity": ["case", ["get", "dim"], 0.25, 0.85]
                 } },
             { id: "routes-point-shape", type: "symbol", source: "routes", minzoom: 3, maxzoom: 10.2, filter: ["all", ["==", ["geometry-type"], "Point"], ["has", "isRayonPoint"], ["!", ["has", "splitOnly"]]],
                 layout: {
                     "icon-image": ["get", "shapeIcon"],
-                    "icon-size": ["interpolate", ["linear"], ["zoom"], 4, ["case", ["get", "sel"], 0.72, 0.56], 8, ["case", ["get", "sel"], 0.96, 0.78]],
+                    "icon-size": ["interpolate", ["linear"], ["zoom"], 4, ["case", ["get", "sel"], 0.65, 0.50], 8, ["case", ["get", "sel"], 0.86, 0.70]],
                     "icon-allow-overlap": true,
                     "icon-ignore-placement": true
                 },
@@ -2751,17 +2859,17 @@ function mapStyle() {
             /* Yaxınlaşanda (zoom >= 10.2) eyni rayondakı nöqtələr bir-birindən ayrılır */
             { id: "routes-point-halo-split", type: "circle", source: "routes", minzoom: 10.2, filter: ["all", ["==", ["geometry-type"], "Point"], ["has", "isRayonPoint"], ["!", ["has", "mergedOnly"]]],
                 paint: {
-                    "circle-radius": ["case", ["get", "sel"], 14, 10.5],
+                    "circle-radius": ["case", ["get", "sel"], 11.5, 8.8],
                     "circle-color": ["get", "color"],
                     "circle-opacity": ["case", ["get", "dim"], 0.12, ["case", ["get", "sel"], 0.38, 0.22]],
                     "circle-stroke-color": ["case", ["get", "sel"], "#ffffff", ["get", "color"]],
-                    "circle-stroke-width": ["case", ["get", "sel"], 2.2, 1.2],
+                    "circle-stroke-width": ["case", ["get", "sel"], 2.0, 1.2],
                     "circle-stroke-opacity": ["case", ["get", "dim"], 0.25, 0.85]
                 } },
             { id: "routes-point-shape-split", type: "symbol", source: "routes", minzoom: 10.2, filter: ["all", ["==", ["geometry-type"], "Point"], ["has", "isRayonPoint"], ["!", ["has", "mergedOnly"]]],
                 layout: {
                     "icon-image": ["get", "shapeIcon"],
-                    "icon-size": ["interpolate", ["linear"], ["zoom"], 10.2, ["case", ["get", "sel"], 1.0, 0.84], 14, ["case", ["get", "sel"], 1.15, 0.96]],
+                    "icon-size": ["interpolate", ["linear"], ["zoom"], 10.2, ["case", ["get", "sel"], 0.90, 0.74], 14, ["case", ["get", "sel"], 1.04, 0.85]],
                     "icon-allow-overlap": true,
                     "icon-ignore-placement": true
                 },
@@ -3879,12 +3987,13 @@ function drawRoutes() {
             const stText = t(`status${r.status}`);
             const label = `${cleanName}\n${stText}`;
             const tip = `<b>${shape.symbol} 🚦 ${esc(r.name)}</b><small>Layihə: <b>${esc(project.name)}</b><br>Status: <b style="color:${color}">${esc(stText)}</b>${cExtra ? `<br>${cExtra}` : ""}</small>`;
+            const nimStKey = (r.status === "bitmis" || r.status === "tehvil") ? "bitmis" : (r.status === "icrada" ? "icrada" : "layihe");
             const nimProps = {
                 isRayonPoint: true,
                 isNim: true,
-                isIcrada: r.status === "icrada",
-                color,
-                shapeIcon,
+                isIcrada: nimStKey === "icrada",
+                color: STATUS_COLORS[nimStKey] || color,
+                shapeIcon: `nim-tl-${nimStKey}`,
                 dim,
                 sel: Boolean(selected?.item === r),
                 projectId: project.id,
@@ -7772,7 +7881,7 @@ document.addEventListener("DOMContentLoaded", init);
                                         <span class="muted">Nöqtə statusu:</span>
                                         ${isAdmin() ? `
                                         <select class="input" data-nim-status-select="${esc(proj.id)}:${esc(r.id)}">
-                                            ${STATUSES.map(s => `<option value="${s}" ${r.status === s ? "selected" : ""}>${t(`status${s}`)}</option>`).join("")}
+                                            ${["bitmis", "icrada", "layihe"].map(s => `<option value="${s}" ${(r.status === s || (s === "bitmis" && r.status === "tehvil")) ? "selected" : ""}>${t(`status${s}`)}</option>`).join("")}
                                         </select>
                                         ` : `<b style="font-size:11.5px;color:${rTone}">${t(`status${r.status}`)}</b>`}
                                     </div>
