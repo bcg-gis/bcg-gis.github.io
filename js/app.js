@@ -362,7 +362,7 @@ function resetState() {
     Object.assign(state, { user: null, role: "manager", projects: [], contractors: {}, materials: [], notes: [], selected: null, statusFilter: "all", query: "" });
     state.visibleIds.clear();
     state.expandedIds.clear();
-    $("searchInput").value = "";
+    if ($("searchInput")) $("searchInput").value = "";
 }
 
 function showLogin(message = "") {
@@ -2083,11 +2083,10 @@ function editMaterial(material, presetFlow = null) {
     const curCat = detectMaterialCategory(material?.material, material?.category);
 
     openEditor({
-        title: material ? t("editMaterial") : (flowVal === "in" ? "📥 Anbara Mədaxil (Alış)" : (flowVal === "return" ? "↩️ Anbara Qaytarma" : "📤 Layihəyə Məxaric (Çıxış)")),
+        title: material ? t("editMaterial") : "📦 Mal / Qaimə əlavə et",
         values: material ? {
             ...material,
             flow: flowVal,
-            category: curCat,
             project: currentProj,
             invoice_no: material.invoice_no || `QAİMƏ-2026-0${140 + (material.id || 1)}`,
             supplier: material.supplier || "",
@@ -2097,38 +2096,25 @@ function editMaterial(material, presetFlow = null) {
             note: material.note || ""
         } : {
             flow: flowVal,
-            category: "kabel",
             project: currentProj,
             invoice_no: `QAİMƏ-2026-${Math.floor(100 + Math.random() * 900)}`,
             supplier: "",
             qty_num: "",
             unit: "m",
-            state: flowVal === "in" || flowVal === "return" ? "in_stock" : "issued",
             used_date: today,
             note: ""
         },
         fields: [
             {
                 key: "flow",
-                label: "Hərəkət növü",
+                label: "Əməliyyat",
                 type: "select",
                 required: true,
+                wide: true,
                 options: [
-                    ["in", "📥 Anbara Mədaxil (Alış)"],
-                    ["out", "📤 Layihəyə Məxaric (Çıxış)"],
-                    ["return", "↩️ Anbara Qaytarma (Artıq qalan)"]
-                ]
-            },
-            {
-                key: "category",
-                label: "Kateqoriya",
-                type: "select",
-                required: true,
-                options: [
-                    ["kabel", "🔌 Kabel (FO / ADSS)"],
-                    ["mufta", "🔗 Mufta"],
-                    ["patchpanel", "🗄️ Patch Panel (ODF)"],
-                    ["diger", "📦 Digər"]
+                    ["in", "📥 Anbara gəlib (Mədaxil / Alış)"],
+                    ["out", "📤 Layihəyə gedib (Məxaric)"],
+                    ["return", "↩️ Layihədən qayıdıb (Qaytarma)"]
                 ]
             },
             {
@@ -2142,12 +2128,12 @@ function editMaterial(material, presetFlow = null) {
             { key: "qty_num", label: "Miqdar", type: "number", required: true, placeholder: "Məs: 40000" },
             {
                 key: "unit",
-                label: "Ölçü vahidi",
+                label: "Vahid",
                 type: "select",
                 required: true,
                 options: [
                     ["m", "m (metr)"],
-                    ["km", "km (avtomatik metrə çevrilir)"],
+                    ["km", "km"],
                     ["əd", "əd (ədəd)"]
                 ]
             },
@@ -2159,18 +2145,19 @@ function editMaterial(material, presetFlow = null) {
                 wide: true,
                 options: uniqueProjects.map(p => [p, p])
             },
-            { key: "supplier", label: "Kimdən alınıb / Kimə verilib", placeholder: "Məs: Bakcable MMC / Podratçı adı" },
-            { key: "invoice_no", label: "📄 Anbar Qaiməsi №", required: true },
+            { key: "supplier", label: "Kimdən / Kimə", placeholder: "Məs: Bakcable / Podratçı" },
             { key: "used_date", label: "Tarix", type: "date", required: true },
-            { key: "state", label: t("thState"), type: "select", required: true, options: states.map(s => [s, materialStateLabel(s)]) },
-            { key: "note", label: "Qeyd / Baraban №", wide: true, placeholder: "Məs: Baraban №4 qalığı anbara qayıtdı" }
+            { key: "invoice_no", label: "📄 Qaimə №", required: true },
+            { key: "note", label: "Qeyd (istəyə bağlı)", placeholder: "Məs: Baraban №4" }
         ],
         onSave: row => {
             const norm = normalizeMaterialUnitAndQty(row.qty_num, row.unit);
             const displayQty = `${norm.qty} ${norm.unit}`;
+            const autoState = row.flow === "in" || row.flow === "return" ? "in_stock" : "issued";
             return api.saveMaterial(material?.id, {
                 ...row,
-                category: detectMaterialCategory(row.material, row.category),
+                category: detectMaterialCategory(row.material, material?.category),
+                state: material?.state || autoState,
                 qty_num: norm.qty,
                 unit: norm.unit,
                 quantity: displayQty,
@@ -2180,6 +2167,27 @@ function editMaterial(material, presetFlow = null) {
         },
         onDelete: material && (() => api.deleteMaterial(material.id))
     });
+    const flowSel = $("editFields")?.querySelector('select[name="flow"]');
+    const projSel = $("editFields")?.querySelector('select[name="project"]');
+    const unitSel = $("editFields")?.querySelector('select[name="unit"]');
+    const matInp = $("editFields")?.querySelector('input[name="material"]');
+    if (flowSel && projSel) {
+        flowSel.addEventListener("change", () => {
+            if (flowSel.value === "in") {
+                projSel.value = "🏢 Ümumi Anbar";
+            } else if (projSel.value === "🏢 Ümumi Anbar") {
+                const firstProj = uniqueProjects.find(p => p !== "🏢 Ümumi Anbar");
+                if (firstProj) projSel.value = firstProj;
+            }
+        });
+    }
+    if (matInp && unitSel) {
+        matInp.addEventListener("change", () => {
+            const cat = detectMaterialCategory(matInp.value);
+            if (cat === "mufta" || cat === "patchpanel") unitSel.value = "əd";
+            else if (cat === "kabel" && unitSel.value === "əd") unitSel.value = "m";
+        });
+    }
 }
 window.editMaterial = editMaterial;
 
@@ -4517,17 +4525,22 @@ function renderProjects() {
     document.querySelector("#listView .filters")?.classList.toggle("fo-fed", state.activeFolders.size > 0);
 
     const onlyOtherActive = state.activeFolders.size === 1 && state.activeFolders.has("other");
-    if ($("statusChips")) $("statusChips").hidden = onlyOtherActive;
+    const hasNonOtherActive = [...state.activeFolders].some(f => f !== "other");
+    const filtersBox = document.querySelector("#listView .filters");
+    if (filtersBox) filtersBox.hidden = !hasNonOtherActive;
+    if ($("statusChips")) $("statusChips").hidden = onlyOtherActive || !hasNonOtherActive;
     if ($("addProjectBtn")) $("addProjectBtn").hidden = !isAdmin() || state.activeFolders.size === 0;
 
     const folderMeta = {
         project: { title: "<i class=\"fa-solid fa-building\"></i> BCG", list: projectsOnly },
-        nim: { title: "<i class=\"fa-solid fa-traffic-light\" style=\"color:#f59e0b\"></i> NİM (Svetofor Kəsişmələri)", list: nimOnly },
-        azconnect: { title: "<i class=\"fa-solid fa-globe\" style=\"color:#06b6d4\"></i> Azconnect Xətləri", list: azcOnly },
+        nim: { title: "<i class=\"fa-solid fa-traffic-light\" style=\"color:#f59e0b\"></i> NİİM (Svetofor Kəsişmələri)", list: nimOnly },
+        azconnect: { title: "<i class=\"fa-solid fa-globe\" style=\"color:#06b6d4\"></i> Azərconnect Xətləri", list: azcOnly },
         other: { title: "<i class=\"fa-solid fa-folder-tree\" style=\"color:#a855f7\"></i> Digər", list: otherOnly }
     };
 
     const activeOrder = ["project", "nim", "azconnect", "other"].filter(f => state.activeFolders.has(f));
+    const FOLDER_FIBER_COLORS = { project: "#38bdf8", nim: "#f59e0b", azconnect: "#06b6d4", other: "#a855f7" };
+    $("listView")?.classList.toggle("has-active-fibers", state.activeFolders.size > 0);
     if (activeOrder.length === 0) {
         if ($("listHeadTitle")) $("listHeadTitle").textContent = "Qovluq seçilməyib";
         $("projectCount").textContent = "-";
@@ -4563,7 +4576,7 @@ function renderProjects() {
                 const expanded = state.expandedIds.has(p.id);
                 const cleanOtherTitle = String(p.name || "").replace(/^Digər\s*:\s*/i, "").trim();
                 return `
-                    <div class="project ${visible ? "" : "hidden-on-map"}" data-id="${esc(p.id)}">
+                    <div class="project fiber-linked ${visible ? "" : "hidden-on-map"} ${expanded ? "expanded" : ""}" data-id="${esc(p.id)}" style="--proj-tone:#a855f7;--fiber-tone:${FOLDER_FIBER_COLORS.other}">
                         <div class="project-row" style="padding:6px 10px">
                             <label class="check" title="${t("toggleVisibility")}"><input type="checkbox" data-action="toggle" ${visible ? "checked" : ""}></label>
                             <button class="project-main" data-action="expand" aria-expanded="${expanded}">
@@ -4624,15 +4637,17 @@ function renderProjects() {
                         : `〰️ ${formatKm(sum.plan)} / ${formatKm(sum.done)} km · Qalıb: ${formatKm(Math.max(0, sum.plan - sum.done))} km`));
             const rightPct = isNim ? `${p.items.length ? Math.round(donePts / p.items.length * 100) : 0}%` : (isAllLifGoturulen ? "" : `${pct}%`);
 
+            const pTone = statusTone(p.status);
+            const fTone = FOLDER_FIBER_COLORS[folderKey] || "#38bdf8";
             return `
-                <div class="project ${visible ? "" : "hidden-on-map"}" data-id="${esc(p.id)}">
+                <div class="project fiber-linked ${visible ? "" : "hidden-on-map"} ${expanded ? "expanded" : ""}" data-id="${esc(p.id)}" style="--proj-tone:${pTone};--fiber-tone:${fTone}">
                     <div class="project-row">
                         <label class="check" title="${t("toggleVisibility")}"><input type="checkbox" data-action="toggle" ${visible ? "checked" : ""}></label>
                         <button class="project-main" data-action="expand" aria-expanded="${expanded}">
                             <strong title="${esc(cleanProjName)}">${shapeBadge}${esc(cleanProjName)}</strong>
                             <small>${subTitle}</small>
                         </button>
-                        ${rightPct ? `<span class="project-pct">${rightPct}</span>` : ""}
+                        ${rightPct ? `<span class="project-pct" style="color:${pTone}">${rightPct}</span>` : ""}
                         ${isAdmin() ? `<button class="icon-btn" data-action="edit" title="${t("editProject")}"><i class="fa-solid fa-pen"></i></button>` : ""}
                         <button class="icon-btn" data-action="expand" aria-label="${esc(cleanProjName)}"><i class="fa-solid fa-chevron-right chevron ${expanded ? "open" : ""}"></i></button>
                     </div>
@@ -4762,7 +4777,7 @@ function renderProjects() {
     });
 
     $("projectCount").textContent = totalShownCount;
-    $("projectList").innerHTML = sectionsHtml.join("");
+    $("projectList").innerHTML = `<div class="fiber-bus-wrap">${sectionsHtml.join("")}</div>`;
 }
 
 const NIM_SPEC_FIELDS = [
@@ -6007,7 +6022,7 @@ function bindEvents() {
         $("langSelect").dispatchEvent(new Event("change"));
     });
 
-    $("searchInput").addEventListener("input", e => {
+    $("searchInput")?.addEventListener("input", e => {
         state.query = e.target.value.trim().toLocaleLowerCase("az");
         renderAll();
     });
@@ -8642,9 +8657,7 @@ document.addEventListener("DOMContentLoaded", init);
                     <button type="button" class="mat-tab" data-mat-tab="journal">📋 Qaimələr (Jurnal)</button>
                 </div>
                 <div class="mat-quick-acts">
-                    <button type="button" class="btn btn-primary" data-mat-add="in" id="matAddInBtn" hidden>+ 📥 Mədaxil</button>
-                    <button type="button" class="btn btn-outline" data-mat-add="out" id="matAddOutBtn" hidden>+ 📤 Məxaric</button>
-                    <button type="button" class="btn btn-outline" data-mat-add="return" id="matAddRetBtn" hidden>+ ↩️ Qaytarma</button>
+                    <button type="button" class="btn btn-primary" data-mat-add="in" id="matAddBtn" hidden>+ Mal / Qaimə əlavə et</button>
                     <button type="button" class="btn btn-outline" id="matExportCsvBtn" title="CSV (Excel) ixrac"><i class="fa-solid fa-file-csv"></i> Excel</button>
                 </div>
             `;
@@ -8653,45 +8666,47 @@ document.addEventListener("DOMContentLoaded", init);
             bar.className = "mat-filters";
             bar.innerHTML = `
                 <label>
-                    <span>Hərəkət növü:</span>
+                    <span>Hərəkət:</span>
                     <select class="input" id="matFilterFlow">
-                        <option value="all">Hamısı (Mədaxil + Məxaric + Qaytarma)</option>
-                        <option value="in">📥 Yalnız Anbara Mədaxil (Alış)</option>
-                        <option value="out">📤 Yalnız Layihəyə Məxaric (Çıxış)</option>
-                        <option value="return">↩️ Yalnız Anbara Qaytarma</option>
+                        <option value="all">Hamısı</option>
+                        <option value="in">📥 Anbara gəlib (Mədaxil)</option>
+                        <option value="out">📤 Layihəyə gedib (Məxaric)</option>
+                        <option value="return">↩️ Layihədən qayıdıb (Qaytarma)</option>
                     </select>
                 </label>
                 <label>
                     <span>Kateqoriya:</span>
                     <select class="input" id="matFilterCat">
-                        <option value="all">Bütün kateqoriyalar</option>
-                        <option value="kabel">🔌 Kabel (FO / ADSS)</option>
+                        <option value="all">Hamısı</option>
+                        <option value="kabel">🔌 Kabel (FO)</option>
                         <option value="mufta">🔗 Mufta</option>
                         <option value="patchpanel">🗄️ Patch Panel</option>
-                        <option value="diger">📦 Digər</option>
                     </select>
                 </label>
                 <label>
-                    <span>Layihə / Anbar:</span>
+                    <span>Layihə:</span>
                     <select class="input" id="matFilterProject"><option value="all">Bütün layihələr</option></select>
                 </label>
-                <label>
-                    <span>Material:</span>
-                    <select class="input" id="matFilterType"><option value="all">Bütün materiallar</option></select>
+                <label style="flex:1;min-width:140px">
+                    <span>Axtar (Material, Qaimə, Firma):</span>
+                    <input class="input" type="search" id="matFilterInvoice" placeholder="Məs: FO 48, Bakcable, 0145…">
                 </label>
-                <label>
-                    <span>📄 Qaimə № / Təchizatçı:</span>
-                    <input class="input" type="search" id="matFilterInvoice" placeholder="QAİMƏ / Bakcable…">
-                </label>
-                <label>
-                    <span>Başlanğıc tarix:</span>
-                    <input class="input" type="date" id="matFilterFrom">
-                </label>
-                <label>
-                    <span>Son tarix:</span>
-                    <input class="input" type="date" id="matFilterTo">
-                </label>
+                <button class="btn btn-outline" type="button" id="matMoreFilterBtn" title="Tarix və material filtrləri">⚙️ Tarix</button>
                 <button class="btn btn-outline" type="button" id="matFilterReset">Sıfırla</button>
+                <div class="mat-extra-filters" id="matExtraFilters" hidden>
+                    <label>
+                        <span>Material:</span>
+                        <select class="input" id="matFilterType"><option value="all">Bütün materiallar</option></select>
+                    </label>
+                    <label>
+                        <span>Başlanğıc tarix:</span>
+                        <input class="input" type="date" id="matFilterFrom">
+                    </label>
+                    <label>
+                        <span>Son tarix:</span>
+                        <input class="input" type="date" id="matFilterTo">
+                    </label>
+                </div>
             `;
             const summary = document.createElement("div");
             summary.id = "matSummary";
@@ -8699,6 +8714,11 @@ document.addEventListener("DOMContentLoaded", init);
             matModal.insertBefore(nav, wrap);
             matModal.insertBefore(bar, wrap);
             matModal.insertBefore(summary, wrap);
+
+            $("matMoreFilterBtn")?.addEventListener("click", () => {
+                const extra = $("matExtraFilters");
+                if (extra) extra.hidden = !extra.hidden;
+            });
 
             nav.addEventListener("click", e => {
                 const tabBtn = e.target.closest("[data-mat-tab]");
@@ -8717,17 +8737,17 @@ document.addEventListener("DOMContentLoaded", init);
             $("matExportCsvBtn")?.addEventListener("click", () => window.exportMaterialsCsv?.());
 
             ["matFilterFlow", "matFilterCat", "matFilterProject", "matFilterType", "matFilterFrom", "matFilterTo"].forEach(id => {
-                $(id).addEventListener("change", () => window.renderMaterials());
+                $(id)?.addEventListener("change", () => window.renderMaterials());
             });
             $("matFilterInvoice").addEventListener("input", () => window.renderMaterials());
             $("matFilterReset").addEventListener("click", () => {
-                $("matFilterFlow").value = "all";
+                if ($("matFilterFlow")) $("matFilterFlow").value = "all";
                 $("matFilterCat").value = "all";
                 $("matFilterProject").value = "all";
-                $("matFilterType").value = "all";
+                if ($("matFilterType")) $("matFilterType").value = "all";
                 $("matFilterInvoice").value = "";
-                $("matFilterFrom").value = "";
-                $("matFilterTo").value = "";
+                if ($("matFilterFrom")) $("matFilterFrom").value = "";
+                if ($("matFilterTo")) $("matFilterTo").value = "";
                 window.renderMaterials();
             });
         }
@@ -8893,9 +8913,7 @@ document.addEventListener("DOMContentLoaded", init);
             } catch {}
         }
 
-        if ($("matAddInBtn")) $("matAddInBtn").hidden = !isAdmin();
-        if ($("matAddOutBtn")) $("matAddOutBtn").hidden = !isAdmin();
-        if ($("matAddRetBtn")) $("matAddRetBtn").hidden = !isAdmin();
+        if ($("matAddBtn")) $("matAddBtn").hidden = !isAdmin();
 
         const parsed = (state.materials || []).map(parseMaterialRecord);
 
@@ -8906,7 +8924,7 @@ document.addEventListener("DOMContentLoaded", init);
             const tCur = typeSel.value || "all";
             const projects = [...new Set([
                 "🏢 Ümumi Anbar",
-                ...state.projects.map(p => p.name),
+                ...state.projects.filter(p => p.category !== "other").map(p => p.name),
                 ...parsed.map(m => m.project),
                 "BCG — Bakı-Quba-Qusar Magistralı",
                 "BCG — Bakı-Şamaxı-Yevlax Magistralı",
@@ -8939,7 +8957,7 @@ document.addEventListener("DOMContentLoaded", init);
             if (catVal !== "all" && m.cat !== catVal) return false;
             if (pVal !== "all" && m.project !== pVal) return false;
             if (mVal !== "all" && m.cleanName !== mVal) return false;
-            if (invVal && !inv.includes(invVal) && !sup.includes(invVal)) return false;
+            if (invVal && !inv.includes(invVal) && !sup.includes(invVal) && !m.cleanName.toLowerCase().includes(invVal)) return false;
             if (dFrom && mDate < dFrom) return false;
             if (dTo && mDate > dTo) return false;
             return true;
@@ -8983,14 +9001,39 @@ document.addEventListener("DOMContentLoaded", init);
             return { ...r, mapUsed, netIssued, remain };
         }).sort((a, b) => a.project.localeCompare(b.project) || a.name.localeCompare(b.name));
 
+        // Kritik limit yoxlaması (bütün anbar üzrə: kabel < 3000m, mufta/patchpanel < 5 əd)
+        const allStockMap = new Map();
+        parsed.forEach(m => {
+            const k = `${m.cat}::${m.cleanName.toLowerCase()}`;
+            if (!allStockMap.has(k)) allStockMap.set(k, { cat: m.cat, name: m.cleanName, unit: m.unit, inQty: 0, outQty: 0, retQty: 0 });
+            const r = allStockMap.get(k);
+            if (m.flow === "in") r.inQty += m.qty;
+            else if (m.flow === "return") r.retQty += m.qty;
+            else r.outQty += m.qty;
+        });
+        const isCriticalRow = r => {
+            const rem = r.inQty - r.outQty + r.retQty;
+            const limit = r.unit === "m" ? 3000 : 5;
+            return (r.inQty > 0 && rem < limit) || rem < 0;
+        };
+        const criticalItems = [...allStockMap.values()].filter(isCriticalRow);
+        if ($("materialsAlertCount")) {
+            $("materialsAlertCount").hidden = criticalItems.length === 0;
+            $("materialsAlertCount").textContent = criticalItems.length;
+            $("materialsAlertCount").title = criticalItems.map(r => `${r.name}: ${formatMatQty(r.inQty - r.outQty + r.retQty, r.unit)}`).join(", ");
+        }
+
         if ($("matSummary")) {
             const kabelIn = stockRows.filter(r => r.cat === "kabel").reduce((s, r) => s + r.inQty, 0);
             const kabelOut = stockRows.filter(r => r.cat === "kabel").reduce((s, r) => s + r.outQty, 0);
             const kabelRet = stockRows.filter(r => r.cat === "kabel").reduce((s, r) => s + r.retQty, 0);
             const kabelRem = kabelIn - kabelOut + kabelRet;
+            const critHtml = criticalItems.length > 0
+                ? `<span style="color:var(--red);font-weight:600">🚨 Kritik qalıq (${criticalItems.length}): ${criticalItems.slice(0, 3).map(r => `${esc(r.name)} (${formatMatQty(r.inQty - r.outQty + r.retQty, r.unit)})`).join(", ")}</span>`
+                : `<span>${isAdmin() ? "👑 Admin" : "👁️ Baxış"} · Qaimə: <b>${filtered.length}</b></span>`;
             $("matSummary").innerHTML = `
                 <span>🔌 Ümumi Kabel: <b>Gələn ${kabelIn.toLocaleString("az-AZ")} m</b> · <b>Verilən ${kabelOut.toLocaleString("az-AZ")} m</b> · <b>Qayıdan ${kabelRet.toLocaleString("az-AZ")} m</b> · <b style="color:${kabelRem >= 0 ? "var(--green)" : "var(--red)"}">Anbar Qalığı: ${kabelRem.toLocaleString("az-AZ")} m</b></span>
-                <span>${isAdmin() ? "👑 Admin" : "👁️ Baxış"} · Qaimə: <b>${filtered.length}</b></span>
+                ${critHtml}
             `;
         }
 
@@ -9012,10 +9055,11 @@ document.addEventListener("DOMContentLoaded", init);
                 ? `<tr><td colspan="7" class="empty">Anbar qeydi tapılmadı</td></tr>`
                 : stockRows.map(r => {
                     const rem = r.inQty - r.outQty + r.retQty;
-                    const remColor = rem <= 0 ? "var(--red)" : (r.unit === "m" && rem < 3000 ? "var(--amber)" : "var(--green)");
+                    const crit = isCriticalRow(r);
+                    const remColor = rem <= 0 ? "var(--red)" : (crit ? "var(--amber)" : "var(--green)");
                     return `<tr>
                         <td>${MAT_CAT_LABELS[r.cat] || r.cat}</td>
-                        <td><b>${esc(r.name)}</b></td>
+                        <td><b>${esc(r.name)}</b>${crit ? ` <span class="pill" style="--tone:var(--red);margin-left:4px">⚠️ Kritik</span>` : ""}</td>
                         <td class="num" style="color:var(--green)"><b>${formatMatQty(r.inQty, r.unit)}</b></td>
                         <td class="num" style="color:var(--amber)"><b>${formatMatQty(r.outQty, r.unit)}</b></td>
                         <td class="num" style="color:var(--blue)">${formatMatQty(r.retQty, r.unit)}</td>

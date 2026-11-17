@@ -243,16 +243,45 @@ textarea.input { height: auto; padding: 8px 10px; resize: vertical; }
 .project-list { flex: 1; min-height: 0; overflow-y: auto; padding-bottom: 8px; }
 .empty { color: var(--ink-3); text-align: center; padding: 24px 12px; }
 
-.project { border-bottom: 1px solid var(--line); }
-.project-row { display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 16px; }
+.project {
+    margin: 5px 7px;
+    border: 1px solid var(--line);
+    border-left: 3.5px solid var(--proj-tone, var(--line-strong));
+    border-radius: 8px;
+    background: var(--panel);
+    overflow: hidden;
+    transition: border-color 0.15s, box-shadow 0.15s;
+}
+.project.expanded {
+    border-color: color-mix(in srgb, var(--proj-tone, var(--brand)) 55%, var(--line));
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.14);
+}
+.project-row { display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 10px; }
 .project-row:hover { background: var(--hover); }
-.project.hidden-on-map .project-main { opacity: .5; }
+.project.hidden-on-map .project-main { opacity: .48; }
 .check { flex: none; display: grid; }
 .check input { width: 15px; height: 15px; accent-color: var(--brand); cursor: pointer; }
 .project-main { flex: 1; min-width: 0; text-align: left; }
-.project-main strong { display: block; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.project-main small { display: block; color: var(--ink-3); font-size: 11px; }
-.project-pct { flex: none; color: var(--ink-2); font-weight: 500; font-size: 12px; }
+.project-main strong {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    font-weight: 700;
+    font-size: 13px;
+    line-height: 1.3;
+    color: var(--ink);
+}
+.project-main small { display: block; margin-top: 2px; color: var(--ink-3); font-size: 11px; }
+.project-pct {
+    flex: none;
+    padding: 2px 6px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--proj-tone, var(--ink-3)) 14%, transparent);
+    color: var(--ink-2);
+    font-weight: 700;
+    font-size: 11.5px;
+}
 .chevron { transition: transform .12s; }
 .chevron.open { transform: rotate(90deg); }
 .segments { padding: 0 8px 8px 31px; }
@@ -1574,10 +1603,101 @@ body.shared .user, body.shared #logoutBtn, body.shared .bar-sep, body.shared .ta
     gap: 6px;
 }
 .mat-quick-acts .btn { height: 30px; padding: 0 10px; font-size: 12px; }
+.mat-extra-filters {
+    flex-basis: 100%;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding-top: 8px;
+    border-top: 1px dashed var(--line);
+}
 
 @media (max-width: 860px) {
     .mat-tabs-bar { flex-direction: column; align-items: stretch; }
     .mat-tab { padding: 8px 10px; font-size: 13px; }
+}
+
+/* === Sol paneldə aktiv qovluqdan layihələrə doğru yuxarıdakı kimi incə, layihə sayı qədər uzanan optik lif === */
+.fiber-bus-wrap {
+    position: relative;
+}
+#listView.has-active-fibers .fiber-bus-wrap {
+    padding-left: 14px;
+}
+#listView.has-active-fibers .fiber-bus-wrap::before {
+    content: "";
+    position: absolute;
+    left: 7px;
+    top: 0;
+    bottom: 24px;
+    width: 5px;
+    border-radius: 3px;
+    background: #0b1220;
+    border: 1px solid #334155;
+    pointer-events: none;
+}
+#listView.has-active-fibers .fiber-bus-wrap::after {
+    content: "";
+    position: absolute;
+    left: 8.6px;
+    top: 2px;
+    bottom: 25px;
+    width: 1.8px;
+    border-radius: 2px;
+    background-color: rgba(56, 189, 248, 0.45);
+    background-image: repeating-linear-gradient(
+        180deg,
+        transparent 0px,
+        transparent 18px,
+        rgba(255, 255, 255, 0.95) 18px,
+        rgba(56, 189, 248, 0.9) 25px,
+        transparent 25px,
+        transparent 52px
+    );
+    background-size: 1.8px 52px;
+    animation: fiberLaserUp 1.5s linear infinite;
+    filter: drop-shadow(0 0 2.5px rgba(56, 189, 248, 0.75));
+    pointer-events: none;
+}
+@keyframes fiberLaserUp {
+    0% { background-position: 0 52px; }
+    100% { background-position: 0 0; }
+}
+.project.fiber-linked {
+    position: relative;
+    overflow: visible;
+    margin-left: 6px;
+}
+.project.fiber-linked::before {
+    content: "";
+    position: absolute;
+    left: -10px;
+    top: 21px;
+    width: 10px;
+    height: 1.8px;
+    border-radius: 1px;
+    background: var(--fiber-tone, #38bdf8);
+    box-shadow: 0 0 5px var(--fiber-tone, #38bdf8);
+    pointer-events: none;
+    transition: opacity 0.2s;
+}
+.project.fiber-linked::after {
+    content: "";
+    position: absolute;
+    left: -13px;
+    top: 18.5px;
+    width: 6.5px;
+    height: 6.5px;
+    border-radius: 50%;
+    background: var(--fiber-tone, #38bdf8);
+    border: 1px solid #0b1220;
+    box-shadow: 0 0 6px var(--fiber-tone, #38bdf8);
+    pointer-events: none;
+}
+.project.fiber-linked.hidden-on-map::before,
+.project.fiber-linked.hidden-on-map::after {
+    opacity: 0.22;
+    box-shadow: none;
 }
 
 
