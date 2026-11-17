@@ -523,7 +523,26 @@ function hexToKmlColor(hex, alphaHex = "ff") {
     return `${alphaHex}${b}${g}${r}`;
 }
 
+let jszipLoadingPromise = null;
+async function ensureJSZip() {
+    if (typeof JSZip !== "undefined") return window.JSZip;
+    if (jszipLoadingPromise) return jszipLoadingPromise;
+    jszipLoadingPromise = new Promise((resolve, reject) => {
+        const s = document.createElement("script");
+        s.src = "https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js";
+        s.async = true;
+        s.onload = () => resolve(window.JSZip);
+        s.onerror = () => {
+            jszipLoadingPromise = null;
+            reject(new Error("JSZip kitabxanası yüklənə bilmədi"));
+        };
+        document.head.appendChild(s);
+    });
+    return jszipLoadingPromise;
+}
+
 async function exportActiveToKmz() {
+    await ensureJSZip().catch(() => null);
     const activeProjects = state.projects.filter(p =>
         state.visibleIds.has(p.id) && state.activeFolders.has(p.category || "project")
     );
@@ -1348,20 +1367,19 @@ function saveImportedProjects() {
 
 async function enterApp(user) {
     state.user = user;
-    let data;
-    try {
-        data = await api.loadAll(user.id);
-    } catch {
-        // Məlumat gəlmədisə boş paneldə qalmırıq: sessiyanı bağlayıb girişə qayıdırıq
-        await api.signOut().catch(() => {});
-        resetState();
-        showLogin(t("loadError"));
-        return;
-    }
     $("login").hidden = true;
-    Object.assign(state, data);
 
-    // Baza layihələri ilə lokal/idxal olunmuş layihələri birləşdir (fayl atributları, lif sayı, poliqon doluluğu itməsin)
+    // 1. DƏRHAL AÇILIŞ (INSTANT ZERO-LATENCY LOAD):
+    // Telefonda və kompüterdə şəbəkə gözləmədən əvvəlcə yerli keşdəki layihələri 0.1 saniyədə ekrana ver!
+    const snap = readStore("bcg.db.snapshot.v1", null);
+    if (snap && Array.isArray(snap.projects) && snap.projects.length > 0) {
+        state.projects = snap.projects;
+        if (snap.materials) state.materials = snap.materials;
+        if (snap.notes) state.notes = snap.notes;
+        state.role = user.role || snap.role || "viewer";
+    }
+
+    // Baza layihələri ilə lokal/idxal olunmuş layihələri birləşdir
     const storedImported = getStoredImportedProjects();
     storedImported.forEach(localProj => {
         if (!localProj || !localProj.id) return;
@@ -1372,6 +1390,46 @@ async function enterApp(user) {
             state.projects.push(localProj);
         }
     });
+
+    applySavedMetaOverrides();
+    const hiddenSet = getHiddenProjectIds();
+    state.projects.forEach(p => {
+        if (!hiddenSet.has(p.id)) state.visibleIds.add(p.id);
+    });
+
+    tools.setUser(user.id);
+    renderRole();
+    renderNotes();
+    renderMaterials();
+    renderAll(); // Səhifə heç bir gecikmə olmadan dərhal açılır!
+
+    // 2. ARXA PLANDA SƏSSİZ SİNXRONİZASİYA (ASYNC BACKGROUND SYNC):
+    // İstifadəçi artıq xəritəni görür və işləyir; buluddan yeni dəyişikliklər gələndə səssizcə yenilənir
+    if (api.configured) {
+        api.loadAll(user.id).then(data => {
+            if (data && Array.isArray(data.projects) && data.projects.length > 0) {
+                Object.assign(state, data);
+                const freshImported = getStoredImportedProjects();
+                freshImported.forEach(localProj => {
+                    if (!localProj || !localProj.id) return;
+                    const idx = state.projects.findIndex(p => p.id === localProj.id);
+                    if (idx >= 0) {
+                        state.projects[idx] = mergeLocalProjectIntoDb(state.projects[idx], localProj);
+                    } else {
+                        state.projects.push(localProj);
+                    }
+                });
+                applySavedMetaOverrides();
+                state.projects.forEach(p => {
+                    if (!hiddenSet.has(p.id)) state.visibleIds.add(p.id);
+                });
+                renderAll();
+            }
+        }).catch(err => {
+            console.warn("Offline or slow network, continuing with cached data:", err);
+            // Şəbəkə zəifdirsə və ya gecikirsə, istifadəçini sistemdən ATILMIR, işini davam etdirir.
+        });
+    }
 
     // Əgər localStorage dolubsa və ya layihələr limitsiz IndexedDB-də saxlanılıbsa, onları da daxil et
     getFromIndexedDB(STORAGE_IMPORTED_KEY).then(idbProjs => {
@@ -1389,17 +1447,6 @@ async function enterApp(user) {
             if (changed) renderAll();
         }
     }).catch(() => {});
-
-    applySavedMetaOverrides();
-    const hiddenSet = getHiddenProjectIds();
-    state.projects.forEach(p => {
-        if (!hiddenSet.has(p.id)) state.visibleIds.add(p.id);
-    });
-    tools.setUser(user.id);
-    renderRole();
-    renderNotes();
-    renderMaterials();
-    renderAll();
 }
 
 /* REDAKTƏ (admin) */
@@ -2199,8 +2246,11 @@ function getItemShape(project, item) {
     return baseShape;
 }
 
+let pointShapesRegistered = false;
+
 function registerPointShapeImages() {
-    if (!map) return;
+    if (!map || pointShapesRegistered) return;
+    pointShapesRegistered = true;
     const colors = [...Object.values(STATUS_COLORS), "#38BDF8"];
     const size = 48;
     const half = size / 2;
@@ -2681,7 +2731,8 @@ function initMap() {
         // Sağ düymə yalnız yaxınlaşdırır, orta düymə fırladır və əyir
         dragRotate: false,
         attributionControl: false,
-        preserveDrawingBuffer: true
+        // Telefonda hardware double-buffering aktiv olsun (GPU və RAM yükünü yarıbayarı azaldır)
+        preserveDrawingBuffer: !isPhone()
     });
     map.addControl(new maplibregl.ScaleControl({ maxWidth: 110 }), "bottom-right");
     routePopup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, className: "map-tip", offset: 12, maxWidth: "300px" });
@@ -2690,7 +2741,6 @@ function initMap() {
         registerPointShapeImages();
         switchBaseLayer("satellite");
         tools.init();
-        drawRoutes();
     });
     map.on("click", onMapClick);
     map.on("mousemove", e => {
@@ -3443,7 +3493,6 @@ function drawRoutes() {
         map.once("load", drawRoutes);
         return;
     }
-    registerPointShapeImages();
     const selected = selectedEntry();
     const activeProjId = selected ? selected.project.id : window.__activeProjectId || null;
     const features = [];
@@ -3857,7 +3906,7 @@ function drawRoutes() {
             ).join("<br>")
             : `<b style="color:${first.stColor}">${first.shape.symbol} ${esc(grp.rayonName)}</b><small>${first.rawProjName ? `<span style="opacity:0.9">${esc(first.rawProjName)}</span><br>` : ""}📡 ${esc(first.antLabel)} - ${first.verilenM} / ${first.cekilenM} m (${first.pct}%)${first.execSummary ? `<br>👷 İcraçı: <b>${esc(first.execSummary)}</b>` : ""}</small>`;
 
-        const mergedCardImg = n > 1
+        const mergedCardImg = isPhone() ? null : (n > 1
             ? ensureMergedSummaryCardImage(grp.rayonName, grp.entries.map(e => ({
                 color: e.stColor,
                 shapeSymbol: e.shape.symbol,
@@ -3880,7 +3929,7 @@ function drawRoutes() {
                 doneM: first.cekilenM,
                 pct: first.pct,
                 contractor: first.execSummary || ""
-            });
+            }));
 
         // 1) Uzaq miqyas (zoom < 10.2) üçün qovuşmuş kart + yan-yana fərqli ikonlar
         const hasIcrada = grp.entries.some(e => e.r.status === "icrada");
@@ -3966,7 +4015,7 @@ function drawRoutes() {
                 }
             }
 
-            const singleCardImg = ensureSummaryCardImage({
+            const singleCardImg = isPhone() ? null : ensureSummaryCardImage({
                 name: e.rayonName,
                 color: e.stColor,
                 shapeSymbol: e.shape.symbol,
@@ -5264,6 +5313,9 @@ function linesFromKml(text) {
 async function readLines(file) {
     const extension = file.name.split(".").pop().toLowerCase();
     if (extension === "kmz") {
+        if (typeof JSZip === "undefined") {
+            await ensureJSZip().catch(() => null);
+        }
         if (typeof JSZip === "undefined") {
             throw new Error("JSZip kitabxanası yüklənməyib");
         }

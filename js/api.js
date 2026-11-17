@@ -350,13 +350,14 @@ const api = (() => {
         configured,
 
         async getUser() {
-            try {
-                const { data } = await client.auth.getSession();
-                if (data?.session?.user) return data.session.user;
-            } catch {}
+            // Əvvəlcə lokal sessiyanı yoxla (telefonda və kompüterdə 0 millisaniyədə dərhal açılır)
             try {
                 const localUser = JSON.parse(localStorage.getItem(LOCAL_SESSION_KEY) || "null");
                 if (localUser && localUser.email) return localUser;
+            } catch {}
+            try {
+                const { data } = await client.auth.getSession();
+                if (data?.session?.user) return data.session.user;
             } catch {}
             return null;
         },

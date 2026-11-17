@@ -1,5 +1,5 @@
-/* BCG GIS — PWA Service Worker (Network-first with offline fallback) */
-const CACHE_NAME = "bcg-gis-pwa-v1";
+/* BCG GIS — PWA Service Worker (v2) */
+const CACHE_NAME = "bcg-gis-pwa-v2";
 
 self.addEventListener("install", event => {
     self.skipWaiting();
@@ -14,6 +14,9 @@ self.addEventListener("activate", event => {
 });
 
 self.addEventListener("fetch", event => {
+    // Yalnız eyni mənşəli (local) statik fayllar üçün: xəritə kafelləri, peyk şəkilləri və Supabase API sorğularına mane olma
+    const url = new URL(event.request.url);
+    if (url.origin !== self.location.origin) return;
     if (event.request.method !== "GET") return;
     event.respondWith(
         fetch(event.request).catch(() => caches.match(event.request))
