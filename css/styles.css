@@ -614,30 +614,30 @@ body.shared .user, body.shared #logoutBtn, body.shared .bar-sep, body.shared .ta
     background: var(--ink-3);
     transition: all 0.18s;
 }
-/* Aktiv qovluqların Azərbaycan bayrağı rəngləri (Mavi, Qırmızı, Yaşıl, Ay-ulduz ağ) */
+/* Aktiv qovluqların fərqli və parlaq rəngləri (baxanda dərhal aktiv olduğu bilinir) */
 .semi-folder-node[data-folder-tab="project"].active {
-    background: linear-gradient(135deg, #0095c7, #00B5E2);
+    background: linear-gradient(135deg, #2563eb, #0284c7);
     border-color: #7dd3fc;
     color: #ffffff;
-    box-shadow: 0 0 16px rgba(0, 181, 226, 0.55);
+    box-shadow: 0 0 16px rgba(56, 189, 248, 0.6);
 }
 .semi-folder-node[data-folder-tab="nim"].active {
-    background: linear-gradient(135deg, #c81e2b, #EF3340);
-    border-color: #fda4af;
+    background: linear-gradient(135deg, #d97706, #ea580c);
+    border-color: #fde047;
     color: #ffffff;
-    box-shadow: 0 0 16px rgba(239, 51, 64, 0.55);
+    box-shadow: 0 0 16px rgba(245, 158, 11, 0.6);
 }
 .semi-folder-node[data-folder-tab="azconnect"].active {
-    background: linear-gradient(135deg, #3a7d1e, #509E2F);
-    border-color: #86efac;
+    background: linear-gradient(135deg, #0891b2, #0d9488);
+    border-color: #67e8f9;
     color: #ffffff;
-    box-shadow: 0 0 16px rgba(80, 158, 47, 0.55);
+    box-shadow: 0 0 16px rgba(6, 182, 212, 0.6);
 }
 .semi-folder-node[data-folder-tab="other"].active {
-    background: linear-gradient(135deg, #334155, #475569);
-    border-color: #f8fafc;
+    background: linear-gradient(135deg, #7c3aed, #9333ea);
+    border-color: #d8b4fe;
     color: #ffffff;
-    box-shadow: 0 0 16px rgba(248, 250, 252, 0.45);
+    box-shadow: 0 0 16px rgba(168, 85, 247, 0.6);
 }
 .semi-folder-node.active .semi-dot {
     background: #ffffff;
@@ -1329,12 +1329,12 @@ body.shared .user, body.shared #logoutBtn, body.shared .bar-sep, body.shared .ta
 .fo-led { width: 9px; height: 9px; border-radius: 50%; background: #334155; border: 1px solid #1e293b; transition: all 0.3s; }
 .fo-led.active { background: var(--fo-color); box-shadow: 0 0 7px var(--fo-color); }
 
-/* Kabel başlanğıcının daxil olduğu status paneli: aktiv olanda Azərbaycan bayrağı rənglərində işıqlanır */
+/* Kabel başlanğıcının daxil olduğu status paneli: aktiv olanda işıqlanır */
 #listView .filters { border-top: 3px solid #1e293b; transition: border-color 0.3s, box-shadow 0.3s; }
 #listView .filters.fo-fed {
     border-top-color: transparent;
-    border-image: linear-gradient(90deg, #00B5E2, #EF3340, #509E2F) 1;
-    box-shadow: inset 0 8px 14px -10px rgba(0, 181, 226, 0.45);
+    border-image: linear-gradient(90deg, #38bdf8, #f59e0b, #06b6d4, #a855f7) 1;
+    box-shadow: inset 0 8px 14px -10px rgba(56, 189, 248, 0.55);
 }
 
 /* Kabel gövdəsindəki liflər bir-birinə yaxın olduğu üçün nazik çəkilir */

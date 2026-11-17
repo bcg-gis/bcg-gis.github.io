@@ -51,7 +51,7 @@ const api = (() => {
             pointB: pointB || "",
             startDate: row.start_date || "",
             endDate: row.end_date || "",
-            contractor: row.contractor || "",
+            contractor: meta.ctr !== undefined ? meta.ctr : (row.contractor || ""),
             totalKm: meta.tKm !== undefined ? Number(meta.tKm) : Number(row.total_km),
             doneKm: meta.dKm !== undefined ? Number(meta.dKm) : Number(row.done_km),
             status: meta.st || row.status,
@@ -199,6 +199,18 @@ const api = (() => {
             if (v.snapshot && typeof v.snapshot === "object") {
                 localStorage.setItem(DB_SNAPSHOT_KEY, JSON.stringify(v.snapshot));
             }
+            let curRole = "";
+            try { curRole = JSON.parse(localStorage.getItem(LOCAL_SESSION_KEY) || "null")?.role || ""; } catch {}
+            if (v.segMeta && typeof v.segMeta === "object" && !Array.isArray(v.segMeta)) {
+                const curS = JSON.parse(localStorage.getItem("bcg.seg.meta.v1") || "{}");
+                const mergedS = curRole === "admin" ? { ...v.segMeta, ...curS } : { ...curS, ...v.segMeta };
+                localStorage.setItem("bcg.seg.meta.v1", JSON.stringify(mergedS));
+            }
+            if (v.projMeta && typeof v.projMeta === "object" && !Array.isArray(v.projMeta)) {
+                const curP = JSON.parse(localStorage.getItem("bcg.proj.meta.v1") || "{}");
+                const mergedP = curRole === "admin" ? { ...v.projMeta, ...curP } : { ...curP, ...v.projMeta };
+                localStorage.setItem("bcg.proj.meta.v1", JSON.stringify(mergedP));
+            }
             return v;
         } catch {
             return null;
@@ -211,9 +223,13 @@ const api = (() => {
             const adminUsers = getAdminUsersList();
             let contractors = {};
             let bcgLeads = [];
+            let segMeta = {};
+            let projMeta = {};
             let snapshot = extraSnapshot;
             try { contractors = JSON.parse(localStorage.getItem("bcg.admin.contractors.v2") || "{}"); } catch {}
             try { bcgLeads = JSON.parse(localStorage.getItem("bcg.exec.leads.v1") || "[]"); } catch {}
+            try { segMeta = JSON.parse(localStorage.getItem("bcg.seg.meta.v1") || "{}"); } catch {}
+            try { projMeta = JSON.parse(localStorage.getItem("bcg.proj.meta.v1") || "{}"); } catch {}
             if (!snapshot) {
                 try { snapshot = JSON.parse(localStorage.getItem(DB_SNAPSHOT_KEY) || "null"); } catch {}
             }
@@ -236,6 +252,8 @@ const api = (() => {
                     adminUsers,
                     contractors,
                     bcgLeads,
+                    segMeta,
+                    projMeta,
                     snapshot,
                     updatedAt: new Date().toISOString()
                 }
@@ -493,8 +511,8 @@ const api = (() => {
                         localStorage.setItem(DB_SNAPSHOT_KEY, JSON.stringify(snapPayload));
                     } catch {}
                     if (own?.role === "admin" || matchedAdminUser?.role === "admin") {
-                        // Sinxronizasiya açılışı yavaşlatmasın: 20 saniyə sonra arxa fonda
-                        setTimeout(() => syncCloudRegistry(snapPayload).catch(() => {}), 20000);
+                        // Sinxronizasiya açılışı yavaşlatmasın: 2 saniyə sonra arxa fonda
+                        setTimeout(() => syncCloudRegistry(snapPayload).catch(() => {}), 2000);
                     }
                 }
 
@@ -643,6 +661,7 @@ const api = (() => {
                     sum: r.summary,
                     ray: r.rayon,
                     pTyp: r.pointType,
+                    ctr: r.contractor || "",
                     eLead: r.execLead,
                     eWrk: r.execWorkers,
                     ePhn: r.execPhone,
@@ -696,33 +715,49 @@ const api = (() => {
 
         async saveSegment(projectId, code, row, extraMeta = null) {
             const VALID_DB_STATUSES = ["bitmis", "icrada", "tehvil", "layihe"];
-            const totalKm = Math.max(0, Number(row.total_km) || 0);
-            const doneKm = Math.max(0, Number(row.done_km) || 0);
-            const dbTotalKm = Math.max(totalKm, doneKm);
+            const segCode = code || row.code;
+            let basePointB = row.point_b;
             let existingMeta = {};
-            if (row.point_b !== undefined) {
-                existingMeta = unpackPointBMeta(row.point_b).meta;
+            if (basePointB !== undefined) {
+                existingMeta = unpackPointBMeta(basePointB).meta;
+            } else if (segCode) {
+                try {
+                    const { data: ex } = await client.from("segments").select("point_b").eq("project_id", projectId).eq("code", segCode).maybeSingle();
+                    if (ex?.point_b !== undefined) {
+                        basePointB = ex.point_b;
+                        existingMeta = unpackPointBMeta(ex.point_b).meta;
+                    }
+                } catch {}
             }
+            const hasTotal = row.total_km !== undefined;
+            const hasDone = row.done_km !== undefined;
+            const totalKm = hasTotal ? Math.max(0, Number(row.total_km) || 0) : undefined;
+            const doneKm = hasDone ? Math.max(0, Number(row.done_km) || 0) : undefined;
             const isSinglePt = Array.isArray(row.coords) && row.coords.length === 1;
             const mergedMeta = {
                 ...existingMeta,
                 ...(extraMeta || {}),
-                ...(row.total_km !== undefined ? { tKm: totalKm } : {}),
-                ...(row.done_km !== undefined ? { dKm: doneKm } : {}),
+                ...(hasTotal ? { tKm: totalKm } : {}),
+                ...(hasDone ? { dKm: doneKm } : {}),
                 ...(row.status ? { st: row.status } : {}),
+                ...(row.contractor !== undefined ? { ctr: row.contractor || "" } : {}),
                 ...(row.antennas !== undefined ? { ant: Number(row.antennas) || 0 } : {}),
                 ...(isSinglePt ? { pt1: true } : {})
             };
             const safeRow = {
                 project_id: projectId,
-                code: code || row.code,
-                total_km: dbTotalKm,
-                done_km: doneKm
+                code: segCode
             };
+            if (hasTotal || hasDone) {
+                const tVal = totalKm ?? Math.max(0, Number(existingMeta.tKm) || 0);
+                const dVal = doneKm ?? Math.max(0, Number(existingMeta.dKm) || 0);
+                safeRow.total_km = Math.max(tVal, dVal);
+                safeRow.done_km = dVal;
+            }
             if (row.name !== undefined) safeRow.name = row.name;
             if (row.point_a !== undefined) safeRow.point_a = row.point_a;
-            if (row.point_b !== undefined || Object.keys(mergedMeta).length > 0) {
-                safeRow.point_b = packPointBMeta(row.point_b || "", mergedMeta);
+            if (basePointB !== undefined || Object.keys(mergedMeta).length > 0) {
+                safeRow.point_b = packPointBMeta(basePointB || "", mergedMeta);
             }
             if (row.start_date !== undefined) safeRow.start_date = row.start_date || null;
             if (row.end_date !== undefined) safeRow.end_date = row.end_date || null;
@@ -737,7 +772,7 @@ const api = (() => {
             }
             let res = await client.from("segments").upsert(safeRow, { onConflict: "project_id,code" });
             if (res.error) {
-                // Əgər contractor constraint xətası olarsa, contractor-u null edib yaz
+                // Əgər contractor FK xətası olarsa, contractor sütununu null edib point_b meta-sı (ctr) ilə yaz
                 res = await client.from("segments").upsert({ ...safeRow, contractor: null }, { onConflict: "project_id,code" });
                 if (res.error) {
                     console.warn("saveSegment error:", res.error);

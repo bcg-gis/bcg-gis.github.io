@@ -1202,6 +1202,17 @@ function computePolygonCentroid(coords) {
     };
 }
 
+let _cloudMetaSyncTimer = null;
+function scheduleCloudMetaSync() {
+    if (typeof api === "undefined" || !api.configured || typeof isAdmin !== "function" || !isAdmin()) return;
+    clearTimeout(_cloudMetaSyncTimer);
+    _cloudMetaSyncTimer = setTimeout(() => {
+        if (typeof api.syncCloudRegistry === "function") {
+            api.syncCloudRegistry().catch(() => {});
+        }
+    }, 800);
+}
+
 function saveProjectOverride(project) {
     if (!project || !project.id) return;
     const map = readStore(PROJ_META_STORE_KEY, {}) || {};
@@ -1219,6 +1230,7 @@ function saveProjectOverride(project) {
         fillOpacity: project.fillOpacity
     };
     writeStore(PROJ_META_STORE_KEY, map);
+    scheduleCloudMetaSync();
 }
 
 function saveSegmentOverride(projectId, item) {
@@ -1252,6 +1264,7 @@ function saveSegmentOverride(projectId, item) {
         props: item.props
     };
     writeStore(SEG_META_STORE_KEY, map);
+    scheduleCloudMetaSync();
 }
 
 function mergeLocalProjectIntoDb(dbProj, localProj) {
@@ -6392,12 +6405,14 @@ document.addEventListener("DOMContentLoaded", init);
                 }
                 saveSegmentOverride(proj.id, item);
                 saveImportedProjects();
-                if (api.configured && item.dbId) {
-                    const packedPtB = typeof api.packPointBMeta === "function"
-                        ? api.packPointBMeta(item.pointB || "", item)
-                        : (item.pointB || "");
+                if (api.configured) {
                     try {
-                        await api.saveSegment(proj.id, item.dbId, { contractor: item.contractor, point_b: packedPtB });
+                        await api.saveSegment(proj.id, item.dbId || item.id, { contractor: item.contractor || "" }, {
+                            ctr: item.contractor || "",
+                            eLead: item.execLead || "",
+                            eWrk: item.execWorkers || "",
+                            ePhn: item.execPhone || ""
+                        });
                     } catch {}
                 }
                 recordAuditLog("İcraçı / Mühəndis Yenilənməsi", "🏢 BCG", `${proj.name} → ${item.name}`, `${item.contractor || "BCG"}: ${leadVal || "—"} (${wrkVal || 0} nəfər · ${phnVal || "—"})`);
@@ -6576,7 +6591,12 @@ document.addEventListener("DOMContentLoaded", init);
             saveImportedProjects();
             if (isAdmin() && api.configured) {
                 try {
-                    await api.saveSegment(proj.id, item.id, { contractor: item.contractor });
+                    await api.saveSegment(proj.id, item.dbId || item.id, { contractor: item.contractor || "" }, {
+                        ctr: item.contractor || "",
+                        eLead: item.execLead || "",
+                        eWrk: item.execWorkers || "",
+                        ePhn: item.execPhone || ""
+                    });
                 } catch { /* lokal olaraq da yenilənir */ }
             }
             recordAuditLog("İcraçı Təyini", proj.category === "nim" ? "🚦 NİM" : (proj.category === "azconnect" ? "🌐 Azconnect" : "📁 Layihələr"), item.name, `İcraçı dəyişdirildi: ${item.contractor}`);
