@@ -1549,7 +1549,11 @@ function fieldHtml(field, value) {
         </div>`;
     } else {
         const step = field.type === "number" ? 'step="any" min="0"' : "";
-        control = `<input ${attrs} type="${field.type || "text"}" ${step} value="${esc(value)}">`;
+        const ph = field.placeholder ? `placeholder="${esc(field.placeholder)}"` : "";
+        const listId = field.list ? `dl_${field.key}` : "";
+        const listAttr = listId ? `list="${listId}"` : "";
+        const listEl = listId ? `<datalist id="${listId}">${field.list.map(x => `<option value="${esc(x)}">`).join("")}</datalist>` : "";
+        control = `<input ${attrs} type="${field.type || "text"}" ${step} ${ph} ${listAttr} value="${esc(value)}">${listEl}`;
     }
     const after = field.action ? `<button class="link" type="button" data-field-action="${field.key}">${esc(field.action.label)}</button>` : "";
     const bcgAttr = field.bcgOnly ? ` data-bcg-only="1"` : "";
@@ -2020,12 +2024,35 @@ const LEGACY_PROJECT_RENAME_MAP = {
     "Qarabağ & Şərqi Zəngəzur": "BCG — Cənub Antena Layihəsi"
 };
 
-function editMaterial(material) {
+const WAREHOUSE_CATALOG = [
+    "FO 12", "FO 24", "FO 48", "FO 96", "FO 144", "ADSS 24", "ADSS 48", "Drop Kabel",
+    "Mufta 12-lik", "Mufta 24-lük", "Mufta 48-lik", "Mufta 96-lıq", "Mufta 144-lük",
+    "Patch Panel 12-port", "Patch Panel 24-port", "Patch Panel 48-port", "Patch Panel 96-port"
+];
+
+function detectMaterialCategory(name, explicitCat = "") {
+    if (explicitCat && ["kabel", "mufta", "patchpanel", "diger"].includes(explicitCat)) return explicitCat;
+    const s = String(name || "").toLowerCase();
+    if (/patch|odf|panel/i.test(s)) return "patchpanel";
+    if (/mufta|kaset/i.test(s)) return "mufta";
+    if (/\bfo\b|fov|kabel|adss|drop|fiber|optik/i.test(s)) return "kabel";
+    return "diger";
+}
+
+function normalizeMaterialUnitAndQty(rawQty, rawUnit) {
+    const q = Math.max(0, Number(String(rawQty ?? "").replace(/[^\d.,]/g, "").replace(",", ".")) || 0);
+    if (rawUnit === "km") return { qty: Math.round(q * 1000), unit: "m" };
+    if (rawUnit === "əd") return { qty: Math.round(q * 100) / 100, unit: "əd" };
+    return { qty: Math.round(q * 100) / 100, unit: rawUnit || "m" };
+}
+
+function editMaterial(material, presetFlow = null) {
     const current = material?.state;
     const states = current && !MATERIAL_STATES.includes(current) ? [...MATERIAL_STATES, current] : MATERIAL_STATES;
     const today = new Date().toISOString().slice(0, 10);
 
     const activeProjectNames = [
+        "🏢 Ümumi Anbar",
         ...state.projects.map(p => p.name),
         "BCG — Bakı-Quba-Qusar Magistralı",
         "BCG — Bakı-Şamaxı-Yevlax Magistralı",
@@ -2039,48 +2066,122 @@ function editMaterial(material) {
     ];
     const uniqueProjects = [...new Set(activeProjectNames.filter(Boolean))];
 
+    const flowVal = material?.flow || presetFlow || "out";
     let currentProj = material?.project;
     if (currentProj && LEGACY_PROJECT_RENAME_MAP[currentProj]) {
         currentProj = LEGACY_PROJECT_RENAME_MAP[currentProj];
     }
-    if (!currentProj) currentProj = uniqueProjects[0] || "BCG — Bakı-Quba-Qusar Magistralı";
+    if (!currentProj) {
+        currentProj = flowVal === "in" ? "🏢 Ümumi Anbar" : (uniqueProjects.find(p => p !== "🏢 Ümumi Anbar") || "BCG — Bakı-Quba-Qusar Magistralı");
+    }
     if (!uniqueProjects.includes(currentProj)) uniqueProjects.unshift(currentProj);
 
+    const parsedQty = material
+        ? (Number(material.qty_num) || Number(String(material.quantity || material.issued_qty || "").replace(/[^\d.,]/g, "").replace(",", ".")) || "")
+        : "";
+    const curUnit = material?.unit || (/əd|eded/i.test(String(material?.quantity || "")) ? "əd" : "m");
+    const curCat = detectMaterialCategory(material?.material, material?.category);
+
     openEditor({
-        title: t(material ? "editMaterial" : "addMaterial"),
+        title: material ? t("editMaterial") : (flowVal === "in" ? "📥 Anbara Mədaxil (Alış)" : (flowVal === "return" ? "↩️ Anbara Qaytarma" : "📤 Layihəyə Məxaric (Çıxış)")),
         values: material ? {
             ...material,
+            flow: flowVal,
+            category: curCat,
             project: currentProj,
             invoice_no: material.invoice_no || `QAİMƏ-2026-0${140 + (material.id || 1)}`,
-            issued_qty: material.issued_qty || material.quantity || "",
-            used_qty: material.used_qty || material.quantity || "",
-            used_date: material.used_date || today
+            supplier: material.supplier || "",
+            qty_num: parsedQty,
+            unit: curUnit,
+            used_date: material.used_date || today,
+            note: material.note || ""
         } : {
+            flow: flowVal,
+            category: "kabel",
             project: currentProj,
             invoice_no: `QAİMƏ-2026-${Math.floor(100 + Math.random() * 900)}`,
-            state: "issued",
-            used_date: today
+            supplier: "",
+            qty_num: "",
+            unit: "m",
+            state: flowVal === "in" || flowVal === "return" ? "in_stock" : "issued",
+            used_date: today,
+            note: ""
         },
         fields: [
-            { key: "invoice_no", label: "📄 Anbar Qaiməsi №", required: true, wide: true },
+            {
+                key: "flow",
+                label: "Hərəkət növü",
+                type: "select",
+                required: true,
+                options: [
+                    ["in", "📥 Anbara Mədaxil (Alış)"],
+                    ["out", "📤 Layihəyə Məxaric (Çıxış)"],
+                    ["return", "↩️ Anbara Qaytarma (Artıq qalan)"]
+                ]
+            },
+            {
+                key: "category",
+                label: "Kateqoriya",
+                type: "select",
+                required: true,
+                options: [
+                    ["kabel", "🔌 Kabel (FO / ADSS)"],
+                    ["mufta", "🔗 Mufta"],
+                    ["patchpanel", "🗄️ Patch Panel (ODF)"],
+                    ["diger", "📦 Digər"]
+                ]
+            },
+            {
+                key: "material",
+                label: "Material (FO, Mufta, Patch Panel)",
+                required: true,
+                wide: true,
+                placeholder: "Məs: FO 48, Mufta 48-lik, Patch Panel 24-port",
+                list: WAREHOUSE_CATALOG
+            },
+            { key: "qty_num", label: "Miqdar", type: "number", required: true, placeholder: "Məs: 40000" },
+            {
+                key: "unit",
+                label: "Ölçü vahidi",
+                type: "select",
+                required: true,
+                options: [
+                    ["m", "m (metr)"],
+                    ["km", "km (avtomatik metrə çevrilir)"],
+                    ["əd", "əd (ədəd)"]
+                ]
+            },
             {
                 key: "project",
-                label: t("thProject"),
+                label: "Layihə / Anbar",
                 type: "select",
                 required: true,
                 wide: true,
                 options: uniqueProjects.map(p => [p, p])
             },
-            { key: "material", label: t("thMaterial"), required: true, wide: true },
-            { key: "issued_qty", label: "📦 Anbardan verilən (göndərilən)", required: true },
-            { key: "used_qty", label: "🛠️ İstifadə olunan (faktiki sərf)", required: true },
+            { key: "supplier", label: "Kimdən alınıb / Kimə verilib", placeholder: "Məs: Bakcable MMC / Podratçı adı" },
+            { key: "invoice_no", label: "📄 Anbar Qaiməsi №", required: true },
             { key: "used_date", label: "Tarix", type: "date", required: true },
-            { key: "state", label: t("thState"), type: "select", required: true, options: states.map(s => [s, materialStateLabel(s)]) }
+            { key: "state", label: t("thState"), type: "select", required: true, options: states.map(s => [s, materialStateLabel(s)]) },
+            { key: "note", label: "Qeyd / Baraban №", wide: true, placeholder: "Məs: Baraban №4 qalığı anbara qayıtdı" }
         ],
-        onSave: row => api.saveMaterial(material?.id, { ...row, quantity: row.used_qty || row.issued_qty }),
+        onSave: row => {
+            const norm = normalizeMaterialUnitAndQty(row.qty_num, row.unit);
+            const displayQty = `${norm.qty} ${norm.unit}`;
+            return api.saveMaterial(material?.id, {
+                ...row,
+                category: detectMaterialCategory(row.material, row.category),
+                qty_num: norm.qty,
+                unit: norm.unit,
+                quantity: displayQty,
+                issued_qty: row.flow === "out" ? displayQty : "",
+                used_qty: row.flow === "return" ? displayQty : ""
+            });
+        },
         onDelete: material && (() => api.deleteMaterial(material.id))
     });
 }
+window.editMaterial = editMaterial;
 
 /* LİNKLƏ PAYLAŞMA */
 const shareUrl = token => `${location.origin}${location.pathname}?share=${token}`;
@@ -8527,33 +8628,60 @@ document.addEventListener("DOMContentLoaded", init);
             noteForm.insertBefore(meta, noteForm.firstChild);
         }
 
-        // Material Reyestrinə Axın növü (Anbardan çıxan / İstifadə olunan), Layihə, Material, Anbar Qaiməsi № və Tarix filtrləri əlavə et
+        // Anbar & Material Reyestri: 3 Tab (Ümumi Anbar Qalığı, Layihə üzrə Qalıq, Qaimələr Jurnalı)
         const matModal = $("materialsModal");
         if (matModal && !$("matFilterBar")) {
             const wrap = matModal.querySelector(".table-wrap");
+            const nav = document.createElement("div");
+            nav.id = "matTabsBar";
+            nav.className = "mat-tabs-bar";
+            nav.innerHTML = `
+                <div class="mat-tabs">
+                    <button type="button" class="mat-tab active" data-mat-tab="stock">📊 Ümumi Anbar Qalığı</button>
+                    <button type="button" class="mat-tab" data-mat-tab="projects">📁 Layihə üzrə Qalıq</button>
+                    <button type="button" class="mat-tab" data-mat-tab="journal">📋 Qaimələr (Jurnal)</button>
+                </div>
+                <div class="mat-quick-acts">
+                    <button type="button" class="btn btn-primary" data-mat-add="in" id="matAddInBtn" hidden>+ 📥 Mədaxil</button>
+                    <button type="button" class="btn btn-outline" data-mat-add="out" id="matAddOutBtn" hidden>+ 📤 Məxaric</button>
+                    <button type="button" class="btn btn-outline" data-mat-add="return" id="matAddRetBtn" hidden>+ ↩️ Qaytarma</button>
+                    <button type="button" class="btn btn-outline" id="matExportCsvBtn" title="CSV (Excel) ixrac"><i class="fa-solid fa-file-csv"></i> Excel</button>
+                </div>
+            `;
             const bar = document.createElement("div");
             bar.id = "matFilterBar";
             bar.className = "mat-filters";
             bar.innerHTML = `
                 <label>
-                    <span>Axın növü:</span>
+                    <span>Hərəkət növü:</span>
                     <select class="input" id="matFilterFlow">
-                        <option value="all">Hamısı (Anbar + İstifadə)</option>
-                        <option value="issued">📦 Yalnız Anbardan çıxan</option>
-                        <option value="used">🛠️ Yalnız İstifadə olunan</option>
+                        <option value="all">Hamısı (Mədaxil + Məxaric + Qaytarma)</option>
+                        <option value="in">📥 Yalnız Anbara Mədaxil (Alış)</option>
+                        <option value="out">📤 Yalnız Layihəyə Məxaric (Çıxış)</option>
+                        <option value="return">↩️ Yalnız Anbara Qaytarma</option>
                     </select>
                 </label>
                 <label>
-                    <span>Layihə:</span>
+                    <span>Kateqoriya:</span>
+                    <select class="input" id="matFilterCat">
+                        <option value="all">Bütün kateqoriyalar</option>
+                        <option value="kabel">🔌 Kabel (FO / ADSS)</option>
+                        <option value="mufta">🔗 Mufta</option>
+                        <option value="patchpanel">🗄️ Patch Panel</option>
+                        <option value="diger">📦 Digər</option>
+                    </select>
+                </label>
+                <label>
+                    <span>Layihə / Anbar:</span>
                     <select class="input" id="matFilterProject"><option value="all">Bütün layihələr</option></select>
                 </label>
                 <label>
-                    <span>Material növü:</span>
+                    <span>Material:</span>
                     <select class="input" id="matFilterType"><option value="all">Bütün materiallar</option></select>
                 </label>
                 <label>
-                    <span>📄 Anbar Qaiməsi №:</span>
-                    <input class="input" type="search" id="matFilterInvoice" placeholder="QAİMƏ-2026...">
+                    <span>📄 Qaimə № / Təchizatçı:</span>
+                    <input class="input" type="search" id="matFilterInvoice" placeholder="QAİMƏ / Bakcable…">
                 </label>
                 <label>
                     <span>Başlanğıc tarix:</span>
@@ -8568,15 +8696,33 @@ document.addEventListener("DOMContentLoaded", init);
             const summary = document.createElement("div");
             summary.id = "matSummary";
             summary.className = "mat-summary";
+            matModal.insertBefore(nav, wrap);
             matModal.insertBefore(bar, wrap);
             matModal.insertBefore(summary, wrap);
 
-            ["matFilterFlow", "matFilterProject", "matFilterType", "matFilterFrom", "matFilterTo"].forEach(id => {
+            nav.addEventListener("click", e => {
+                const tabBtn = e.target.closest("[data-mat-tab]");
+                if (tabBtn) {
+                    window._matActiveTab = tabBtn.dataset.matTab;
+                    nav.querySelectorAll("[data-mat-tab]").forEach(b => b.classList.toggle("active", b === tabBtn));
+                    window.renderMaterials();
+                    return;
+                }
+                const addBtn = e.target.closest("[data-mat-add]");
+                if (addBtn && isAdmin()) {
+                    window.editMaterial(null, addBtn.dataset.matAdd);
+                }
+            });
+
+            $("matExportCsvBtn")?.addEventListener("click", () => window.exportMaterialsCsv?.());
+
+            ["matFilterFlow", "matFilterCat", "matFilterProject", "matFilterType", "matFilterFrom", "matFilterTo"].forEach(id => {
                 $(id).addEventListener("change", () => window.renderMaterials());
             });
             $("matFilterInvoice").addEventListener("input", () => window.renderMaterials());
             $("matFilterReset").addEventListener("click", () => {
                 $("matFilterFlow").value = "all";
+                $("matFilterCat").value = "all";
                 $("matFilterProject").value = "all";
                 $("matFilterType").value = "all";
                 $("matFilterInvoice").value = "";
@@ -8666,9 +8812,67 @@ document.addEventListener("DOMContentLoaded", init);
         setTimeout(() => box.remove(), 4500);
     }
 
-    // Material Reyestri: Anbardan çıxan + İstifadə olunan + Anbar Qaiməsi № ilə (Qaimə əlavə etmək yalnız Admin üçündür)
+    const MAT_CAT_LABELS = {
+        kabel: "🔌 Kabel",
+        mufta: "🔗 Mufta",
+        patchpanel: "🗄️ Patch Panel",
+        diger: "📦 Digər"
+    };
+    const MAT_FLOW_LABELS = {
+        in: "📥 Mədaxil",
+        out: "📤 Məxaric",
+        return: "↩️ Qaytarma"
+    };
+
+    function parseMaterialRecord(m) {
+        const cleanName = String(m.material || "").replace(/\bFOV\b/gi, "FO").trim();
+        const cat = detectMaterialCategory(cleanName, m.category);
+        const flow = m.flow || (m.state === "in_stock" && /anbar/i.test(String(m.project || "")) ? "in" : "out");
+        let unit = m.unit || (/əd|eded/i.test(String(m.quantity || "")) ? "əd" : "m");
+        let qty = Number(m.qty_num);
+        if (!Number.isFinite(qty) || qty <= 0) {
+            const rawStr = String(m.quantity || m.issued_qty || m.used_qty || "");
+            const num = Number(rawStr.replace(/[^\d.,]/g, "").replace(",", ".")) || 0;
+            if (/km\b/i.test(rawStr)) {
+                qty = Math.round(num * 1000);
+                unit = "m";
+            } else {
+                qty = num;
+            }
+        }
+        return { ...m, cleanName, cat, flow, qty, unit };
+    }
+
+    function calcMapActualForProject(projName, matName, cat) {
+        const proj = (state.projects || []).find(p => p.name === projName);
+        if (!proj) return { val: 0, matched: false };
+        if (cat === "mufta") {
+            const sumCl = (proj.items || []).reduce((s, r) => s + (Number(r.closures) || 0), 0);
+            return { val: sumCl, matched: true };
+        }
+        if (cat !== "kabel") return { val: 0, matched: false };
+        const foMatch = matName.match(/\bFO\s*[-–]?\s*(\d+)\b/i);
+        const targetFo = foMatch ? Number(foMatch[1]) : 0;
+        let doneM = 0;
+        let hasFoMatch = false;
+        (proj.items || []).forEach(r => {
+            const segFoStr = typeof getSegmentFiber === "function" ? getSegmentFiber(r, proj) : (r.fiberCount || "");
+            const segFoNum = Number(String(segFoStr || "").replace(/[^\d]/g, "")) || 0;
+            if (!targetFo || segFoNum === targetFo) {
+                if (targetFo && segFoNum === targetFo) hasFoMatch = true;
+                doneM += Math.round((Number(r.doneKm) || 0) * 1000);
+            }
+        });
+        return { val: Math.round(doneM), matched: hasFoMatch || !targetFo };
+    }
+
+    function formatMatQty(val, unit) {
+        const n = Math.round((Number(val) || 0) * 100) / 100;
+        return `${n.toLocaleString("az-AZ")} ${unit || "m"}`;
+    }
+
+    // Anbar & Material Reyestri: Ümumi Anbar Qalığı + Layihə üzrə Kabel Qalığı + Qaimələr Jurnalı
     window.renderMaterials = function () {
-        // Material Reyestrindəki köhnə layihə adlarını avtomatik olaraq aktiv BCG və Azconnect layihələrinə yenilə
         let changed = false;
         (state.materials || []).forEach(m => {
             if (m.project && LEGACY_PROJECT_RENAME_MAP[m.project]) {
@@ -8689,14 +8893,21 @@ document.addEventListener("DOMContentLoaded", init);
             } catch {}
         }
 
+        if ($("matAddInBtn")) $("matAddInBtn").hidden = !isAdmin();
+        if ($("matAddOutBtn")) $("matAddOutBtn").hidden = !isAdmin();
+        if ($("matAddRetBtn")) $("matAddRetBtn").hidden = !isAdmin();
+
+        const parsed = (state.materials || []).map(parseMaterialRecord);
+
         const projSel = $("matFilterProject");
         const typeSel = $("matFilterType");
         if (projSel && typeSel) {
             const pCur = projSel.value || "all";
             const tCur = typeSel.value || "all";
             const projects = [...new Set([
+                "🏢 Ümumi Anbar",
                 ...state.projects.map(p => p.name),
-                ...state.materials.map(m => m.project),
+                ...parsed.map(m => m.project),
                 "BCG — Bakı-Quba-Qusar Magistralı",
                 "BCG — Bakı-Şamaxı-Yevlax Magistralı",
                 "BCG — Gəncə-Qazax Magistralı",
@@ -8704,70 +8915,196 @@ document.addEventListener("DOMContentLoaded", init);
                 "BCG — Qərb Antena Layihəsi",
                 "Azərconnect — Bakı-Sumqayıt Magistralı"
             ])].filter(Boolean);
-            const types = [...new Set(state.materials.map(m => m.material))];
+            const types = [...new Set(parsed.map(m => m.cleanName))].filter(Boolean);
             projSel.innerHTML = `<option value="all">Bütün layihələr</option>` + projects.map(p => `<option value="${esc(p)}">${esc(p)}</option>`).join("");
             typeSel.innerHTML = `<option value="all">Bütün materiallar</option>` + types.map(m => `<option value="${esc(m)}">${esc(m)}</option>`).join("");
             projSel.value = projects.includes(pCur) ? pCur : "all";
             typeSel.value = types.includes(tCur) ? tCur : "all";
         }
 
+        const activeTab = window._matActiveTab || "stock";
         const flowVal = $("matFilterFlow")?.value || "all";
+        const catVal = $("matFilterCat")?.value || "all";
         const pVal = projSel?.value || "all";
         const mVal = typeSel?.value || "all";
         const invVal = ($("matFilterInvoice")?.value || "").trim().toLowerCase();
         const dFrom = $("matFilterFrom")?.value || "";
         const dTo = $("matFilterTo")?.value || "";
 
-        const filtered = state.materials.filter(m => {
+        const filtered = parsed.filter(m => {
             const mDate = m.used_date || "";
             const inv = (m.invoice_no || `QAİMƏ-2026-0${140 + (m.id || 1)}`).toLowerCase();
+            const sup = (m.supplier || "").toLowerCase();
+            if (flowVal !== "all" && m.flow !== flowVal) return false;
+            if (catVal !== "all" && m.cat !== catVal) return false;
             if (pVal !== "all" && m.project !== pVal) return false;
-            if (mVal !== "all" && m.material !== mVal) return false;
-            if (invVal && !inv.includes(invVal)) return false;
+            if (mVal !== "all" && m.cleanName !== mVal) return false;
+            if (invVal && !inv.includes(invVal) && !sup.includes(invVal)) return false;
             if (dFrom && mDate < dFrom) return false;
             if (dTo && mDate > dTo) return false;
             return true;
         });
 
-        const showIssued = flowVal === "all" || flowVal === "issued";
-        const showUsed = flowVal === "all" || flowVal === "used";
+        // 1) Ümumi Anbar Qalığı (Material üzrə: Mədaxil - Məxaric + Qaytarma)
+        const stockMap = new Map();
+        filtered.forEach(m => {
+            const key = `${m.cat}::${m.cleanName.toLowerCase()}`;
+            if (!stockMap.has(key)) {
+                stockMap.set(key, { cat: m.cat, name: m.cleanName, unit: m.unit, inQty: 0, outQty: 0, retQty: 0, suppliers: new Set() });
+            }
+            const row = stockMap.get(key);
+            if (m.flow === "in") {
+                row.inQty += m.qty;
+                if (m.supplier) row.suppliers.add(m.supplier);
+            } else if (m.flow === "return") {
+                row.retQty += m.qty;
+            } else {
+                row.outQty += m.qty;
+            }
+        });
+        const stockRows = [...stockMap.values()].sort((a, b) => a.cat.localeCompare(b.cat) || a.name.localeCompare(b.name));
+
+        // 2) Layihə üzrə Qalıq (Layihə + Material)
+        const projMatMap = new Map();
+        filtered.filter(m => m.flow !== "in" && m.project && m.project !== "🏢 Ümumi Anbar").forEach(m => {
+            const key = `${m.project}::${m.cleanName.toLowerCase()}`;
+            if (!projMatMap.has(key)) {
+                projMatMap.set(key, { project: m.project, cat: m.cat, name: m.cleanName, unit: m.unit, outQty: 0, retQty: 0 });
+            }
+            const row = projMatMap.get(key);
+            if (m.flow === "return") row.retQty += m.qty;
+            else row.outQty += m.qty;
+        });
+        const projRows = [...projMatMap.values()].map(r => {
+            const actual = calcMapActualForProject(r.project, r.name, r.cat);
+            const netIssued = Math.max(0, r.outQty - r.retQty);
+            const mapUsed = actual.val;
+            const remain = r.outQty - r.retQty - mapUsed;
+            return { ...r, mapUsed, netIssued, remain };
+        }).sort((a, b) => a.project.localeCompare(b.project) || a.name.localeCompare(b.name));
 
         if ($("matSummary")) {
+            const kabelIn = stockRows.filter(r => r.cat === "kabel").reduce((s, r) => s + r.inQty, 0);
+            const kabelOut = stockRows.filter(r => r.cat === "kabel").reduce((s, r) => s + r.outQty, 0);
+            const kabelRet = stockRows.filter(r => r.cat === "kabel").reduce((s, r) => s + r.retQty, 0);
+            const kabelRem = kabelIn - kabelOut + kabelRet;
             $("matSummary").innerHTML = `
-                <span>Göstərilən qaimə qeydləri: <b>${filtered.length}</b> / ${state.materials.length}</span>
-                <span>${isAdmin() ? "👑 Admin: Qaimə əlavə və redaktə aktivdir" : "👁️ Baxış rejimi (Qaiməni yalnız Admin əlavə edə bilər)"}</span>
+                <span>🔌 Ümumi Kabel: <b>Gələn ${kabelIn.toLocaleString("az-AZ")} m</b> · <b>Verilən ${kabelOut.toLocaleString("az-AZ")} m</b> · <b>Qayıdan ${kabelRet.toLocaleString("az-AZ")} m</b> · <b style="color:${kabelRem >= 0 ? "var(--green)" : "var(--red)"}">Anbar Qalığı: ${kabelRem.toLocaleString("az-AZ")} m</b></span>
+                <span>${isAdmin() ? "👑 Admin" : "👁️ Baxış"} · Qaimə: <b>${filtered.length}</b></span>
             `;
         }
 
+        if (activeTab === "stock") {
+            window._matLastCsv = [
+                ["Kateqoriya", "Material", "Anbara Gələn", "Layihələrə Verilən", "Anbara Qaytarılan", "Anbarda Qalıq", "Təchizatçı"],
+                ...stockRows.map(r => [MAT_CAT_LABELS[r.cat], r.name, formatMatQty(r.inQty, r.unit), formatMatQty(r.outQty, r.unit), formatMatQty(r.retQty, r.unit), formatMatQty(r.inQty - r.outQty + r.retQty, r.unit), [...r.suppliers].join("; ")])
+            ];
+            $("materialsHead").innerHTML = `<tr>
+                <th>Kateqoriya</th>
+                <th>Material</th>
+                <th class="num">📥 Anbara Gələn</th>
+                <th class="num">📤 Layihələrə Verilən</th>
+                <th class="num">↩️ Qaytarılan</th>
+                <th class="num">📦 Anbarda Qalıq</th>
+                <th>Təchizatçı</th>
+            </tr>`;
+            $("materialsBody").innerHTML = stockRows.length === 0
+                ? `<tr><td colspan="7" class="empty">Anbar qeydi tapılmadı</td></tr>`
+                : stockRows.map(r => {
+                    const rem = r.inQty - r.outQty + r.retQty;
+                    const remColor = rem <= 0 ? "var(--red)" : (r.unit === "m" && rem < 3000 ? "var(--amber)" : "var(--green)");
+                    return `<tr>
+                        <td>${MAT_CAT_LABELS[r.cat] || r.cat}</td>
+                        <td><b>${esc(r.name)}</b></td>
+                        <td class="num" style="color:var(--green)"><b>${formatMatQty(r.inQty, r.unit)}</b></td>
+                        <td class="num" style="color:var(--amber)"><b>${formatMatQty(r.outQty, r.unit)}</b></td>
+                        <td class="num" style="color:var(--blue)">${formatMatQty(r.retQty, r.unit)}</td>
+                        <td class="num"><b style="color:${remColor}">${formatMatQty(rem, r.unit)}</b></td>
+                        <td>${esc([...r.suppliers].join(", ") || "—")}</td>
+                    </tr>`;
+                }).join("");
+            return;
+        }
+
+        if (activeTab === "projects") {
+            window._matLastCsv = [
+                ["Layihə", "Kateqoriya", "Material", "Layihəyə Verilən", "Xəritədə Çəkilən", "Anbara Qaytarılan", "Layihədə Qalıq"],
+                ...projRows.map(r => [r.project, MAT_CAT_LABELS[r.cat], r.name, formatMatQty(r.outQty, r.unit), formatMatQty(r.mapUsed, r.unit), formatMatQty(r.retQty, r.unit), formatMatQty(r.remain, r.unit)])
+            ];
+            $("materialsHead").innerHTML = `<tr>
+                <th>Layihə</th>
+                <th>Material</th>
+                <th class="num">📤 Verilən</th>
+                <th class="num">🗺️ Xəritədə Çəkilən</th>
+                <th class="num">↩️ Qaytarılan</th>
+                <th class="num">⚖️ Layihədə Qalıq</th>
+            </tr>`;
+            $("materialsBody").innerHTML = projRows.length === 0
+                ? `<tr><td colspan="6" class="empty">Layihələrə material çıxışı qeyd olunmayıb</td></tr>`
+                : projRows.map(r => {
+                    const remColor = r.remain > 0 ? "var(--amber)" : (r.remain < 0 ? "var(--red)" : "var(--green)");
+                    return `<tr>
+                        <td><b>${esc(r.project)}</b></td>
+                        <td>${MAT_CAT_LABELS[r.cat] || ""} · <b>${esc(r.name)}</b></td>
+                        <td class="num"><b>${formatMatQty(r.outQty, r.unit)}</b></td>
+                        <td class="num" style="color:var(--blue)">${formatMatQty(r.mapUsed, r.unit)}</td>
+                        <td class="num" style="color:var(--green)">${formatMatQty(r.retQty, r.unit)}</td>
+                        <td class="num"><b style="color:${remColor}">${formatMatQty(r.remain, r.unit)}</b></td>
+                    </tr>`;
+                }).join("");
+            return;
+        }
+
+        // 3) Qaimələr Jurnalı
+        window._matLastCsv = [
+            ["Tarix", "Hərəkət", "Qaimə №", "Kateqoriya", "Material", "Miqdar", "Layihə / Anbar", "Təchizatçı / İcraçı", "Qeyd"],
+            ...filtered.map(m => [formatDate(m.used_date), MAT_FLOW_LABELS[m.flow] || m.flow, m.invoice_no || `QAİMƏ-2026-0${140 + (m.id || 1)}`, MAT_CAT_LABELS[m.cat] || m.cat, m.cleanName, formatMatQty(m.qty, m.unit), m.project, m.supplier || "", m.note || ""])
+        ];
         $("materialsHead").innerHTML = `<tr>
             <th>Tarix</th>
-            <th>📄 Anbar Qaiməsi №</th>
-            <th>${t("thProject")}</th>
-            <th>${t("thMaterial")}</th>
-            ${showIssued ? "<th>📦 Anbardan çıxan</th>" : ""}
-            ${showUsed ? "<th>🛠️ İstifadə olunan</th>" : ""}
-            <th>${t("thState")}</th>
+            <th>Hərəkət</th>
+            <th>📄 Qaimə №</th>
+            <th>Material</th>
+            <th class="num">Miqdar</th>
+            <th>Layihə / Anbar</th>
+            <th>Kimdən / Kimə</th>
             ${isAdmin() ? "<th></th>" : ""}
         </tr>`;
-
-        const colSpan = 5 + (showIssued ? 1 : 0) + (showUsed ? 1 : 0) + (isAdmin() ? 1 : 0);
-
+        const colSpan = isAdmin() ? 8 : 7;
         $("materialsBody").innerHTML = filtered.map(m => {
             const invoiceNo = m.invoice_no || `QAİMƏ-2026-0${140 + (m.id || 1)}`;
-            const issued = m.issued_qty || m.quantity || "—";
-            const used = m.used_qty || m.quantity || "—";
+            const flowColor = m.flow === "in" ? "var(--green)" : (m.flow === "return" ? "var(--blue)" : "var(--amber)");
             return `
                 <tr>
                     <td class="mono">${formatDate(m.used_date)}</td>
+                    <td><span class="pill" style="--tone:${flowColor}">${MAT_FLOW_LABELS[m.flow] || "📤 Məxaric"}</span></td>
                     <td><span class="invoice-pill">📄 ${esc(invoiceNo)}</span></td>
+                    <td><b>${esc(m.cleanName)}</b><small>${MAT_CAT_LABELS[m.cat] || ""}${m.note ? ` · ${esc(m.note)}` : ""}</small></td>
+                    <td class="num"><b style="color:${flowColor}">${formatMatQty(m.qty, m.unit)}</b></td>
                     <td>${esc(m.project)}</td>
-                    <td>${esc(m.material)}</td>
-                    ${showIssued ? `<td><b style="color:var(--amber)">📦 ${esc(issued)}</b></td>` : ""}
-                    ${showUsed ? `<td><b style="color:var(--green)">🛠️ ${esc(used)}</b></td>` : ""}
-                    <td>${esc(materialStateLabel(m.state))}</td>
+                    <td>${esc(m.supplier || "—")}</td>
                     ${isAdmin() ? `<td class="num"><button class="icon-btn" data-edit-material="${m.id}" title="${t("editMaterial")}"><i class="fa-solid fa-pen"></i></button></td>` : ""}
                 </tr>
             `;
         }).join("") + (isAdmin() ? `<tr class="row-add"><td colspan="${colSpan}"><button class="link" data-edit-material="">+ ${t("addMaterial")} (📄 Anbar Qaiməsi əlavə et — Yalnız Admin)</button></td></tr>` : "");
+    };
+
+    window.exportMaterialsCsv = function () {
+        const rows = window._matLastCsv;
+        if (!Array.isArray(rows) || rows.length <= 1) {
+            toast("⚠️ İxrac etmək üçün məlumat yoxdur", true);
+            return;
+        }
+        const csv = "\uFEFF" + rows.map(r => r.map(c => `"${String(c ?? "").replace(/"/g, '""')}"`).join(";")).join("\r\n");
+        const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `BCG_Anbar_${window._matActiveTab || "stock"}_${new Date().toISOString().slice(0, 10)}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 4000);
+        toast("✅ Anbar hesabatı Excel (CSV) olaraq yükləndi");
     };
 })();

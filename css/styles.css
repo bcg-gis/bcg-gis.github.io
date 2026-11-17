@@ -1539,5 +1539,46 @@ body.shared .user, body.shared #logoutBtn, body.shared .bar-sep, body.shared .ta
     .nim-note-inp { height: 36px !important; font-size: 14px !important; }
 }
 
+/* === Anbar & Material Reyestri Tabları === */
+.mat-tabs-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+.mat-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+.mat-tab {
+    padding: 6px 12px;
+    border-radius: var(--radius);
+    border: 1px solid var(--line-strong);
+    background: var(--canvas);
+    color: var(--ink-2);
+    font-size: 12px;
+    font-weight: 600;
+    transition: all 0.15s;
+}
+.mat-tab:hover { background: var(--hover); color: var(--ink); }
+.mat-tab.active {
+    background: var(--brand-soft);
+    border-color: var(--brand);
+    color: var(--brand);
+}
+.mat-quick-acts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+.mat-quick-acts .btn { height: 30px; padding: 0 10px; font-size: 12px; }
+
+@media (max-width: 860px) {
+    .mat-tabs-bar { flex-direction: column; align-items: stretch; }
+    .mat-tab { padding: 8px 10px; font-size: 13px; }
+}
+
 
 

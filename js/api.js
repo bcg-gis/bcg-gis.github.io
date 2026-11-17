@@ -126,6 +126,24 @@ const api = (() => {
         expiresAt: row.expires_at, text: row.text, date: row.created_at
     });
 
+    const toMaterial = row => {
+        if (!row) return row;
+        const { pointB: cleanQty, meta } = unpackPointBMeta(row.quantity);
+        return {
+            ...row,
+            quantity: cleanQty,
+            flow: meta.flow || row.flow || "out",
+            category: meta.cat || row.category || "",
+            supplier: meta.sup || row.supplier || "",
+            qty_num: meta.qty !== undefined ? Number(meta.qty) : (Number(String(cleanQty || "").replace(/[^\d.,]/g, "").replace(",", ".")) || 0),
+            unit: meta.unit || row.unit || "",
+            invoice_no: meta.inv || row.invoice_no || "",
+            issued_qty: meta.iq || row.issued_qty || cleanQty,
+            used_qty: meta.uq || row.used_qty || cleanQty,
+            note: meta.note || row.note || ""
+        };
+    };
+
     const USERS_STORAGE_KEY = "bcg.admin.users.v1";
     const LOCAL_SESSION_KEY = "bcg.local.session.v1";
     const DB_SNAPSHOT_KEY = "bcg.db.snapshot.v1";
@@ -499,12 +517,13 @@ const api = (() => {
 
                 const mappedProjects = projects.map(toProject);
                 const mappedNotes = notes.map(toNote);
+                const mappedMaterials = (materials || []).map(toMaterial);
 
                 // Əgər bazadan məlumat gəlibsə (məs. Admin sessiyası zamanı), lokal istifadəçilər və digər kompüterlər üçün keşi yenilə
                 if (mappedProjects.length > 0) {
                     const snapPayload = {
                         projects: mappedProjects,
-                        materials,
+                        materials: mappedMaterials,
                         notes: mappedNotes,
                         users: [...new Set([...profiles.map(p => p.email), ...adminUserEmails])]
                     };
@@ -544,7 +563,7 @@ const api = (() => {
                     users: [...new Set([...profiles.map(p => p.email), ...adminUserEmails])],
                     projects: mappedProjects,
                     contractors: contractorMap,
-                    materials,
+                    materials: mappedMaterials,
                     notes: mappedNotes
                 };
             } catch (err) {
@@ -797,7 +816,28 @@ const api = (() => {
         },
 
         async saveMaterial(id, row) {
-            const query = id ? client.from("materials").update(row).eq("id", id) : client.from("materials").insert(row);
+            const qtyNum = Number(row.qty_num ?? String(row.quantity || row.issued_qty || row.used_qty || "").replace(/[^\d.,]/g, "").replace(",", ".")) || 0;
+            const unit = row.unit || (/km\b/i.test(String(row.quantity || "")) ? "km" : (/əd|eded|pcs/i.test(String(row.quantity || "")) ? "əd" : "m"));
+            const displayQty = row.quantity || (qtyNum ? `${qtyNum} ${unit}` : "");
+            const packedQty = packPointBMeta(displayQty, {
+                flow: row.flow || "out",
+                cat: row.category || "",
+                sup: row.supplier || "",
+                qty: qtyNum,
+                unit,
+                inv: row.invoice_no || "",
+                iq: row.issued_qty || displayQty,
+                uq: row.used_qty || displayQty,
+                note: row.note || ""
+            });
+            const dbRow = {
+                project: row.project || "🏢 Ümumi Anbar",
+                material: row.material || "",
+                quantity: packedQty,
+                state: row.state || (row.flow === "in" ? "in_stock" : (row.flow === "return" ? "in_stock" : "issued")),
+                used_date: row.used_date || new Date().toISOString().slice(0, 10)
+            };
+            const query = id ? client.from("materials").update(dbRow).eq("id", id) : client.from("materials").insert(dbRow);
             unwrap(await query);
         },
 
