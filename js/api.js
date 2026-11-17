@@ -78,6 +78,7 @@ const api = (() => {
         if (meta.cat) seg._metaCat = meta.cat;
         if (meta.pType) seg._metaProjType = meta.pType;
         if (meta.pSt) seg._metaProjSt = meta.pSt;
+        if (meta.nim && typeof meta.nim === "object") seg.nimSpec = meta.nim;
         return seg;
     };
 
@@ -665,6 +666,7 @@ const api = (() => {
                     eLead: r.execLead,
                     eWrk: r.execWorkers,
                     ePhn: r.execPhone,
+                    nim: r.nimSpec,
                     ant: Number(r.antennas) || 0,
                     pt1: isSinglePt
                 });

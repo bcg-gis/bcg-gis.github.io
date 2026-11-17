@@ -1245,6 +1245,7 @@ function saveSegmentOverride(projectId, item) {
         execLead: item.execLead,
         execWorkers: item.execWorkers,
         execPhone: item.execPhone,
+        nimSpec: item.nimSpec,
         totalKm: item.totalKm,
         doneKm: item.doneKm,
         unit: item.unit,
@@ -2013,8 +2014,8 @@ const LEGACY_PROJECT_RENAME_MAP = {
     "GPON Şimal Bölgəsi": "BCG — Bakı-Şamaxı-Yevlax Magistralı",
     "3. GPON Qərb Bölgəsi": "BCG — Gəncə-Qazax Magistralı",
     "GPON Qərb Bölgəsi": "BCG — Gəncə-Qazax Magistralı",
-    "4. Abşeron & Bakı Kəndləri": "Azconnect — Bakı-Sumqayıt Magistralı",
-    "Abşeron & Bakı Kəndləri": "Azconnect — Bakı-Sumqayıt Magistralı",
+    "4. Abşeron & Bakı Kəndləri": "Azərconnect — Bakı-Sumqayıt Magistralı",
+    "Abşeron & Bakı Kəndləri": "Azərconnect — Bakı-Sumqayıt Magistralı",
     "5. Qarabağ & Şərqi Zəngəzur": "BCG — Cənub Antena Layihəsi",
     "Qarabağ & Şərqi Zəngəzur": "BCG — Cənub Antena Layihəsi"
 };
@@ -2031,10 +2032,10 @@ function editMaterial(material) {
         "BCG — Gəncə-Qazax Magistralı",
         "BCG — Cənub Antena Layihəsi",
         "BCG — Qərb Antena Layihəsi",
-        "Azconnect — Bakı-Sumqayıt Magistralı",
-        "Azconnect — Xırdalan-Masazır Xətti",
-        "Azconnect — Ələt-Şirvan Xətti",
-        "NİM — Svetofor və Kəsişmələr (Bakı)"
+        "Azərconnect — Bakı-Sumqayıt Magistralı",
+        "Azərconnect — Xırdalan-Masazır Xətti",
+        "Azərconnect — Ələt-Şirvan Xətti",
+        "NİİM — Svetofor və Kəsişmələr (Bakı)"
     ];
     const uniqueProjects = [...new Set(activeProjectNames.filter(Boolean))];
 
@@ -4429,7 +4430,7 @@ function renderProjects() {
     if (activeOrder.length === 0) {
         if ($("listHeadTitle")) $("listHeadTitle").textContent = "Qovluq seçilməyib";
         $("projectCount").textContent = "-";
-        $("projectList").innerHTML = `<div class="empty">Yuxarıdakı yarım dairədən qovluq seçin (🏢 BCG, 🚦 NİM, 🌐 Azconnect, 🗂️ Digər)</div>`;
+        $("projectList").innerHTML = `<div class="empty">Yuxarıdakı yarım dairədən qovluq seçin (🏢 BCG, 🚦 NİİM, 🌐 Azərconnect, 🗂️ Digər)</div>`;
         return;
     }
 
@@ -4663,6 +4664,126 @@ function renderProjects() {
     $("projectList").innerHTML = sectionsHtml.join("");
 }
 
+const NIM_SPEC_FIELDS = [
+    { key: "poleA", label: "A-tipli dirək", unit: "əd", step: 1, icon: "fa-ruler-vertical" },
+    { key: "poleL", label: "L-tipli dirək", unit: "əd", step: 1, icon: "fa-turn-up" },
+    { key: "pedSig", label: "Piyada işıqforu", unit: "əd", step: 1, icon: "fa-person-walking" },
+    { key: "vehSig", label: "Nəqliyyat işıqforu", unit: "əd", step: 1, icon: "fa-traffic-light" },
+    { key: "opticM", label: "Optik çəkiliş", unit: "m", step: 10, icon: "fa-wave-square" },
+    { key: "elecM", label: "Elektrik çəkilişi", unit: "m", step: 10, icon: "fa-bolt" }
+];
+
+const NIM_STAGES = [
+    { key: "bunovre", label: "Bünövrə" },
+    { key: "cekilis", label: "Optik / Elektrik" },
+    { key: "direk", label: "Dirəklər (A/L)" },
+    { key: "qurasdirma", label: "İşıqfor / Kontroller" },
+    { key: "tehvil", label: "Test / Təhvil" }
+];
+
+const NIM_CTRL_LABELS = {
+    yoxdur: "Yoxdur",
+    bunovre: "Bünövrə",
+    montaj: "Montaj olunub",
+    qosulub: "Qoşulub (Hazır)"
+};
+
+function normalizeNimSpec(r) {
+    const raw = (r && r.nimSpec && typeof r.nimSpec === "object") ? r.nimSpec : {};
+    const pair = k => {
+        const p = raw[k] && typeof raw[k] === "object" ? raw[k] : {};
+        return {
+            plan: Math.max(0, Number(p.plan) || 0),
+            done: Math.max(0, Number(p.done) || 0)
+        };
+    };
+    const st = raw.stages && typeof raw.stages === "object" ? raw.stages : {};
+    return {
+        poleA: pair("poleA"),
+        poleL: pair("poleL"),
+        pedSig: pair("pedSig"),
+        vehSig: pair("vehSig"),
+        opticM: pair("opticM"),
+        elecM: pair("elecM"),
+        controller: NIM_CTRL_LABELS[raw.controller] ? raw.controller : "yoxdur",
+        stages: {
+            bunovre: Boolean(st.bunovre),
+            cekilis: Boolean(st.cekilis),
+            direk: Boolean(st.direk),
+            qurasdirma: Boolean(st.qurasdirma),
+            tehvil: Boolean(st.tehvil)
+        },
+        note: String(raw.note || "")
+    };
+}
+
+function calcNimProgress(r) {
+    const spec = normalizeNimSpec(r);
+    const doneStages = NIM_STAGES.filter(s => spec.stages[s.key]).length;
+    let planSum = 0;
+    let doneSum = 0;
+    NIM_SPEC_FIELDS.forEach(f => {
+        const p = spec[f.key];
+        if (p.plan > 0) {
+            planSum += 1;
+            doneSum += Math.min(1, p.done / p.plan);
+        }
+    });
+    const hasData = doneStages > 0 || planSum > 0 || spec.controller !== "yoxdur";
+    if (!hasData) {
+        const fallback = (r?.status === "bitmis" || r?.status === "tehvil") ? 100 : (r?.status === "icrada" ? 35 : 0);
+        return { pct: fallback, doneStages, totalStages: NIM_STAGES.length, hasData: false };
+    }
+    const stageRatio = doneStages / NIM_STAGES.length;
+    const equipRatio = planSum > 0 ? (doneSum / planSum) : stageRatio;
+    const pct = Math.min(100, Math.round((stageRatio * 0.5 + equipRatio * 0.5) * 100));
+    return { pct, doneStages, totalStages: NIM_STAGES.length, hasData: true };
+}
+
+function summarizeNimItems(items) {
+    const sum = {
+        poleA: { plan: 0, done: 0 },
+        poleL: { plan: 0, done: 0 },
+        pedSig: { plan: 0, done: 0 },
+        vehSig: { plan: 0, done: 0 },
+        opticM: { plan: 0, done: 0 },
+        elecM: { plan: 0, done: 0 },
+        ctrlReady: 0
+    };
+    (items || []).forEach(r => {
+        const s = normalizeNimSpec(r);
+        NIM_SPEC_FIELDS.forEach(f => {
+            sum[f.key].plan += s[f.key].plan;
+            sum[f.key].done += s[f.key].done;
+        });
+        if (s.controller === "qosulub") sum.ctrlReady += 1;
+    });
+    return sum;
+}
+
+function formatNimCompactSummary(r) {
+    const s = normalizeNimSpec(r);
+    const parts = [];
+    if (s.poleA.plan || s.poleA.done) parts.push(`A:${s.poleA.done}/${s.poleA.plan}`);
+    if (s.poleL.plan || s.poleL.done) parts.push(`L:${s.poleL.done}/${s.poleL.plan}`);
+    if (s.pedSig.plan || s.pedSig.done) parts.push(`Piy:${s.pedSig.done}/${s.pedSig.plan}`);
+    if (s.vehSig.plan || s.vehSig.done) parts.push(`Nəq:${s.vehSig.done}/${s.vehSig.plan}`);
+    if (s.opticM.plan || s.opticM.done) parts.push(`Opt:${s.opticM.done}/${s.opticM.plan}m`);
+    if (s.elecM.plan || s.elecM.done) parts.push(`Elk:${s.elecM.done}/${s.elecM.plan}m`);
+    return parts.join(" · ");
+}
+
+async function persistNimItem(proj, item) {
+    if (!proj || !item) return;
+    saveSegmentOverride(proj.id, item);
+    saveImportedProjects();
+    if (isAdmin() && api.configured) {
+        try {
+            await api.saveSegment(proj.id, item.dbId || item.id, { status: item.status }, { nim: item.nimSpec });
+        } catch {}
+    }
+}
+
 function renderDetail() {
     const entry = selectedEntry();
     $("listView").hidden = Boolean(entry);
@@ -4705,7 +4826,31 @@ function renderDetail() {
                 <span class="stem"></span><span></span>
                 <i class="fa-solid fa-location-dot" style="color:${tone}"></i><strong>${esc(ends.bName || displayName)}</strong>
             </div>
-            ${isLifSeg ? "" : `
+            ${project.category === "nim" ? (() => {
+                const ns = normalizeNimSpec(r);
+                const np = calcNimProgress(r);
+                const doneStageNames = NIM_STAGES.filter(s => ns.stages[s.key]).map(s => s.label);
+                return `
+            <div>
+                <div class="meter-row"><b>${np.pct}%</b><span class="muted">${np.doneStages} / ${np.totalStages} mərhələ</span></div>
+                <div class="progress"><span style="width:${np.pct}%;background:${tone}"></span></div>
+            </div>
+            <dl class="spec">
+                ${row("A-tipli dirək", `${ns.poleA.done} / ${ns.poleA.plan} əd`)}
+                ${row("L-tipli dirək", `${ns.poleL.done} / ${ns.poleL.plan} əd`)}
+                ${row("Piyada işıqforu", `${ns.pedSig.done} / ${ns.pedSig.plan} əd`)}
+                ${row("Nəqliyyat işıqforu", `${ns.vehSig.done} / ${ns.vehSig.plan} əd`)}
+                ${row("Optik çəkiliş", `${ns.opticM.done} / ${ns.opticM.plan} m`)}
+                ${row("Elektrik çəkilişi", `${ns.elecM.done} / ${ns.elecM.plan} m`)}
+                ${row("Kontroller şkafı", esc(NIM_CTRL_LABELS[ns.controller] || "Yoxdur"))}
+                ${doneStageNames.length ? row("Hazır mərhələlər", esc(doneStageNames.join(", "))) : ""}
+                ${ns.note ? row("Qeyd", esc(ns.note)) : ""}
+            </dl>
+            <dl class="spec">
+                ${row(t("thContractor"), esc(r.contractor || t("notAssigned")))}
+                ${info ? row(t("workers"), info.workers) + row(t("machinery"), info.machinery) + row(t("engineer"), esc(info.engineer)) : ""}
+            </dl>`;
+            })() : (isLifSeg ? "" : `
             <div>
                 <div class="meter-row"><b>${pct}%</b><span class="muted">${formatKm(dPlanKm)} / ${formatKm(dDoneKm)} km</span></div>
                 <div class="progress"><span style="width:${pct}%;background:${tone}"></span></div>
@@ -4720,7 +4865,7 @@ function renderDetail() {
             <dl class="spec">
                 ${row(t("thContractor"), esc(r.contractor || t("notAssigned")))}
                 ${info ? row(t("workers"), info.workers) + row(t("machinery"), info.machinery) + row(t("engineer"), esc(info.engineer)) : ""}
-            </dl>`}
+            </dl>`)}
             <button class="btn btn-outline" data-action="zoom"><i class="fa-solid fa-crosshairs"></i> ${t("zoomTo")}</button>
             ${isAdmin() ? `<button class="btn btn-primary" data-action="edit"><i class="fa-solid fa-pen"></i> ${t("editSegment")}</button>` : ""}
         </div>
@@ -4743,15 +4888,16 @@ function renderTable() {
         const segFo = isLineSeg ? getSegmentFiber(r, project) : "";
         const foBadge = segFo ? ` · <b style="color:#38BDF8">🔌 ${esc(segFo)}</b>` : "";
         const { planKm: tPlanKm, doneKm: tDoneKm } = isPointItemRecord(r) ? getPointKmPair(r) : { planKm: r.totalKm, doneKm: r.doneKm };
+        const nimAssets = project.category === "nim" ? (formatNimCompactSummary(r) || "—") : `${r.closures || 0} / ${r.manholes || 0}`;
         return `
         <tr data-index="${index}" class="${selected?.item === r ? "selected" : ""}">
             <td><b>📍 ${esc(ends.aName)} ➔ 📍 ${esc(ends.bName)}</b><small>${esc(project.name)} · ${esc(r.name)}${foBadge}</small></td>
             <td>${formatDate(r.startDate)} – ${formatDate(r.endDate)}</td>
             <td>${esc(r.contractor || t("notAssigned"))}</td>
-            <td class="num">${formatKm(tPlanKm)} km</td>
-            <td class="num">${formatKm(tDoneKm)} km</td>
-            <td class="num">${formatKm(Math.max(0, tPlanKm - tDoneKm))} km</td>
-            <td>${r.closures || 0} / ${r.manholes || 0}</td>
+            <td class="num">${project.category === "nim" ? `${calcNimProgress(r).pct}%` : `${formatKm(tPlanKm)} km`}</td>
+            <td class="num">${project.category === "nim" ? esc(NIM_CTRL_LABELS[normalizeNimSpec(r).controller] || "Yoxdur") : `${formatKm(tDoneKm)} km`}</td>
+            <td class="num">${project.category === "nim" ? "—" : `${formatKm(Math.max(0, tPlanKm - tDoneKm))} km`}</td>
+            <td>${esc(nimAssets)}</td>
             <td><span class="pill" style="--tone:${statusTone(r.status)}">${t(`status${r.status}`)}</span></td>
         </tr>`;
     }).join("");
@@ -5547,7 +5693,7 @@ async function handleImportFiles(fileList, targetCategory) {
     const added = [];
     const cat = isAdmin() ? (targetCategory || pendingImportCategory || "project") : "other";
     const polyFillMode = $("importPolyFillMode")?.value || "auto";
-    const catLabels = { project: "📁 Layihələr", nim: "🚦 NİM", azconnect: "🌐 Azconnect", other: "🗂️ Digər" };
+    const catLabels = { project: "📁 Layihələr", nim: "🚦 NİİM", azconnect: "🌐 Azərconnect", other: "🗂️ Digər" };
     for (const file of fileList) {
         try {
             const lines = (await readLines(file)).filter(line => line.coords.length >= 1);
@@ -6375,6 +6521,46 @@ document.addEventListener("DOMContentLoaded", init);
         });
 
         card.addEventListener("click", async e => {
+            if (e.target.closest(".nim-spec-box input, .nim-spec-box select")) {
+                e.stopPropagation();
+                return;
+            }
+            const nimStepBtn = e.target.closest("[data-nim-step]");
+            if (nimStepBtn) {
+                e.stopPropagation();
+                if (!isAdmin()) return;
+                const [projectId, itemId, fieldKey, deltaStr] = nimStepBtn.dataset.nimStep.split(":");
+                const proj = state.projects.find(p => p.id === projectId);
+                const item = proj?.items.find(r => r.id === itemId);
+                if (!proj || !item || !fieldKey) return;
+                const ns = normalizeNimSpec(item);
+                const delta = Number(deltaStr) || 0;
+                ns[fieldKey].done = Math.max(0, (ns[fieldKey].done || 0) + delta);
+                if (ns[fieldKey].done > ns[fieldKey].plan) ns[fieldKey].plan = ns[fieldKey].done;
+                item.nimSpec = ns;
+                renderInfoCard();
+                renderDetail();
+                renderTable();
+                await persistNimItem(proj, item);
+                return;
+            }
+            const nimStageBtn = e.target.closest("[data-nim-stage]");
+            if (nimStageBtn) {
+                e.stopPropagation();
+                if (!isAdmin()) return;
+                const [projectId, itemId, stageKey] = nimStageBtn.dataset.nimStage.split(":");
+                const proj = state.projects.find(p => p.id === projectId);
+                const item = proj?.items.find(r => r.id === itemId);
+                if (!proj || !item || !stageKey) return;
+                const ns = normalizeNimSpec(item);
+                ns.stages[stageKey] = !ns.stages[stageKey];
+                item.nimSpec = ns;
+                renderInfoCard();
+                renderDetail();
+                renderTable();
+                await persistNimItem(proj, item);
+                return;
+            }
             const quickSaveBtn = e.target.closest("[data-pt-quick-save]");
             if (quickSaveBtn) {
                 e.stopPropagation();
@@ -6519,11 +6705,55 @@ document.addEventListener("DOMContentLoaded", init);
                 saveSegmentOverride(proj.id, item);
                 saveImportedProjects();
                 if (isAdmin() && api.configured) {
-                    try { await api.saveSegment(proj.id, item.id, { status: item.status }); } catch {}
+                    try { await api.saveSegment(proj.id, item.dbId || item.id, { status: item.status }, item.nimSpec ? { nim: item.nimSpec } : null); } catch {}
                 }
-                recordAuditLog("Status Dəyişikliyi", "🚦 NİM", item.name, `Svetofor nöqtəsinin statusu '${t("status" + item.status)}' olaraq yeniləndi`);
+                recordAuditLog("Status Dəyişikliyi", "🚦 NİİM", item.name, `Svetofor nöqtəsinin statusu '${t("status" + item.status)}' olaraq yeniləndi`);
                 renderAll();
                 toast(`🚦 ${item.name} statusu yeniləndi: ${t("status" + item.status)}`);
+                return;
+            }
+            const nimInp = e.target.closest("[data-nim-inp]");
+            if (nimInp) {
+                const [projectId, itemId, fieldKey, part] = nimInp.dataset.nimInp.split(":");
+                const proj = state.projects.find(p => p.id === projectId);
+                const item = proj?.items.find(r => r.id === itemId);
+                if (!proj || !item || !fieldKey || !part) return;
+                const ns = normalizeNimSpec(item);
+                ns[fieldKey][part] = Math.max(0, Number(nimInp.value) || 0);
+                item.nimSpec = ns;
+                renderInfoCard();
+                renderDetail();
+                renderTable();
+                await persistNimItem(proj, item);
+                return;
+            }
+            const nimCtrl = e.target.closest("[data-nim-ctrl]");
+            if (nimCtrl) {
+                const [projectId, itemId] = nimCtrl.dataset.nimCtrl.split(":");
+                const proj = state.projects.find(p => p.id === projectId);
+                const item = proj?.items.find(r => r.id === itemId);
+                if (!proj || !item) return;
+                const ns = normalizeNimSpec(item);
+                ns.controller = nimCtrl.value;
+                item.nimSpec = ns;
+                renderInfoCard();
+                renderDetail();
+                renderTable();
+                await persistNimItem(proj, item);
+                return;
+            }
+            const nimNote = e.target.closest("[data-nim-note]");
+            if (nimNote) {
+                const [projectId, itemId] = nimNote.dataset.nimNote.split(":");
+                const proj = state.projects.find(p => p.id === projectId);
+                const item = proj?.items.find(r => r.id === itemId);
+                if (!proj || !item) return;
+                const ns = normalizeNimSpec(item);
+                ns.note = nimNote.value.trim();
+                item.nimSpec = ns;
+                renderDetail();
+                await persistNimItem(proj, item);
+                toast("📝 Qeyd yadda saxlanıldı");
                 return;
             }
             const lineSt = e.target.closest("[data-line-status-select]");
@@ -6547,7 +6777,7 @@ document.addEventListener("DOMContentLoaded", init);
                 if (isAdmin() && api.configured) {
                     try { await api.saveSegment(proj.id, item.id, { status: item.status, totalKm: item.totalKm, doneKm: item.doneKm }); } catch {}
                 }
-                recordAuditLog("Status Dəyişikliyi", proj.category === "azconnect" ? "🌐 Azconnect" : "📁 Layihələr", item.name, `Kabel statusu '${t("status" + item.status)}' olaraq yeniləndi`);
+                recordAuditLog("Status Dəyişikliyi", proj.category === "azconnect" ? "🌐 Azərconnect" : "📁 Layihələr", item.name, `Kabel statusu '${t("status" + item.status)}' olaraq yeniləndi`);
                 renderAll();
                 toast(`〰️ ${item.name} statusu yeniləndi: ${t("status" + item.status)}`);
                 return;
@@ -6565,7 +6795,7 @@ document.addEventListener("DOMContentLoaded", init);
                 item.userSetFiber = Boolean(item.fiberCount);
                 saveSegmentOverride(proj.id, item);
                 saveImportedProjects();
-                recordAuditLog("Kabel Lif Sayı", proj.category === "azconnect" ? "🌐 Azconnect" : "🏢 BCG", item.name, `Kabelin lif sayı dəyişdirildi: ${item.fiberCount || "Təyin edilməyib"}`);
+                recordAuditLog("Kabel Lif Sayı", proj.category === "azconnect" ? "🌐 Azərconnect" : "🏢 BCG", item.name, `Kabelin lif sayı dəyişdirildi: ${item.fiberCount || "Təyin edilməyib"}`);
                 renderAll();
                 toast(`🔌 ${item.name} kabel lif sayı yeniləndi: ${item.fiberCount || "Təyin edilməyib"}`);
                 return;
@@ -6599,7 +6829,7 @@ document.addEventListener("DOMContentLoaded", init);
                     });
                 } catch { /* lokal olaraq da yenilənir */ }
             }
-            recordAuditLog("İcraçı Təyini", proj.category === "nim" ? "🚦 NİM" : (proj.category === "azconnect" ? "🌐 Azconnect" : "📁 Layihələr"), item.name, `İcraçı dəyişdirildi: ${item.contractor}`);
+            recordAuditLog("İcraçı Təyini", proj.category === "nim" ? "🚦 NİİM" : (proj.category === "azconnect" ? "🌐 Azərconnect" : "📁 Layihələr"), item.name, `İcraçı dəyişdirildi: ${item.contractor}`);
             renderAll();
             toast(`İş icraçısı yeniləndi: ${item.contractor}`);
         });
@@ -6782,7 +7012,7 @@ document.addEventListener("DOMContentLoaded", init);
 
         recordAuditLog(
             "Xəritə Redaktəsi",
-            project.category === "nim" ? "🚦 NİM" : (project.category === "azconnect" ? "🌐 Azconnect" : "🏢 BCG"),
+            project.category === "nim" ? "🚦 NİİM" : (project.category === "azconnect" ? "🌐 Azərconnect" : "🏢 BCG"),
             item.name,
             `Koordinatlar xəritə üzərində sürüşdürülərək yeniləndi (${newCoords.length} nöqtə)`
         );
@@ -7037,7 +7267,7 @@ document.addEventListener("DOMContentLoaded", init);
         const activeCats = state.activeFolders.size > 0
             ? [...state.activeFolders]
             : ["project", "nim", "azconnect", "other"];
-        const catNames = { project: "🏢 BCG", nim: "🚦 NİM", azconnect: "🌐 Azconnect", other: "🗂️ Digər" };
+        const catNames = { project: "🏢 BCG", nim: "🚦 NİİM", azconnect: "🌐 Azərconnect", other: "🗂️ Digər" };
 
         const candidateProjects = state.projects.filter(p => activeCats.includes(p.category || "project"));
         const pool = candidateProjects.length > 0 ? candidateProjects : state.projects;
@@ -7193,7 +7423,7 @@ document.addEventListener("DOMContentLoaded", init);
 
         recordAuditLog(
             mmCreateState.mode === "point" ? "Yeni Nöqtə Əlavəsi" : "Yeni Xətt Əlavəsi",
-            targetProj.category === "nim" ? "🚦 NİM" : (targetProj.category === "azconnect" ? "🌐 Azconnect" : "🏢 BCG"),
+            targetProj.category === "nim" ? "🚦 NİİM" : (targetProj.category === "azconnect" ? "🌐 Azərconnect" : "🏢 BCG"),
             `${targetProj.name} → ${newItem.name}`,
             `Status: ${t("status" + newItem.status)} · Plan: ${newItem.totalKm} / Faktiki: ${newItem.doneKm}`
         );
@@ -7371,16 +7601,17 @@ document.addEventListener("DOMContentLoaded", init);
         const tone = statusTone(proj.status);
         const cleanProjName = String(proj.name || "").replace(/\s*\(?\bFaz[-\s]*[12]\b\)?/gi, "").trim();
 
-        // 🚦 NİM (Svetofor kəsişmə nöqtələri — nöqtənin adı və birbaşa status seçimi)
+        // 🚦 NİİM (Svetofor kəsişmə nöqtələri — dirəklər, işıqforlar, optik/elektrik çəkilişi, mərhələlər)
         if (proj.category === "nim") {
             const doneCount = proj.items.filter(i => i.status === "bitmis" || i.status === "tehvil").length;
             const inProgCount = proj.items.filter(i => i.status === "icrada").length;
+            const nimTot = summarizeNimItems(proj.items);
             card.innerHTML = `
                 <div class="info-card-head">
                     <div>
                         <small style="display:flex;align-items:center;gap:6px">
                             <span class="dot" style="background:${tone}"></span>
-                            <span>🚦 NİM · Svetofor kəsişmə nöqtələri (${proj.items.length})</span>
+                            <span>🚦 NİİM · Svetofor kəsişmə nöqtələri (${proj.items.length})</span>
                         </small>
                         <strong>${esc(cleanProjName)}</strong>
                     </div>
@@ -7394,20 +7625,33 @@ document.addEventListener("DOMContentLoaded", init);
                         <div class="info-stat"><small>Cəmi kəsişmə</small><b>${proj.items.length} nöqtə</b></div>
                         <div class="info-stat"><small>Hazır / Təhvil</small><b style="color:#22C55E">${doneCount} nöqtə</b></div>
                         <div class="info-stat"><small>İcrada</small><b style="color:#F59E0B">${inProgCount} nöqtə</b></div>
+                    </div>
+                    <div class="nim-tot-bar">
+                        <span>A-dirək: <b>${nimTot.poleA.done}/${nimTot.poleA.plan}</b></span>
+                        <span>L-dirək: <b>${nimTot.poleL.done}/${nimTot.poleL.plan}</b></span>
+                        <span>Piyada: <b>${nimTot.pedSig.done}/${nimTot.pedSig.plan}</b></span>
+                        <span>Nəqliyyat: <b>${nimTot.vehSig.done}/${nimTot.vehSig.plan}</b></span>
+                        <span>Optik: <b>${nimTot.opticM.done}/${nimTot.opticM.plan}m</b></span>
+                        <span>Elektrik: <b>${nimTot.elecM.done}/${nimTot.elecM.plan}m</b></span>
                     </div>` : ""}
                     <div class="info-sub-list">
                         ${items.map(r => {
                             const rTone = statusTone(r.status);
-                            const cInfo = findContractorInfo(r.contractor) || { workers: "—", machinery: "—", engineer: "—" };
+                            const ns = normalizeNimSpec(r);
+                            const np = calcNimProgress(r);
                             return `
                                 <div class="info-sub-item" data-pick-seg="${esc(proj.id)}:${esc(r.id)}" style="border-color:${entry?.item === r ? rTone : "var(--line)"}">
                                     <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
-                                        <strong style="display:flex;align-items:center;gap:6px">
+                                        <strong style="display:flex;align-items:center;gap:6px;min-width:0">
                                             <span class="dot" style="background:${rTone}"></span>
-                                            🚦 ${esc(r.name)}
+                                            <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">🚦 ${esc(r.name)}</span>
                                         </strong>
-                                        <span class="pill" style="--tone:${rTone}">${t(`status${r.status}`)}</span>
+                                        <div style="display:flex;align-items:center;gap:6px;flex:none">
+                                            <span class="nim-pct-badge" style="color:${rTone}">${np.pct}%</span>
+                                            <span class="pill" style="--tone:${rTone}">${t(`status${r.status}`)}</span>
+                                        </div>
                                     </div>
+                                    <div class="progress" style="margin:2px 0 4px"><span style="width:${np.pct}%;background:${rTone}"></span></div>
                                     <div class="info-exec-row">
                                         <span class="muted">Nöqtə statusu:</span>
                                         ${isAdmin() ? `
@@ -7421,6 +7665,47 @@ document.addEventListener("DOMContentLoaded", init);
                                         ${executorOptionsHtml(r.contractor, r)}
                                     </div>
                                     ${renderExecDetailBlockHtml(r, proj)}
+                                    <div class="nim-spec-box">
+                                        <div class="nim-spec-title"><span>📋 Dirəklər, İşıqforlar və Çəkilişlər</span><span class="muted">${np.doneStages}/${np.totalStages} mərhələ</span></div>
+                                        <div class="nim-spec-grid">
+                                            ${NIM_SPEC_FIELDS.map(f => {
+                                                const val = ns[f.key];
+                                                return `
+                                                <div class="nim-spec-row">
+                                                    <span class="nim-spec-lbl"><i class="fa-solid ${f.icon}"></i> ${f.label}</span>
+                                                    ${isAdmin() ? `
+                                                    <div class="nim-spec-ctrl">
+                                                        <button type="button" class="nim-step-btn" data-nim-step="${esc(proj.id)}:${esc(r.id)}:${f.key}:-${f.step}">−</button>
+                                                        <input type="number" min="0" class="nim-num-inp" value="${val.done}" title="Quraşdırılıb / Çəkilib" data-nim-inp="${esc(proj.id)}:${esc(r.id)}:${f.key}:done">
+                                                        <span class="muted">/</span>
+                                                        <input type="number" min="0" class="nim-num-inp" value="${val.plan}" title="Plan" data-nim-inp="${esc(proj.id)}:${esc(r.id)}:${f.key}:plan">
+                                                        <button type="button" class="nim-step-btn" data-nim-step="${esc(proj.id)}:${esc(r.id)}:${f.key}:${f.step}">+</button>
+                                                        <small class="muted">${f.unit}</small>
+                                                    </div>
+                                                    ` : `<b class="nim-spec-val">${val.done} / ${val.plan} ${f.unit}</b>`}
+                                                </div>`;
+                                            }).join("")}
+                                        </div>
+                                        <div class="info-exec-row" style="margin-top:6px">
+                                            <span class="muted">Kontroller şkafı:</span>
+                                            ${isAdmin() ? `
+                                            <select class="input" data-nim-ctrl="${esc(proj.id)}:${esc(r.id)}">
+                                                ${Object.entries(NIM_CTRL_LABELS).map(([k, lbl]) => `<option value="${k}" ${ns.controller === k ? "selected" : ""}>${lbl}</option>`).join("")}
+                                            </select>
+                                            ` : `<b>${esc(NIM_CTRL_LABELS[ns.controller] || "Yoxdur")}</b>`}
+                                        </div>
+                                        <div class="nim-stages-row">
+                                            ${NIM_STAGES.map(st => {
+                                                const on = Boolean(ns.stages[st.key]);
+                                                return isAdmin()
+                                                    ? `<button type="button" class="nim-stage-pill ${on ? "on" : ""}" data-nim-stage="${esc(proj.id)}:${esc(r.id)}:${st.key}">${on ? "✓ " : ""}${st.label}</button>`
+                                                    : `<span class="nim-stage-pill ${on ? "on" : ""}">${on ? "✓ " : ""}${st.label}</span>`;
+                                            }).join("")}
+                                        </div>
+                                        ${isAdmin() ? `
+                                        <input type="text" class="input nim-note-inp" placeholder="Qeyd (məs: Asfalt icazəsi gözlənilir)…" value="${esc(ns.note)}" data-nim-note="${esc(proj.id)}:${esc(r.id)}">
+                                        ` : (ns.note ? `<div class="nim-note-view">📝 ${esc(ns.note)}</div>` : "")}
+                                    </div>
                                     <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;font-size:11px;color:var(--ink-2)">
                                         <span class="muted">${!r.contractor && isAdmin() ? `<a href="admin.html#contractors" target="_blank" style="color:#38BDF8;text-decoration:none">⚙️ Admin Paneldə İcraçı əlavə et</a>` : ""}</span>
                                         ${isAdmin() ? `<button class="btn btn-outline" style="height:22px;padding:0 7px;font-size:10.5px" data-geom-edit="${esc(proj.id)}:${esc(r.id)}" title="Nöqtəni xəritədə sürüşdür"><i class="fa-solid fa-arrows-up-down-left-right"></i> Sürüşdür</button>` : ""}
@@ -8027,7 +8312,7 @@ document.addEventListener("DOMContentLoaded", init);
             }
         });
 
-        // Sol dibdə Yarım Dairə üzərində 4 Qovluq (🏢 BCG, 🚦 NİM, 🌐 Azconnect, 🗂️ Digər)
+        // Sol dibdə Yarım Dairə üzərində 4 Qovluq (🏢 BCG, 🚦 NİİM, 🌐 Azərconnect, 🗂️ Digər)
         // 1x Sol klik: Qovluğu aktiv/deaktiv et · 2x Sol klik: Bütün qovluqları və layihələri söndür
         let lastFolderLeftClick = 0;
         let folderSingleClickTimer = null;
@@ -8053,7 +8338,7 @@ document.addEventListener("DOMContentLoaded", init);
             const btn = e.target.closest("[data-folder-tab]");
             if (!btn) return;
             const folder = btn.dataset.folderTab;
-            const fNames = { project: "🏢 BCG", nim: "🚦 NİM", azconnect: "🌐 Azconnect", other: "🗂️ Digər" };
+            const fNames = { project: "🏢 BCG", nim: "🚦 NİİM", azconnect: "🌐 Azərconnect", other: "🗂️ Digər" };
 
             clearTimeout(folderSingleClickTimer);
             folderSingleClickTimer = setTimeout(() => {
@@ -8417,7 +8702,7 @@ document.addEventListener("DOMContentLoaded", init);
                 "BCG — Gəncə-Qazax Magistralı",
                 "BCG — Cənub Antena Layihəsi",
                 "BCG — Qərb Antena Layihəsi",
-                "Azconnect — Bakı-Sumqayıt Magistralı"
+                "Azərconnect — Bakı-Sumqayıt Magistralı"
             ])].filter(Boolean);
             const types = [...new Set(state.materials.map(m => m.material))];
             projSel.innerHTML = `<option value="all">Bütün layihələr</option>` + projects.map(p => `<option value="${esc(p)}">${esc(p)}</option>`).join("");
