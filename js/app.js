@@ -1288,6 +1288,7 @@ function saveSegmentOverride(projectId, item) {
     if (!projectId || !item || !item.id) return;
     const map = readStore(SEG_META_STORE_KEY, {}) || {};
     map[`${projectId}:${item.id}`] = {
+        id: item.id,
         name: item.name,
         pointA: item.pointA,
         pointB: item.pointB,
@@ -1314,7 +1315,8 @@ function saveSegmentOverride(projectId, item) {
         fillColor: item.fillColor,
         fillOpacity: item.fillOpacity,
         holes: item.holes,
-        props: item.props
+        props: item.props,
+        coords: item.coords
     };
     writeStore(SEG_META_STORE_KEY, map);
     scheduleCloudMetaSync();
@@ -1340,8 +1342,8 @@ function mergeLocalProjectIntoDb(dbProj, localProj) {
         return merged;
     }
     const localById = new Map(localItems.map(it => [it.id, it]));
-    const mergedItems = dbItems.map((dbIt, idx) => {
-        const locIt = localById.get(dbIt.id) || localItems[idx];
+    const mergedItems = dbItems.map((dbIt) => {
+        const locIt = localById.get(dbIt.id);
         if (!locIt) return dbIt;
         return {
             ...locIt,
@@ -1379,8 +1381,39 @@ function mergeLocalProjectIntoDb(dbProj, localProj) {
 function applySavedMetaOverrides() {
     try {
         syncAdminContractors();
+        const delProjs = getDeletedProjectIds();
+        const delSegs = getDeletedSegmentKeys();
         const pMap = readStore(PROJ_META_STORE_KEY, {}) || {};
         const sMap = readStore(SEG_META_STORE_KEY, {}) || {};
+        // Əgər sMap-də (bulud reyestrindən gələn) bazaya düşməmiş nöqtə/seqment varsa və koordinatı mövcuddursa, layihəyə əlavə et
+        for (const [key, segMeta] of Object.entries(sMap)) {
+            if (!segMeta || !Array.isArray(segMeta.coords) || segMeta.coords.length === 0) continue;
+            const sepIdx = key.indexOf(":");
+            if (sepIdx <= 0) continue;
+            const projId = key.slice(0, sepIdx);
+            const segId = key.slice(sepIdx + 1);
+            if (delProjs.has(projId) || delSegs.has(key)) continue;
+            let proj = (state.projects || []).find(p => p.id === projId);
+            if (!proj && pMap[projId]?.name) {
+                proj = {
+                    id: projId,
+                    name: pMap[projId].name,
+                    status: pMap[projId].status || "layihe",
+                    type: pMap[projId].type || "points",
+                    category: pMap[projId].category || "project",
+                    startDate: pMap[projId].startDate || "",
+                    endDate: pMap[projId].endDate || "",
+                    items: []
+                };
+                state.projects.push(proj);
+            }
+            if (proj) {
+                if (!Array.isArray(proj.items)) proj.items = [];
+                if (!proj.items.some(i => i.id === segId)) {
+                    proj.items.push({ id: segId, ...segMeta });
+                }
+            }
+        }
         (state.projects || []).forEach(p => {
             if (pMap[p.id]) {
                 Object.assign(p, pMap[p.id]);
@@ -1433,15 +1466,63 @@ function getStoredImportedProjects() {
 function saveImportedProjects() {
     try {
         const delProjs = getDeletedProjectIds();
-        const toSave = (state.projects || []).filter(p =>
-            p && !delProjs.has(p.id) && (p.imported || p.isLocal || p.category === "other" || String(p.id).startsWith("imp_") || String(p.id).startsWith("proj_custom_") || String(p.id).startsWith("proj_local_") || String(p.id).startsWith("proj_mm_"))
+        const delSegs = getDeletedSegmentKeys();
+        const cleanProjects = (state.projects || [])
+            .filter(p => p && !delProjs.has(p.id))
+            .map(p => ({
+                ...p,
+                items: (p.items || []).filter(r => r && !delSegs.has(`${p.id}:${r.id}`))
+            }));
+        const toSave = cleanProjects.filter(p =>
+            p.imported || p.isLocal || p.category === "other" || String(p.id).startsWith("imp_") || String(p.id).startsWith("proj_custom_") || String(p.id).startsWith("proj_local_") || String(p.id).startsWith("proj_mm_")
         );
         // Həm limitsiz IndexedDB disk bazasına, həm də kiçikdirsə localStorage-a yaz
         saveToIndexedDB(STORAGE_IMPORTED_KEY, toSave);
         writeStore(STORAGE_IMPORTED_KEY, toSave);
+        // Bulud snapshot keşini də dərhal yenilə ki digər kompüterlər bütün nöqtələri tam görsün
+        try {
+            const snap = JSON.parse(localStorage.getItem("bcg.db.snapshot.v1") || "{}") || {};
+            snap.projects = cleanProjects;
+            localStorage.setItem("bcg.db.snapshot.v1", JSON.stringify(snap));
+        } catch {}
     } catch (e) {
         console.warn("saveImportedProjects error:", e);
     }
+}
+
+async function syncUnsavedLocalProjectsToCloud(rawDbProjects = []) {
+    if (!isAdmin() || !api.configured) return;
+    try {
+        const delProjs = getDeletedProjectIds();
+        const delSegs = getDeletedSegmentKeys();
+        const dbById = new Map((Array.isArray(rawDbProjects) ? rawDbProjects : []).map(p => [p.id, p]));
+        let syncedAny = false;
+        for (const p of (state.projects || [])) {
+            if (!p || !p.id || delProjs.has(p.id)) continue;
+            // Standart demo NİİM / Azconnect layihələrini yalnız dəyişdirilibsə göndər
+            if ((p.id === "nim_baki_svetofor" || p.id === "nim_sumqayit_gence" || p.id === "azc_abseron_ring" || p.id === "azc_merkez_west") && !dbById.has(p.id)) {
+                continue;
+            }
+            const dbProj = dbById.get(p.id);
+            const validItems = (p.items || []).filter(r => r && !delSegs.has(`${p.id}:${r.id}`));
+            const dbItemIds = new Set((dbProj?.items || []).map(r => r.id));
+            const hasMissingItems = validItems.some(r => !dbItemIds.has(r.id));
+            if (!dbProj || hasMissingItems || validItems.length > (dbProj.items?.length || 0)) {
+                try {
+                    saveProjectOverride(p);
+                    validItems.forEach(r => saveSegmentOverride(p.id, r));
+                    await api.saveProject({ ...p, items: validItems });
+                    syncedAny = true;
+                } catch {}
+            }
+        }
+        if (syncedAny) {
+            saveImportedProjects();
+            if (typeof api.syncCloudRegistry === "function") {
+                await api.syncCloudRegistry().catch(() => {});
+            }
+        }
+    } catch {}
 }
 
 async function enterApp(user) {
@@ -1474,6 +1555,10 @@ async function enterApp(user) {
             console.warn("Buluddan yükləmə alınmadı:", err);
         }
     }
+
+    const rawDbProjectsSnapshot = fresh && Array.isArray(fresh.projects)
+        ? JSON.parse(JSON.stringify(fresh.projects))
+        : [];
 
     if (fresh && Array.isArray(fresh.projects)) {
         Object.assign(state, fresh);
@@ -1514,6 +1599,11 @@ async function enterApp(user) {
     renderAll();
     hideBootLoader();
 
+    // Əgər bu kompüterdə əlavə edilmiş, lakin bazaya tam düşməmiş nöqtələr/layihələr varsa, arxa fonda dərhal buluda yaz
+    if (isAdmin() && api.configured) {
+        setTimeout(() => syncUnsavedLocalProjectsToCloud(rawDbProjectsSnapshot).catch(() => {}), 400);
+    }
+
     // Canlı sinxronizasiya: başqa cihazdan edilən dəyişikliklər səhifəni yeniləmədən avtomatik əks olunur
     if (api.configured && typeof api.startLiveSync === "function") {
         api.startLiveSync(async () => {
@@ -1538,9 +1628,18 @@ async function enterApp(user) {
                     state.projects.push(lp);
                     state.visibleIds.add(lp.id);
                     changed = true;
+                } else {
+                    const beforeLen = (state.projects[idx].items || []).length;
+                    state.projects[idx] = mergeLocalProjectIntoDb(state.projects[idx], lp);
+                    if ((state.projects[idx].items || []).length !== beforeLen) changed = true;
                 }
             });
-            if (changed) renderAll();
+            if (changed) {
+                renderAll();
+                if (isAdmin() && api.configured) {
+                    syncUnsavedLocalProjectsToCloud(rawDbProjectsSnapshot).catch(() => {});
+                }
+            }
         }
     }).catch(() => {});
 }
@@ -1554,7 +1653,7 @@ async function reloadData() {
 
     // Mövcud yaddaşda və lokal depoda olan layihələri qoru
     const localImported = state.projects.filter(p =>
-        p && (p.imported || p.isLocal || p.category === "other" || String(p.id).startsWith("imp_") || String(p.id).startsWith("proj_custom_") || String(p.id).startsWith("proj_local_"))
+        p && (p.imported || p.isLocal || p.category === "other" || String(p.id).startsWith("imp_") || String(p.id).startsWith("proj_custom_") || String(p.id).startsWith("proj_local_") || String(p.id).startsWith("proj_mm_"))
     );
     const storedImported = getStoredImportedProjects();
 
@@ -2082,43 +2181,36 @@ function editSegment(project, item) {
                     coords: parsedCoords
                 };
                 if (!project.items) project.items = [];
+                while (project.items.some(it => it.id === newSeg.id)) {
+                    newSeg.id = `${newSeg.id}-${Math.floor(Math.random() * 90 + 10)}`;
+                }
+                row.code = newSeg.id;
                 project.items.push(newSeg);
                 item = newSeg;
             }
 
             saveSegmentOverride(project.id, item);
+            try {
+                const customList = readStore("bcg.custom.items.v1", []);
+                const filteredCustom = (Array.isArray(customList) ? customList : []).filter(
+                    x => !(x && x.projectId === project.id && (x.item?.id === oldCode || x.item?.id === item.id))
+                );
+                filteredCustom.push({ projectId: project.id, item });
+                writeStore("bcg.custom.items.v1", filteredCustom);
+            } catch {}
             saveImportedProjects();
 
-            try {
-                const dbRow = { ...row };
-                delete dbRow.fiber_count;
-                delete dbRow.custom_color;
-                delete dbRow.line_width;
-                delete dbRow.poly_fill;
-                delete dbRow.point_type;
-                delete dbRow.exec_lead;
-                delete dbRow.exec_workers;
-                delete dbRow.exec_phone;
-                delete dbRow._customFields;
-                await api.saveSegment(project.id, oldCode || item?.id, {
-                    ...dbRow,
-                    point_a: item.pointA || "",
-                    point_b: item.pointB || "",
-                    antennas: Number(row.antennas || 0),
-                    contractor: row.contractor || null,
-                    coords: parsedCoords
-                }, {
-                    pTyp: item.pointType || "",
-                    eLead: item.execLead || "",
-                    eWrk: item.execWorkers,
-                    ePhn: item.execPhone || "",
-                    cf: Array.isArray(item.customFields) && item.customFields.length ? item.customFields : undefined
-                });
-            } catch (e) {
-                console.warn("api.saveSegment xətası (lokal qorunur):", e);
+            if (api.configured) {
+                (async () => {
+                    try {
+                        await api.saveProject(project);
+                    } catch (e) {
+                        console.warn("api.saveProject xətası (lokal qorunur):", e);
+                    }
+                })();
             }
 
-            if (item) state.selected = { projectId: project.id, itemId: row.code };
+            if (item) state.selected = { projectId: project.id, itemId: item.id };
         },
         onDelete: item && (async () => {
             markSegmentDeleted(project.id, item.id);
@@ -4197,12 +4289,12 @@ function drawRoutes() {
         }
 
         if (isPointItem) {
-            const [lat, lng] = coords[0];
+            const distinctPtCoords = coords.filter((c, idx) => idx === 0 || c[0] !== coords[idx - 1][0] || c[1] !== coords[idx - 1][1]);
+            const ptsToDraw = distinctPtCoords.length > 0 ? distinctPtCoords : [coords[0]];
             const stColor = statusTone(r.status);
             const ptType = extractPointType(r.props, r);
             const rawRayonName = String(r.name || r.rayon || "").replace(/\s*\(?\bFaz[-\s]*[12]\b\)?/gi, "").replace(/\s*rayon(u)?(?![a-zəçşğıöü])/gi, "").trim();
-            const rayonName = rawRayonName || String(r.name || "").trim();
-            const normKey = rayonName.toLocaleLowerCase("az").replace(/\s+/g, " ").trim() || `${lat.toFixed(2)}_${lng.toFixed(2)}`;
+            const baseRayonName = rawRayonName || String(r.name || "").trim();
             const { planM: verilenM, doneM: cekilenM } = getPointMetersPair(r);
             const pct = calcPointPct(cekilenM, verilenM, r.status);
             const rawProjBase = String(project.name || "").replace(/\s*\(?\bFaz[-\s]*[12]\b\)?/gi, "").trim();
@@ -4212,37 +4304,41 @@ function drawRoutes() {
             const antLabel = formatPointAntLabel(antCount, ptType);
             const execDet = resolveItemExecDetails(r);
 
-            if (!pointSlots[normKey]) {
-                pointSlots[normKey] = {
+            ptsToDraw.forEach(([lat, lng], ptIdx) => {
+                const rayonName = ptsToDraw.length > 1 ? `${baseRayonName} #${ptIdx + 1}` : baseRayonName;
+                const normKey = `${project.id}:${r.id}:${ptIdx}`;
+                if (!pointSlots[normKey]) {
+                    pointSlots[normKey] = {
+                        rayonName,
+                        latSum: 0,
+                        lngSum: 0,
+                        entries: []
+                    };
+                }
+                pointSlots[normKey].latSum += lat;
+                pointSlots[normKey].lngSum += lng;
+                pointSlots[normKey].entries.push({
+                    project,
+                    r,
+                    lat,
+                    lng,
+                    stColor,
+                    shape,
+                    shapeIcon,
+                    dim,
+                    sel: Boolean(selected?.item === r),
                     rayonName,
-                    latSum: 0,
-                    lngSum: 0,
-                    entries: []
-                };
-            }
-            pointSlots[normKey].latSum += lat;
-            pointSlots[normKey].lngSum += lng;
-            pointSlots[normKey].entries.push({
-                project,
-                r,
-                lat,
-                lng,
-                stColor,
-                shape,
-                shapeIcon,
-                dim,
-                sel: Boolean(selected?.item === r),
-                rayonName,
-                rawProjName,
-                compactProjName,
-                ptType,
-                antCount,
-                antLabel,
-                execSummary: execDet.cardSummary,
-                verilenM,
-                cekilenM,
-                pct,
-                cExtra
+                    rawProjName,
+                    compactProjName,
+                    ptType,
+                    antCount,
+                    antLabel,
+                    execSummary: execDet.cardSummary,
+                    verilenM,
+                    cekilenM,
+                    pct,
+                    cExtra
+                });
             });
             return;
         } else if (coords.length >= 2) {
@@ -6501,24 +6597,8 @@ function bindEvents() {
             }
             saveSegmentOverride(project.id, item);
             saveImportedProjects();
-            if (api.configured && item.dbId) {
-                const packedPtB = typeof api.packPointBMeta === "function"
-                    ? api.packPointBMeta(item.pointB || "", item)
-                    : (item.pointB || "");
-                api.saveSegment(project.id, item.dbId, {
-                    code: item.id,
-                    name: item.name,
-                    point_a: item.pointA || "",
-                    point_b: packedPtB,
-                    start_date: item.startDate || null,
-                    end_date: item.endDate || null,
-                    contractor: item.contractor || "",
-                    total_km: item.totalKm,
-                    done_km: item.doneKm,
-                    status: item.status,
-                    antennas: item.antennas || 0,
-                    coords: item.coords
-                }).catch(() => {});
+            if (api.configured) {
+                api.saveProject(project).catch(() => {});
             }
             state.quickEditKey = null;
             renderAll();
@@ -7773,6 +7853,7 @@ document.addEventListener("DOMContentLoaded", init);
     async function saveMapMarkerItem(event) {
         event.preventDefault();
         if (!mmCreateState) return;
+        const currentMode = mmCreateState.mode || "point";
 
         const projVal = $("mmProjectSelect").value;
         const itemName = $("mmItemName").value.trim();
@@ -7795,7 +7876,7 @@ document.addEventListener("DOMContentLoaded", init);
 
         let coords;
         try {
-            coords = textToCoords($("mmCoordsText").value, mmCreateState.mode === "point" ? 1 : 2);
+            coords = textToCoords($("mmCoordsText").value, currentMode === "point" ? 1 : 2);
         } catch {
             $("mmFormError").textContent = t("coordsInvalid");
             return;
@@ -7818,7 +7899,7 @@ document.addEventListener("DOMContentLoaded", init);
                 id: newId,
                 name: newProjName,
                 category: activeCat,
-                type: mmCreateState.mode === "point" ? "points" : "lines",
+                type: currentMode === "point" ? "points" : "lines",
                 status,
                 startDate: "",
                 endDate: ""
@@ -7827,6 +7908,7 @@ document.addEventListener("DOMContentLoaded", init);
             state.projects.push(targetProj);
             state.visibleIds.add(targetProj.id);
             state.activeFolders.add(activeCat);
+            saveProjectOverride(targetProj);
         }
 
         if (!targetProj) {
@@ -7835,9 +7917,13 @@ document.addEventListener("DOMContentLoaded", init);
         }
         if (!Array.isArray(targetProj.items)) targetProj.items = [];
 
-        const newItemId = `${mmCreateState.mode === "point" ? "PT" : "LN"}-${Date.now().toString().slice(-4)}`;
+        let newItemId = `${currentMode === "point" ? "PT" : "LN"}-${Date.now().toString().slice(-4)}`;
+        while (targetProj.items.some(it => it.id === newItemId)) {
+            newItemId = `${currentMode === "point" ? "PT" : "LN"}-${Date.now().toString().slice(-4)}-${Math.floor(Math.random() * 90 + 10)}`;
+        }
         const fiberCount = normalizeFiberCount($("mmFiberSelect")?.value || "FO 48");
         const isTargetOther = targetProj.category === "other";
+        const isPointProj = currentMode === "point" || targetProj.type === "points" || targetProj.category === "nim";
         const customColor = isTargetOther ? normalizeColorCode($("mmCustomColor")?.value || $("mmColorPicker")?.value, "#38BDF8") : "";
         const lineWidth = isTargetOther ? normalizeLineWidth($("mmLineWidth")?.value, 1.8) : 0;
         const newItem = {
@@ -7850,13 +7936,15 @@ document.addEventListener("DOMContentLoaded", init);
             contractor: isTargetOther ? "" : contractor,
             totalKm: planVal,
             doneKm: doneVal,
+            unit: isPointProj ? "m" : undefined,
+            summary: isPointProj ? true : undefined,
             status,
             fiberCount,
             customColor,
             lineWidth,
             closures: 0,
             manholes: 0,
-            antennas: mmCreateState.mode === "point" ? Math.max(1, antennas) : antennas,
+            antennas: currentMode === "point" ? Math.max(1, antennas) : antennas,
             customFields,
             coords
         };
@@ -7883,38 +7971,20 @@ document.addEventListener("DOMContentLoaded", init);
         selectSegment(targetProj, newItem);
         toast(`✅ "${newItem.name}" layihəyə (${targetProj.name}) əlavə olundu!`);
 
-        recordAuditLog(
-            mmCreateState.mode === "point" ? "Yeni Nöqtə Əlavəsi" : "Yeni Xətt Əlavəsi",
-            targetProj.category === "nim" ? "🚦 NİİM" : (targetProj.category === "azconnect" ? "🌐 Azərconnect" : "🏢 BCG"),
-            `${targetProj.name} → ${newItem.name}`,
-            `Status: ${t("status" + newItem.status)} · Plan: ${newItem.totalKm} / Faktiki: ${newItem.doneKm}`
-        );
+        try {
+            recordAuditLog(
+                currentMode === "point" ? "Yeni Nöqtə Əlavəsi" : "Yeni Xətt Əlavəsi",
+                targetProj.category === "nim" ? "🚦 NİİM" : (targetProj.category === "azconnect" ? "🌐 Azərconnect" : "🏢 BCG"),
+                `${targetProj.name} → ${newItem.name}`,
+                `Status: ${t("status" + newItem.status)} · Plan: ${newItem.totalKm} / Faktiki: ${newItem.doneKm}`
+            );
+        } catch {}
 
-        // Supabase aktivdirsə arxa fonda bazaya yaz
+        // Supabase aktivdirsə arxa fonda bütün layihə və nöqtələrini bazaya yaz
         if (api.configured) {
             (async () => {
                 try {
-                    if (newProjectMeta) {
-                        await api.saveProjectRow(targetProj.id, {
-                            name: targetProj.name,
-                            status: targetProj.status || "layihe",
-                            project_type: targetProj.type || "points"
-                        });
-                    }
-                    await api.saveSegment(targetProj.id, null, {
-                        code: newItem.id,
-                        name: newItem.name,
-                        point_a: newItem.pointA,
-                        point_b: newItem.pointB,
-                        start_date: newItem.startDate,
-                        end_date: null,
-                        contractor: newItem.contractor,
-                        total_km: newItem.totalKm,
-                        done_km: newItem.doneKm,
-                        status: newItem.status,
-                        antennas: newItem.antennas,
-                        coords: newItem.coords
-                    }, customFields.length ? { cf: customFields } : null);
+                    await api.saveProject(targetProj);
                 } catch {}
             })();
         }

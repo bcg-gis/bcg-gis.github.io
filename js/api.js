@@ -293,6 +293,20 @@ const api = (() => {
                     localStorage.setItem(DELETED_SEGMENTS_KEY, JSON.stringify([...set]));
                 } catch {}
             }
+            if (Array.isArray(v.customItems) && v.customItems.length > 0) {
+                try {
+                    const delProjs = getDeletedProjectsSet();
+                    const delSegs = getDeletedSegmentsSet();
+                    const curCustom = JSON.parse(localStorage.getItem("bcg.custom.items.v1") || "[]");
+                    const cMap = new Map();
+                    [...v.customItems, ...(Array.isArray(curCustom) ? curCustom : [])].forEach(entry => {
+                        if (!entry || !entry.projectId || !entry.item?.id) return;
+                        if (delProjs.has(entry.projectId) || delSegs.has(`${entry.projectId}:${entry.item.id}`)) return;
+                        cMap.set(`${entry.projectId}:${entry.item.id}`, entry);
+                    });
+                    localStorage.setItem("bcg.custom.items.v1", JSON.stringify([...cMap.values()]));
+                } catch {}
+            }
             return v;
         } catch {
             return null;
@@ -327,6 +341,7 @@ const api = (() => {
             let cloudNotes = [];
             let deletedProjects = [];
             let deletedSegments = [];
+            let customItems = [];
             let snapshot = extraSnapshot;
             try { contractors = JSON.parse(localStorage.getItem("bcg.admin.contractors.v2") || "{}"); } catch {}
             try { bcgLeads = JSON.parse(localStorage.getItem("bcg.exec.leads.v1") || "[]"); } catch {}
@@ -335,6 +350,7 @@ const api = (() => {
             try { cloudNotes = JSON.parse(localStorage.getItem(CLOUD_NOTES_KEY) || "[]"); } catch {}
             try { deletedProjects = [...getDeletedProjectsSet()]; } catch {}
             try { deletedSegments = [...getDeletedSegmentsSet()]; } catch {}
+            try { customItems = JSON.parse(localStorage.getItem("bcg.custom.items.v1") || "[]"); } catch {}
             if (!snapshot) {
                 try { snapshot = JSON.parse(localStorage.getItem(DB_SNAPSHOT_KEY) || "null"); } catch {}
             }
@@ -362,6 +378,7 @@ const api = (() => {
                     cloudNotes,
                     deletedProjects,
                     deletedSegments,
+                    customItems,
                     snapshot,
                     updatedAt: nowIso
                 }
@@ -606,6 +623,41 @@ const api = (() => {
                 const matchedAdminUser = adminUsers.find(u => String(u.email || "").trim().toLowerCase() === ownEmail);
 
                 const mappedProjects = filterOutDeleted(projects.map(toProject));
+                // Bulud reyestrindən gələn customItems və segMeta-dakı əlavə nöqtələri də birləşdir
+                try {
+                    const delProjs = getDeletedProjectsSet();
+                    const delSegs = getDeletedSegmentsSet();
+                    const customList = JSON.parse(localStorage.getItem("bcg.custom.items.v1") || "[]");
+                    if (Array.isArray(customList)) {
+                        customList.forEach(entry => {
+                            if (!entry || !entry.projectId || !entry.item?.id) return;
+                            if (delProjs.has(entry.projectId) || delSegs.has(`${entry.projectId}:${entry.item.id}`)) return;
+                            let proj = mappedProjects.find(p => p.id === entry.projectId);
+                            if (!proj && entry.newProjectMeta) {
+                                proj = { ...entry.newProjectMeta, items: [] };
+                                mappedProjects.push(proj);
+                            }
+                            if (proj && !proj.items.some(i => i.id === entry.item.id)) {
+                                proj.items.push(entry.item);
+                            }
+                        });
+                    }
+                    const sMeta = JSON.parse(localStorage.getItem("bcg.seg.meta.v1") || "{}");
+                    if (sMeta && typeof sMeta === "object") {
+                        for (const [k, m] of Object.entries(sMeta)) {
+                            if (!m || !Array.isArray(m.coords) || m.coords.length === 0) continue;
+                            const sepIdx = k.indexOf(":");
+                            if (sepIdx <= 0) continue;
+                            const pId = k.slice(0, sepIdx);
+                            const sId = k.slice(sepIdx + 1);
+                            if (delProjs.has(pId) || delSegs.has(k)) continue;
+                            const proj = mappedProjects.find(p => p.id === pId);
+                            if (proj && !proj.items.some(i => i.id === sId)) {
+                                proj.items.push({ id: sId, ...m });
+                            }
+                        }
+                    }
+                } catch {}
                 let localCloudNotes = [];
                 try { localCloudNotes = JSON.parse(localStorage.getItem(CLOUD_NOTES_KEY) || "[]"); } catch {}
                 const mappedNotes = mergeNoteLists(notes.map(toNote), localCloudNotes);
@@ -624,7 +676,7 @@ const api = (() => {
                     } catch {}
                     if (own?.role === "admin" || matchedAdminUser?.role === "admin") {
                         // Sinxronizasiya açılışı yavaşlatmasın: 2 saniyə sonra arxa fonda
-                        setTimeout(() => syncCloudRegistry(snapPayload).catch(() => {}), 2000);
+                        setTimeout(() => syncCloudRegistry().catch(() => {}), 2000);
                     }
                 }
 
@@ -745,75 +797,99 @@ const api = (() => {
             const VALID_DB_STATUSES = ["bitmis", "icrada", "tehvil", "layihe"];
             const dbStatus = VALID_DB_STATUSES.includes(project.status) ? project.status : "layihe";
             const dbType = project.type === "points" ? "points" : "lines";
-            unwrap(await client.from("projects").upsert({
+            let pRes = await client.from("projects").upsert({
                 id: project.id,
                 name: project.name,
                 status: dbStatus,
                 project_type: dbType,
-                imported: true
-            }));
+                imported: true,
+                start_date: project.startDate || null,
+                end_date: project.endDate || null
+            });
+            if (pRes.error) {
+                pRes = await client.from("projects").upsert({
+                    id: project.id,
+                    name: project.name,
+                    status: dbStatus,
+                    imported: true,
+                    start_date: project.startDate || null,
+                    end_date: project.endDate || null
+                });
+            }
 
             // Podratçıların mövcudluğunu yoxla, xarici podratçılarda FK xətası olmasın deyə
-            const buildSegmentPayload = (withContractor = true) => (project.items || []).map(r => {
-                const isSinglePt = Array.isArray(r.coords) && r.coords.length === 1;
-                const safeCoords = isSinglePt
-                    ? [r.coords[0], r.coords[0]]
-                    : (r.coords || []);
-                const totalKm = Math.max(0, Number(r.totalKm) || 0);
-                const doneKm = Math.max(0, Number(r.doneKm) || 0);
-                const dbTotalKm = Math.max(totalKm, doneKm);
-                const segDbStatus = VALID_DB_STATUSES.includes(r.status) ? r.status : "layihe";
-                const packedPointB = packPointBMeta(r.pointB || "", {
-                    cat: project.category || "project",
-                    pType: project.type || "lines",
-                    pSt: project.status,
-                    st: r.status,
-                    tKm: totalKm,
-                    dKm: doneKm,
-                    fo: r.fiberCount,
-                    uFo: r.userSetFiber,
-                    col: r.customColor,
-                    fCol: r.fillColor,
-                    fOp: r.fillOpacity,
-                    lw: r.lineWidth,
-                    poly: r.isPolygon,
-                    pFill: r.polyFilled,
-                    unit: r.unit,
-                    sum: r.summary,
-                    ray: r.rayon,
-                    pTyp: r.pointType,
-                    ctr: r.contractor || "",
-                    eLead: r.execLead,
-                    eWrk: r.execWorkers,
-                    ePhn: r.execPhone,
-                    nim: r.nimSpec,
-                    cf: Array.isArray(r.customFields) && r.customFields.length ? r.customFields : undefined,
-                    ant: Number(r.antennas) || 0,
-                    pt1: isSinglePt
-                });
-                return {
-                    project_id: project.id,
-                    code: r.id,
-                    name: r.name || "",
-                    point_a: r.pointA || "",
-                    point_b: packedPointB,
-                    contractor: withContractor ? (r.contractor || null) : null,
-                    total_km: dbTotalKm,
-                    done_km: doneKm,
-                    status: segDbStatus,
-                    closures: Number(r.closures) || 0,
-                    manholes: Number(r.manholes) || 0,
-                    antennas: Number(r.antennas) || 0,
-                    coords: safeCoords
-                };
-            });
+            const buildSegmentPayload = (withContractor = true) => {
+                const seenCodes = new Set();
+                return (project.items || []).filter(r => r && Array.isArray(r.coords) && r.coords.length >= 1).map((r, idx) => {
+                    let segCode = String(r.id || `PT-${idx + 1}`).trim();
+                    while (seenCodes.has(segCode)) {
+                        segCode = `${segCode}_${idx + 1}`;
+                    }
+                    seenCodes.add(segCode);
+                    r.id = segCode;
 
-            let res = await client.from("segments").upsert(buildSegmentPayload(true), { onConflict: "project_id,code" });
-            if (res.error) {
-                // Əgər contractor FK xətası olarsa, contractor-u null edib təkrar cəhd et
-                const retryRes = await client.from("segments").upsert(buildSegmentPayload(false), { onConflict: "project_id,code" });
-                if (retryRes.error) {
-                    console.warn("saveProject segments upsert error:", retryRes.error);
+                    const isSinglePt = Array.isArray(r.coords) && r.coords.length === 1;
+                    const safeCoords = isSinglePt
+                        ? [r.coords[0], r.coords[0]]
+                        : (r.coords || []);
+                    const totalKm = Math.max(0, Number(r.totalKm) || 0);
+                    const doneKm = Math.max(0, Number(r.doneKm) || 0);
+                    const dbTotalKm = Math.max(totalKm, doneKm);
+                    const segDbStatus = VALID_DB_STATUSES.includes(r.status) ? r.status : "layihe";
+                    const packedPointB = packPointBMeta(r.pointB || "", {
+                        cat: project.category || "project",
+                        pType: project.type || "lines",
+                        pSt: project.status,
+                        st: r.status,
+                        tKm: totalKm,
+                        dKm: doneKm,
+                        fo: r.fiberCount,
+                        uFo: r.userSetFiber,
+                        col: r.customColor,
+                        fCol: r.fillColor,
+                        fOp: r.fillOpacity,
+                        lw: r.lineWidth,
+                        poly: r.isPolygon,
+                        pFill: r.polyFilled,
+                        unit: r.unit,
+                        sum: r.summary,
+                        ray: r.rayon,
+                        pTyp: r.pointType,
+                        ctr: r.contractor || "",
+                        eLead: r.execLead,
+                        eWrk: r.execWorkers,
+                        ePhn: r.execPhone,
+                        nim: r.nimSpec,
+                        cf: Array.isArray(r.customFields) && r.customFields.length ? r.customFields : undefined,
+                        ant: Number(r.antennas) || 0,
+                        pt1: isSinglePt
+                    });
+                    return {
+                        project_id: project.id,
+                        code: segCode,
+                        name: r.name || "",
+                        point_a: r.pointA || r.name || "Mərkəz",
+                        point_b: packedPointB,
+                        contractor: withContractor ? (r.contractor || null) : null,
+                        total_km: dbTotalKm,
+                        done_km: doneKm,
+                        status: segDbStatus,
+                        closures: Number(r.closures) || 0,
+                        manholes: Number(r.manholes) || 0,
+                        coords: safeCoords
+                    };
+                });
+            };
+
+            const payloadWithCtr = buildSegmentPayload(true);
+            if (payloadWithCtr.length > 0) {
+                let res = await client.from("segments").upsert(payloadWithCtr, { onConflict: "project_id,code" });
+                if (res.error) {
+                    // Əgər contractor FK xətası olarsa, contractor-u null edib təkrar cəhd et
+                    const retryRes = await client.from("segments").upsert(buildSegmentPayload(false), { onConflict: "project_id,code" });
+                    if (retryRes.error) {
+                        console.warn("saveProject segments upsert error:", retryRes.error);
+                    }
                 }
             }
             scheduleCloudBroadcast();
@@ -834,17 +910,21 @@ const api = (() => {
         async saveProjectRow(id, row) {
             const VALID_DB_STATUSES = ["bitmis", "icrada", "tehvil", "layihe"];
             const projId = id || `proj_${Date.now()}`;
-            const safeRow = {
+            const baseRow = {
                 id: projId,
                 name: row.name,
                 status: VALID_DB_STATUSES.includes(row.status) ? row.status : "layihe",
-                project_type: row.project_type === "points" ? "points" : "lines",
                 imported: true,
                 start_date: row.start_date || null,
                 end_date: row.end_date || null
             };
-            const query = client.from("projects").upsert(safeRow);
-            unwrap(await query);
+            let res = await client.from("projects").upsert({
+                ...baseRow,
+                project_type: row.project_type === "points" ? "points" : "lines"
+            });
+            if (res.error) {
+                res = await client.from("projects").upsert(baseRow);
+            }
             scheduleCloudBroadcast();
         },
 
@@ -853,13 +933,13 @@ const api = (() => {
             const segCode = code || row.code;
             let basePointB = row.point_b;
             let existingMeta = {};
-            if (basePointB !== undefined) {
+            if (basePointB !== undefined && String(basePointB).includes(META_SEP)) {
                 existingMeta = unpackPointBMeta(basePointB).meta;
             } else if (segCode) {
                 try {
                     const { data: ex } = await client.from("segments").select("point_b").eq("project_id", projectId).eq("code", segCode).maybeSingle();
                     if (ex?.point_b !== undefined) {
-                        basePointB = ex.point_b;
+                        if (basePointB === undefined) basePointB = ex.point_b;
                         existingMeta = unpackPointBMeta(ex.point_b).meta;
                     }
                 } catch {}
