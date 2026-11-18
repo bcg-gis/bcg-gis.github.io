@@ -3114,23 +3114,23 @@ function mapStyle() {
                1) Uzaqdan (zoom < 7.2): rayon adı
                2) Orta miqyasda / uzaqlaşanda (7.2 <= zoom < 10.2): eyni rayondakı layihələr bir pəncərədə qovuşur (hər birinin öz məlumatı ilə)
                3) Yaxınlaşanda (zoom >= 10.2): pəncərələr ayrılır */
-            { id: "routes-summary-name", type: "symbol", source: "route-labels", minzoom: 3.5, maxzoom: 5.8, filter: ["has", "summaryNameImg"],
+            { id: "routes-summary-name", type: "symbol", source: "route-labels", minzoom: 3.5, maxzoom: 5.0, filter: ["has", "summaryNameImg"],
                 layout: {
                     "icon-image": ["get", "summaryNameImg"],
                     "icon-anchor": ["get", "nameAnchor"],
                     "icon-offset": ["get", "nameOffset"],
-                    "icon-size": 0.80,
+                    "icon-size": isPhone() ? 0.92 : 0.80,
                     "icon-padding": 4,
                     "icon-allow-overlap": true,
                     "icon-ignore-placement": true
                 },
                 paint: { "icon-opacity": ["case", ["get", "dim"], 0.28, 1] } },
-            { id: "routes-summary-card-merged", type: "symbol", source: "route-labels", minzoom: 5.8, maxzoom: 10.2, filter: ["has", "mergedCardImg"],
+            { id: "routes-summary-card-merged", type: "symbol", source: "route-labels", minzoom: 5.0, maxzoom: 10.2, filter: ["has", "mergedCardImg"],
                 layout: {
                     "icon-image": ["get", "mergedCardImg"],
                     "icon-anchor": ["get", "cardAnchor"],
                     "icon-offset": ["get", "cardOffset"],
-                    "icon-size": 0.80,
+                    "icon-size": isPhone() ? 0.95 : 0.80,
                     "icon-allow-overlap": true,
                     "icon-ignore-placement": true
                 },
@@ -3140,7 +3140,7 @@ function mapStyle() {
                     "icon-image": ["get", "summaryCardImg"],
                     "icon-anchor": ["get", "cardAnchor"],
                     "icon-offset": ["get", "cardOffset"],
-                    "icon-size": 0.82,
+                    "icon-size": isPhone() ? 0.96 : 0.82,
                     "icon-allow-overlap": true,
                     "icon-ignore-placement": true
                 },
@@ -4369,7 +4369,7 @@ function drawRoutes() {
             ).join("<br>")
             : `<b style="color:${first.stColor}">${first.shape.symbol} ${esc(grp.rayonName)}</b><small>${first.rawProjName ? `<span style="opacity:0.9">${esc(first.rawProjName)}</span><br>` : ""}📡 ${esc(first.antLabel)} - ${first.verilenM} / ${first.cekilenM} m (${first.pct}%)${first.execSummary ? `<br>👷 İcraçı: <b>${esc(first.execSummary)}</b>` : ""}</small>`;
 
-        const mergedCardImg = isPhone() ? null : (n > 1
+        const mergedCardImg = n > 1
             ? ensureMergedSummaryCardImage(grp.rayonName, grp.entries.map(e => ({
                 color: e.stColor,
                 shapeSymbol: e.shape.symbol,
@@ -4392,7 +4392,7 @@ function drawRoutes() {
                 doneM: first.cekilenM,
                 pct: first.pct,
                 contractor: first.execSummary || ""
-            }));
+            });
 
         // 1) Uzaq miqyas (zoom < 10.2) üçün qovuşmuş kart + yan-yana fərqli ikonlar
         const hasIcrada = grp.entries.some(e => e.r.status === "icrada");
@@ -4473,7 +4473,7 @@ function drawRoutes() {
                 }
             }
 
-            const singleCardImg = isPhone() ? null : ensureSummaryCardImage({
+            const singleCardImg = ensureSummaryCardImage({
                 name: e.rayonName,
                 color: e.stColor,
                 shapeSymbol: e.shape.symbol,
