@@ -79,6 +79,7 @@ const api = (() => {
         if (meta.pType) seg._metaProjType = meta.pType;
         if (meta.pSt) seg._metaProjSt = meta.pSt;
         if (meta.nim && typeof meta.nim === "object") seg.nimSpec = meta.nim;
+        if (Array.isArray(meta.cf)) seg.customFields = meta.cf;
         return seg;
     };
 
@@ -147,7 +148,49 @@ const api = (() => {
     const USERS_STORAGE_KEY = "bcg.admin.users.v1";
     const LOCAL_SESSION_KEY = "bcg.local.session.v1";
     const DB_SNAPSHOT_KEY = "bcg.db.snapshot.v1";
+    const CLOUD_NOTES_KEY = "bcg.cloud.notes.v1";
+    const DELETED_PROJECTS_KEY = "bcg.deleted.projects.v1";
+    const DELETED_SEGMENTS_KEY = "bcg.deleted.segments.v1";
     const CLOUD_SYNC_TOKEN = "00000000-0000-4000-8000-00000000bc60";
+
+    function getDeletedProjectsSet() {
+        try {
+            const arr = JSON.parse(localStorage.getItem(DELETED_PROJECTS_KEY) || "[]");
+            return new Set(Array.isArray(arr) ? arr : []);
+        } catch {
+            return new Set();
+        }
+    }
+
+    function getDeletedSegmentsSet() {
+        try {
+            const arr = JSON.parse(localStorage.getItem(DELETED_SEGMENTS_KEY) || "[]");
+            return new Set(Array.isArray(arr) ? arr : []);
+        } catch {
+            return new Set();
+        }
+    }
+
+    function filterOutDeleted(projList = []) {
+        const delProjs = getDeletedProjectsSet();
+        const delSegs = getDeletedSegmentsSet();
+        return (Array.isArray(projList) ? projList : [])
+            .filter(p => p && !delProjs.has(p.id))
+            .map(p => ({
+                ...p,
+                items: (p.items || []).filter(r => r && !delSegs.has(`${p.id}:${r.id}`))
+            }));
+    }
+
+    function mergeNoteLists(listA = [], listB = []) {
+        const map = new Map();
+        [...(Array.isArray(listA) ? listA : []), ...(Array.isArray(listB) ? listB : [])].forEach(n => {
+            if (n && n.id !== undefined && n.text) {
+                map.set(String(n.id), n);
+            }
+        });
+        return [...map.values()].sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime());
+    }
 
     const DEFAULT_ADMIN_USERS = [
         { id: 1, name: "Bağır (Baş Admin)", email: "admin@bcg.az", role: "admin", authMode: "🔑 Şifrə + Email" },
@@ -230,25 +273,68 @@ const api = (() => {
                 const mergedP = curRole === "admin" ? { ...v.projMeta, ...curP } : { ...curP, ...v.projMeta };
                 localStorage.setItem("bcg.proj.meta.v1", JSON.stringify(mergedP));
             }
+            if (Array.isArray(v.cloudNotes)) {
+                try {
+                    const curNotes = JSON.parse(localStorage.getItem(CLOUD_NOTES_KEY) || "[]");
+                    localStorage.setItem(CLOUD_NOTES_KEY, JSON.stringify(mergeNoteLists(v.cloudNotes, curNotes)));
+                } catch {}
+            }
+            if (Array.isArray(v.deletedProjects)) {
+                try {
+                    const set = getDeletedProjectsSet();
+                    v.deletedProjects.forEach(id => { if (id) set.add(id); });
+                    localStorage.setItem(DELETED_PROJECTS_KEY, JSON.stringify([...set]));
+                } catch {}
+            }
+            if (Array.isArray(v.deletedSegments)) {
+                try {
+                    const set = getDeletedSegmentsSet();
+                    v.deletedSegments.forEach(k => { if (k) set.add(k); });
+                    localStorage.setItem(DELETED_SEGMENTS_KEY, JSON.stringify([...set]));
+                } catch {}
+            }
             return v;
         } catch {
             return null;
         }
     }
 
+    let lastCloudUpdatedAt = "";
+    let localWriteAt = 0;
+    let broadcastTimer = null;
+    let liveSyncTimer = null;
+    let liveChannel = null;
+
+    function scheduleCloudBroadcast() {
+        localWriteAt = Date.now();
+        clearTimeout(broadcastTimer);
+        broadcastTimer = setTimeout(() => {
+            syncCloudRegistry().catch(() => {});
+        }, 500);
+    }
+
     async function syncCloudRegistry(extraSnapshot = null) {
         if (!client) return;
         try {
+            localWriteAt = Date.now();
+            const nowIso = new Date().toISOString();
+            lastCloudUpdatedAt = nowIso;
             const adminUsers = getAdminUsersList();
             let contractors = {};
             let bcgLeads = [];
             let segMeta = {};
             let projMeta = {};
+            let cloudNotes = [];
+            let deletedProjects = [];
+            let deletedSegments = [];
             let snapshot = extraSnapshot;
             try { contractors = JSON.parse(localStorage.getItem("bcg.admin.contractors.v2") || "{}"); } catch {}
             try { bcgLeads = JSON.parse(localStorage.getItem("bcg.exec.leads.v1") || "[]"); } catch {}
             try { segMeta = JSON.parse(localStorage.getItem("bcg.seg.meta.v1") || "{}"); } catch {}
             try { projMeta = JSON.parse(localStorage.getItem("bcg.proj.meta.v1") || "{}"); } catch {}
+            try { cloudNotes = JSON.parse(localStorage.getItem(CLOUD_NOTES_KEY) || "[]"); } catch {}
+            try { deletedProjects = [...getDeletedProjectsSet()]; } catch {}
+            try { deletedSegments = [...getDeletedSegmentsSet()]; } catch {}
             if (!snapshot) {
                 try { snapshot = JSON.parse(localStorage.getItem(DB_SNAPSHOT_KEY) || "null"); } catch {}
             }
@@ -273,8 +359,11 @@ const api = (() => {
                     bcgLeads,
                     segMeta,
                     projMeta,
+                    cloudNotes,
+                    deletedProjects,
+                    deletedSegments,
                     snapshot,
-                    updatedAt: new Date().toISOString()
+                    updatedAt: nowIso
                 }
             }, { onConflict: "token" });
         } catch (e) {
@@ -471,6 +560,7 @@ const api = (() => {
         },
 
         async signOut() {
+            this.stopLiveSync();
             try { localStorage.removeItem(LOCAL_SESSION_KEY); } catch {}
             return client.auth.signOut().catch(() => {});
         },
@@ -515,8 +605,10 @@ const api = (() => {
                 const ownEmail = (own?.email || localSession?.email || "").toLowerCase();
                 const matchedAdminUser = adminUsers.find(u => String(u.email || "").trim().toLowerCase() === ownEmail);
 
-                const mappedProjects = projects.map(toProject);
-                const mappedNotes = notes.map(toNote);
+                const mappedProjects = filterOutDeleted(projects.map(toProject));
+                let localCloudNotes = [];
+                try { localCloudNotes = JSON.parse(localStorage.getItem(CLOUD_NOTES_KEY) || "[]"); } catch {}
+                const mappedNotes = mergeNoteLists(notes.map(toNote), localCloudNotes);
                 const mappedMaterials = (materials || []).map(toMaterial);
 
                 // Əgər bazadan məlumat gəlibsə (məs. Admin sessiyası zamanı), lokal istifadəçilər və digər kompüterlər üçün keşi yenilə
@@ -542,17 +634,17 @@ const api = (() => {
                     try {
                         const sharedRaw = await getSharedView();
                         if (Array.isArray(sharedRaw.data) && sharedRaw.data.length > 0) {
-                            sharedProjects = sharedRaw.data.map(toProject);
+                            sharedProjects = filterOutDeleted(sharedRaw.data.map(toProject));
                         }
                     } catch {}
                     const snap = JSON.parse(localStorage.getItem(DB_SNAPSHOT_KEY) || "null");
                     return {
                         role: matchedAdminUser?.role || localSession.role || "viewer",
                         users: snap?.users || adminUserEmails,
-                        projects: sharedProjects.length ? sharedProjects : (snap?.projects?.length ? snap.projects : fallbackSeedProjects()),
+                        projects: sharedProjects.length ? sharedProjects : filterOutDeleted(snap?.projects?.length ? snap.projects : fallbackSeedProjects()),
                         contractors: contractorMap,
                         materials: snap?.materials || [],
-                        notes: snap?.notes || []
+                        notes: mergeNoteLists(localCloudNotes, snap?.notes || [])
                     };
                 }
 
@@ -575,18 +667,20 @@ const api = (() => {
                     try {
                         const sharedRaw = await getSharedView();
                         if (Array.isArray(sharedRaw.data) && sharedRaw.data.length > 0) {
-                            sharedProjects = sharedRaw.data.map(toProject);
+                            sharedProjects = filterOutDeleted(sharedRaw.data.map(toProject));
                         }
                     } catch {}
                     let snap = null;
                     try { snap = JSON.parse(localStorage.getItem(DB_SNAPSHOT_KEY) || "null"); } catch {}
+                    let fallbackCloudNotes = [];
+                    try { fallbackCloudNotes = JSON.parse(localStorage.getItem(CLOUD_NOTES_KEY) || "[]"); } catch {}
                     return {
                         role: matchedAdminUser?.role || localSession.role || "viewer",
                         users: snap?.users || adminUserEmails,
-                        projects: sharedProjects.length ? sharedProjects : (snap?.projects?.length ? snap.projects : fallbackSeedProjects()),
+                        projects: sharedProjects.length ? sharedProjects : filterOutDeleted(snap?.projects?.length ? snap.projects : fallbackSeedProjects()),
                         contractors: contractorMap,
                         materials: snap?.materials || [],
-                        notes: snap?.notes || []
+                        notes: mergeNoteLists(fallbackCloudNotes, snap?.notes || [])
                     };
                 }
                 throw err;
@@ -596,47 +690,54 @@ const api = (() => {
         async addNote(text, recipient = "all", durationHours = 24) {
             const hours = Number(durationHours) || 0;
             const expires_at = hours > 0 ? new Date(Date.now() + hours * 3600000).toISOString() : null;
+            let localSession = null;
+            try { localSession = JSON.parse(localStorage.getItem(LOCAL_SESSION_KEY) || "null"); } catch {}
+            let noteObj = null;
             try {
-                return toNote(unwrap(await client.from("notes").insert({
+                noteObj = toNote(unwrap(await client.from("notes").insert({
                     text, recipient: recipient || "all", duration_hours: hours, expires_at
                 }).select().single()));
-            } catch (err) {
-                let localSession = null;
-                try { localSession = JSON.parse(localStorage.getItem(LOCAL_SESSION_KEY) || "null"); } catch {}
-                if (localSession) {
-                    const noteObj = {
-                        id: Date.now(),
-                        userId: localSession.id,
-                        author: localSession.email,
-                        recipient: recipient || "all",
-                        durationHours: hours,
-                        expiresAt: expires_at,
-                        text,
-                        date: new Date().toISOString()
-                    };
-                    try {
-                        const snap = JSON.parse(localStorage.getItem(DB_SNAPSHOT_KEY) || "{}");
-                        snap.notes = [noteObj, ...(snap.notes || [])];
-                        localStorage.setItem(DB_SNAPSHOT_KEY, JSON.stringify(snap));
-                    } catch {}
-                    return noteObj;
-                }
-                throw err;
+            } catch {
+                // Əgər Supabase notes cədvəli RLS və ya sütun fərqinə görə bloklasa, həm də hamı yaza bilsin deyə:
+                let authUser = null;
+                try { authUser = (await client.auth.getUser())?.data?.user || null; } catch {}
+                const sender = localSession || authUser || { id: "user", email: "istifadeci@bcg.az" };
+                noteObj = {
+                    id: Date.now(),
+                    userId: sender.id,
+                    author: sender.email,
+                    recipient: recipient || "all",
+                    durationHours: hours,
+                    expiresAt: expires_at,
+                    text,
+                    date: new Date().toISOString()
+                };
             }
+            try {
+                const curCloud = JSON.parse(localStorage.getItem(CLOUD_NOTES_KEY) || "[]");
+                localStorage.setItem(CLOUD_NOTES_KEY, JSON.stringify(mergeNoteLists([noteObj], curCloud)));
+                const snap = JSON.parse(localStorage.getItem(DB_SNAPSHOT_KEY) || "{}");
+                snap.notes = mergeNoteLists([noteObj], snap.notes || []);
+                localStorage.setItem(DB_SNAPSHOT_KEY, JSON.stringify(snap));
+            } catch {}
+            syncCloudRegistry().catch(() => {});
+            return noteObj;
         },
 
         async deleteNote(id) {
             try {
-                unwrap(await client.from("notes").delete().eq("id", id));
-            } catch {
-                try {
-                    const snap = JSON.parse(localStorage.getItem(DB_SNAPSHOT_KEY) || "{}");
-                    if (Array.isArray(snap.notes)) {
-                        snap.notes = snap.notes.filter(n => n.id !== id);
-                        localStorage.setItem(DB_SNAPSHOT_KEY, JSON.stringify(snap));
-                    }
-                } catch {}
-            }
+                await client.from("notes").delete().eq("id", id);
+            } catch {}
+            try {
+                const curCloud = JSON.parse(localStorage.getItem(CLOUD_NOTES_KEY) || "[]");
+                localStorage.setItem(CLOUD_NOTES_KEY, JSON.stringify(curCloud.filter(n => String(n.id) !== String(id))));
+                const snap = JSON.parse(localStorage.getItem(DB_SNAPSHOT_KEY) || "{}");
+                if (Array.isArray(snap.notes)) {
+                    snap.notes = snap.notes.filter(n => String(n.id) !== String(id));
+                    localStorage.setItem(DB_SNAPSHOT_KEY, JSON.stringify(snap));
+                }
+            } catch {}
+            syncCloudRegistry().catch(() => {});
         },
 
         /* Layihə və seqmentləri bazada saxla. Əgər FK və ya constraint xətası olarsa təhlükəsiz bərpa et */
@@ -686,6 +787,7 @@ const api = (() => {
                     eWrk: r.execWorkers,
                     ePhn: r.execPhone,
                     nim: r.nimSpec,
+                    cf: Array.isArray(r.customFields) && r.customFields.length ? r.customFields : undefined,
                     ant: Number(r.antennas) || 0,
                     pt1: isSinglePt
                 });
@@ -714,10 +816,19 @@ const api = (() => {
                     console.warn("saveProject segments upsert error:", retryRes.error);
                 }
             }
+            scheduleCloudBroadcast();
         },
 
         async deleteProject(id) {
-            unwrap(await client.from("projects").delete().eq("id", id));
+            try {
+                const delSet = getDeletedProjectsSet();
+                delSet.add(id);
+                localStorage.setItem(DELETED_PROJECTS_KEY, JSON.stringify([...delSet]));
+            } catch {}
+            // Əvvəlcə layihəyə aid bütün seqmentləri sil ki, FK (foreign key) xətası verməsin
+            try { await client.from("segments").delete().eq("project_id", id); } catch {}
+            try { await client.from("projects").delete().eq("id", id); } catch {}
+            scheduleCloudBroadcast();
         },
 
         async saveProjectRow(id, row) {
@@ -727,11 +838,14 @@ const api = (() => {
                 id: projId,
                 name: row.name,
                 status: VALID_DB_STATUSES.includes(row.status) ? row.status : "layihe",
+                project_type: row.project_type === "points" ? "points" : "lines",
+                imported: true,
                 start_date: row.start_date || null,
                 end_date: row.end_date || null
             };
             const query = client.from("projects").upsert(safeRow);
             unwrap(await query);
+            scheduleCloudBroadcast();
         },
 
         async saveSegment(projectId, code, row, extraMeta = null) {
@@ -799,10 +913,17 @@ const api = (() => {
                     console.warn("saveSegment error:", res.error);
                 }
             }
+            scheduleCloudBroadcast();
         },
 
         async deleteSegment(projectId, code) {
-            unwrap(await client.from("segments").delete().eq("project_id", projectId).eq("code", code));
+            try {
+                const delSet = getDeletedSegmentsSet();
+                delSet.add(`${projectId}:${code}`);
+                localStorage.setItem(DELETED_SEGMENTS_KEY, JSON.stringify([...delSet]));
+            } catch {}
+            try { await client.from("segments").delete().eq("project_id", projectId).eq("code", code); } catch {}
+            scheduleCloudBroadcast();
         },
 
         /* Ad dəyişəndə seqmentlərdəki ad bazada FK (on update cascade) ilə yenilənir */
@@ -839,10 +960,55 @@ const api = (() => {
             };
             const query = id ? client.from("materials").update(dbRow).eq("id", id) : client.from("materials").insert(dbRow);
             unwrap(await query);
+            scheduleCloudBroadcast();
         },
 
         async deleteMaterial(id) {
             unwrap(await client.from("materials").delete().eq("id", id));
+            scheduleCloudBroadcast();
+        },
+
+        startLiveSync(onRemoteUpdate) {
+            this.stopLiveSync();
+            if (!client || typeof onRemoteUpdate !== "function") return;
+            let running = false;
+            const trigger = () => {
+                if (running || Date.now() - localWriteAt < 3500) return;
+                running = true;
+                Promise.resolve(onRemoteUpdate()).catch(() => {}).finally(() => { running = false; });
+            };
+            try {
+                liveChannel = client.channel("bcg-live-sync")
+                    .on("postgres_changes", { event: "*", schema: "public", table: "projects" }, trigger)
+                    .on("postgres_changes", { event: "*", schema: "public", table: "segments" }, trigger)
+                    .on("postgres_changes", { event: "*", schema: "public", table: "materials" }, trigger)
+                    .on("postgres_changes", { event: "*", schema: "public", table: "notes" }, trigger)
+                    .on("postgres_changes", { event: "*", schema: "public", table: "share_links" }, trigger)
+                    .subscribe();
+            } catch {}
+            liveSyncTimer = setInterval(async () => {
+                if (document.visibilityState !== "visible" || running) return;
+                if (Date.now() - localWriteAt < 4000) return;
+                try {
+                    const v = await pullCloudRegistry(true);
+                    if (v?.updatedAt) {
+                        if (!lastCloudUpdatedAt) {
+                            lastCloudUpdatedAt = v.updatedAt;
+                        } else if (v.updatedAt !== lastCloudUpdatedAt) {
+                            lastCloudUpdatedAt = v.updatedAt;
+                            trigger();
+                        }
+                    }
+                } catch {}
+            }, 8000);
+        },
+
+        stopLiveSync() {
+            if (liveSyncTimer) { clearInterval(liveSyncTimer); liveSyncTimer = null; }
+            if (liveChannel && client) {
+                try { client.removeChannel(liveChannel); } catch {}
+                liveChannel = null;
+            }
         },
 
         async loadShared(token) {

@@ -160,12 +160,62 @@ function readStore(key, fallback) {
 }
 
 function writeStore(key, value) {
+    const str = JSON.stringify(value);
     try {
-        localStorage.setItem(key, JSON.stringify(value));
+        localStorage.setItem(key, str);
     } catch (e) {
-        console.warn(`localStorage doldu (${key}), limitsiz IndexedDB-yə yazıldı.`);
+        try {
+            localStorage.removeItem("bcg.db.snapshot.v1");
+            localStorage.removeItem("bcg.audit.logs.v1");
+            localStorage.setItem(key, str);
+        } catch {
+            console.warn(`localStorage doldu (${key}), limitsiz IndexedDB-yə yazıldı.`);
+        }
         saveToIndexedDB(key, value);
     }
+}
+
+const DELETED_PROJ_KEY = "bcg.deleted.projects.v1";
+const DELETED_SEG_KEY = "bcg.deleted.segments.v1";
+
+function getDeletedProjectIds() {
+    const arr = readStore(DELETED_PROJ_KEY, []);
+    return new Set(Array.isArray(arr) ? arr : []);
+}
+
+function getDeletedSegmentKeys() {
+    const arr = readStore(DELETED_SEG_KEY, []);
+    return new Set(Array.isArray(arr) ? arr : []);
+}
+
+function markProjectDeleted(projId) {
+    if (!projId) return;
+    const set = getDeletedProjectIds();
+    set.add(projId);
+    writeStore(DELETED_PROJ_KEY, [...set]);
+}
+
+function markSegmentDeleted(projId, itemId) {
+    if (!projId || !itemId) return;
+    const set = getDeletedSegmentKeys();
+    set.add(`${projId}:${itemId}`);
+    writeStore(DELETED_SEG_KEY, [...set]);
+}
+
+function purgeDeletedFromState() {
+    const delProjs = getDeletedProjectIds();
+    const delSegs = getDeletedSegmentKeys();
+    if (delProjs.size === 0 && delSegs.size === 0) return;
+    state.projects = (state.projects || []).filter(p => p && !delProjs.has(p.id));
+    state.projects.forEach(p => {
+        if (Array.isArray(p.items)) {
+            p.items = p.items.filter(r => r && !delSegs.has(`${p.id}:${r.id}`));
+        }
+    });
+    delProjs.forEach(id => {
+        state.visibleIds.delete(id);
+        state.expandedIds.delete(id);
+    });
 }
 
 function getStorageInfo() {
@@ -322,7 +372,7 @@ function renderRole() {
     $("addProjectBtn").hidden = !isAdmin();
     if ($("usersBtn")) $("usersBtn").hidden = !isAdmin();
     if ($("shareBtn")) $("shareBtn").hidden = !isAdmin();
-    if ($("noteForm")) $("noteForm").hidden = !isAdmin();
+    if ($("noteForm")) $("noteForm").hidden = false;
     tools.refresh();
 }
 
@@ -1247,6 +1297,7 @@ function saveSegmentOverride(projectId, item) {
         execWorkers: item.execWorkers,
         execPhone: item.execPhone,
         nimSpec: item.nimSpec,
+        customFields: item.customFields,
         totalKm: item.totalKm,
         doneKm: item.doneKm,
         unit: item.unit,
@@ -1374,13 +1425,16 @@ function applySavedMetaOverrides() {
 }
 
 function getStoredImportedProjects() {
-    return readStore(STORAGE_IMPORTED_KEY, []);
+    const delProjs = getDeletedProjectIds();
+    const list = readStore(STORAGE_IMPORTED_KEY, []);
+    return Array.isArray(list) ? list.filter(p => p && !delProjs.has(p.id)) : [];
 }
 
 function saveImportedProjects() {
     try {
+        const delProjs = getDeletedProjectIds();
         const toSave = (state.projects || []).filter(p =>
-            p && (p.imported || p.isLocal || p.category === "other" || String(p.id).startsWith("imp_") || String(p.id).startsWith("proj_custom_") || String(p.id).startsWith("proj_local_"))
+            p && !delProjs.has(p.id) && (p.imported || p.isLocal || p.category === "other" || String(p.id).startsWith("imp_") || String(p.id).startsWith("proj_custom_") || String(p.id).startsWith("proj_local_") || String(p.id).startsWith("proj_mm_"))
         );
         // Həm limitsiz IndexedDB disk bazasına, həm də kiçikdirsə localStorage-a yaz
         saveToIndexedDB(STORAGE_IMPORTED_KEY, toSave);
@@ -1459,6 +1513,19 @@ async function enterApp(user) {
     renderMaterials();
     renderAll();
     hideBootLoader();
+
+    // Canlı sinxronizasiya: başqa cihazdan edilən dəyişikliklər səhifəni yeniləmədən avtomatik əks olunur
+    if (api.configured && typeof api.startLiveSync === "function") {
+        api.startLiveSync(async () => {
+            if ($("editModal")?.open || document.activeElement?.closest?.(".info-card, #editModal")) return;
+            await reloadData();
+            if (typeof window.renderNotes === "function") window.renderNotes();
+            else renderNotes();
+            if (typeof window.renderMaterials === "function") window.renderMaterials();
+            else renderMaterials();
+            toast("🔄 Məlumatlar canlı yeniləndi");
+        });
+    }
 
     // Əgər localStorage dolubsa və ya layihələr limitsiz IndexedDB-də saxlanılıbsa, onları da daxil et
     getFromIndexedDB(STORAGE_IMPORTED_KEY).then(idbProjs => {
@@ -1566,6 +1633,43 @@ function openEditor(config) {
     $("editTitle").textContent = config.title;
     $("editError").textContent = "";
     $("editFields").innerHTML = config.fields.map(f => fieldHtml(f, config.values[f.key] ?? "")).join("");
+    if (Array.isArray(config.customFields)) {
+        const cfWrap = document.createElement("div");
+        cfWrap.className = "wide cf-editor";
+        cfWrap.id = "customFieldsEditor";
+        const renderCfRows = list => {
+            cfWrap.querySelector("#cfRows").innerHTML = list.map((cf, idx) => `
+                <div class="cf-row" data-cf-idx="${idx}">
+                    <input type="text" class="input cf-lbl" placeholder="Başlıq (özünüz yazın)…" value="${esc(cf.label || "")}">
+                    <input type="text" class="input cf-val" placeholder="Məlumat / Dəyər…" value="${esc(cf.value || "")}">
+                    <button type="button" class="icon-btn small cf-del" title="Sil"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+            `).join("");
+        };
+        cfWrap.innerHTML = `
+            <div class="cf-head">
+                <span>📝 Sərbəst başlıqlar (öz məlumatlarınız)</span>
+                <button type="button" class="link" id="addCustomFieldBtn">+ Yeni başlıq əlavə et</button>
+            </div>
+            <div class="cf-rows" id="cfRows"></div>
+        `;
+        $("editFields").appendChild(cfWrap);
+        const curList = config.customFields.length ? config.customFields : [];
+        renderCfRows(curList);
+        cfWrap.addEventListener("click", e => {
+            if (e.target.closest("#addCustomFieldBtn")) {
+                const existing = [...cfWrap.querySelectorAll(".cf-row")].map(r => ({
+                    label: r.querySelector(".cf-lbl").value,
+                    value: r.querySelector(".cf-val").value
+                }));
+                existing.push({ label: "", value: "" });
+                renderCfRows(existing);
+                cfWrap.querySelector(".cf-row:last-child .cf-lbl")?.focus();
+            } else if (e.target.closest(".cf-del")) {
+                e.target.closest(".cf-row")?.remove();
+            }
+        });
+    }
     const contractorSel = $("editFields").querySelector('select[name="contractor"]');
     const syncBcgOnlyFields = () => {
         const showBcg = contractorSel && isBcgContractor(contractorSel.value);
@@ -1607,17 +1711,25 @@ async function submitEditor(event) {
         else if (field.type === "date") values[field.key] = raw || null;
         else values[field.key] = raw;
     }
+    const cfRows = $("editFields").querySelectorAll("#customFieldsEditor .cf-row");
+    if (cfRows.length > 0 || Array.isArray(editor.customFields)) {
+        values._customFields = [...cfRows].map(r => ({
+            label: r.querySelector(".cf-lbl")?.value.trim() || "",
+            value: r.querySelector(".cf-val")?.value.trim() || ""
+        })).filter(x => x.label || x.value);
+    }
     try {
         if (values.start_date && values.end_date && values.end_date < values.start_date) throw new Error("dates");
         pushUndoSnapshot(editor.title || "Redaktə");
         await editor.onSave(values);
-        await reloadData();
     } catch (error) {
         const messages = { coords: "coordsInvalid", dates: "datesInvalid", km: "kmInvalid" };
         $("editError").textContent = t(messages[error.message] || "saveError");
         return;
     }
     $("editModal").close();
+    renderMaterials();
+    renderAll();
     toast(t("saved"));
 }
 
@@ -1626,17 +1738,20 @@ async function deleteFromEditor() {
     try {
         pushUndoSnapshot("Silmə əməliyyatı");
         await editor.onDelete();
-        await reloadData();
     } catch {
         $("editError").textContent = t("saveError");
         return;
     }
     $("editModal").close();
+    renderMaterials();
+    renderAll();
     toast(t("removed"));
 }
 
 function editProject(project) {
-    const isOther = (project?.category || state.sidebarCategory) === "other";
+    const activeCat = [...state.activeFolders][0] || state.sidebarCategory || "project";
+    const initCat = project?.category || activeCat;
+    const isOther = initCat === "other";
     const firstItem = project?.items?.[0];
     const defaultOtherColor = normalizeColorCode(project?.customColor || firstItem?.customColor || firstItem?.fillColor, firstItem?.isPolygon ? "#38BDF8" : "#38BDF8");
     const defaultOtherWidth = normalizeLineWidth(project?.lineWidth || firstItem?.lineWidth, firstItem?.isPolygon ? 1.4 : 1.8);
@@ -1648,6 +1763,7 @@ function editProject(project) {
         title: t(project ? "editProject" : "addProject"),
         values: project ? {
             name: project.name,
+            category: project.category || "project",
             status: project.status,
             project_type: project.type || "lines",
             start_date: project.startDate,
@@ -1656,14 +1772,16 @@ function editProject(project) {
             line_width: defaultOtherWidth,
             poly_fill: curPolyFill
         } : {
+            category: initCat,
             status: "layihe",
-            project_type: "lines",
+            project_type: initCat === "nim" ? "points" : "lines",
             custom_color: "#38BDF8",
             line_width: 1.8,
             poly_fill: "auto"
         },
         fields: isOther ? [
             { key: "name", label: t("fieldName"), required: true, wide: true },
+            { key: "category", label: "Qovluq", type: "select", wide: true, options: [["project", "🏢 BCG"], ["nim", "🚦 NİİM"], ["azconnect", "🌐 Azərconnect"], ["other", "🗂️ Digər"]] },
             { key: "custom_color", label: "🎨 Rəng seçimi (Xətt / Poliqon rəngi)", type: "color", wide: true },
             { key: "line_width", label: "📏 Sərhəd / Xətt qalınlığı (px)", type: "number", wide: true },
             { key: "poly_fill", label: "🔷 Poliqon görünüşü (İçi dolu / boş)", type: "select", wide: true, options: [
@@ -1673,14 +1791,17 @@ function editProject(project) {
             ] }
         ] : [
             { key: "name", label: t("fieldName"), required: true, wide: true },
-            { key: "project_type", label: "Layihə növü", type: "select", options: [["lines", "〰️ Magistral Xətt layihəsi"], ["points", "📍 Nöqtə / Antena layihəsi"]], wide: true },
+            { key: "category", label: "Qovluq", type: "select", options: [["project", "🏢 BCG"], ["nim", "🚦 NİİM"], ["azconnect", "🌐 Azərconnect"], ["other", "🗂️ Digər"]] },
+            { key: "project_type", label: "Layihə növü", type: "select", options: [["lines", "〰️ Kabel / Xətt layihəsi"], ["points", "📍 Nöqtə / Sərbəst Məlumat layihəsi"]] },
             { key: "status", label: t("thStatus"), type: "select", options: statusOptions(), wide: true },
             { key: "start_date", label: t("fieldStart"), type: "date" },
             { key: "end_date", label: t("fieldEnd"), type: "date" }
         ],
         onSave: async row => {
+            const chosenCat = row.category || initCat || "project";
             if (project) {
                 project.name = row.name;
+                project.category = chosenCat;
                 if (isOther) {
                     const col = normalizeColorCode(row.custom_color, defaultOtherColor);
                     const wid = normalizeLineWidth(row.line_width, defaultOtherWidth);
@@ -1719,7 +1840,7 @@ function editProject(project) {
                     name: row.name,
                     status: row.status || "layihe",
                     type: row.project_type || "lines",
-                    category: state.sidebarCategory || "project",
+                    category: chosenCat,
                     startDate: row.start_date || "",
                     endDate: row.end_date || "",
                     customColor: col,
@@ -1730,29 +1851,56 @@ function editProject(project) {
                 };
                 state.projects.push(newProj);
                 state.visibleIds.add(newId);
+                state.activeFolders.add(chosenCat);
+                state.expandedIds.add(newId);
+                state.statusFilter = "all";
                 project = newProj;
             }
             saveProjectOverride(project);
             saveImportedProjects();
             try {
-                const dbRow = { ...row };
+                const dbRow = { ...row, project_type: project.type || "lines" };
                 delete dbRow.custom_color;
                 delete dbRow.line_width;
                 delete dbRow.poly_fill;
+                delete dbRow.category;
                 await api.saveProjectRow(project.id, dbRow);
             } catch (e) {
                 console.warn("api.saveProjectRow xətası (lokal qorunur):", e);
             }
         },
         onDelete: project && (async () => {
-            state.projects = state.projects.filter(p => p.id !== project.id);
-            state.visibleIds.delete(project.id);
-            if (state.selected?.projectId === project.id) state.selected = null;
-            saveImportedProjects();
+            const delId = project.id;
+            markProjectDeleted(delId);
+            state.projects = state.projects.filter(p => p.id !== delId);
+            state.visibleIds.delete(delId);
+            state.expandedIds.delete(delId);
+            if (state.selected?.projectId === delId) state.selected = null;
+            if (window.__activeProjectId === delId) {
+                window.__activeProjectId = null;
+                if ($("infoCard")) $("infoCard").hidden = true;
+            }
+            // Özəl əlavə olunmuş elementlər və meta keşlərindən də tam təmizlə ki geri qayıtmasın
             try {
-                await api.deleteProject(project.id);
-            } catch (e) {
-                console.warn("api.deleteProject xətası:", e);
+                const customList = readStore("bcg.custom.items.v1", []);
+                if (Array.isArray(customList)) {
+                    writeStore("bcg.custom.items.v1", customList.filter(x => x && x.projectId !== delId));
+                }
+                const pMap = readStore(PROJ_META_STORE_KEY, {});
+                if (pMap && pMap[delId]) {
+                    delete pMap[delId];
+                    writeStore(PROJ_META_STORE_KEY, pMap);
+                }
+                const snap = JSON.parse(localStorage.getItem("bcg.db.snapshot.v1") || "null");
+                if (snap && Array.isArray(snap.projects)) {
+                    snap.projects = snap.projects.filter(p => p.id !== delId);
+                    localStorage.setItem("bcg.db.snapshot.v1", JSON.stringify(snap));
+                }
+            } catch {}
+            saveImportedProjects();
+            if (api.configured) {
+                await api.deleteProject(delId).catch(e => console.warn("api.deleteProject xətası:", e));
+                if (typeof api.syncCloudRegistry === "function") api.syncCloudRegistry().catch(() => {});
             }
         })
     });
@@ -1788,6 +1936,9 @@ function editSegment(project, item) {
     openEditor({
         title: t(item ? "editSegment" : "addSegment"),
         isPoints,
+        customFields: Array.isArray(item?.customFields) && item.customFields.length
+            ? item.customFields
+            : (isPoints && project?.category !== "nim" ? [{ label: "", value: "" }] : []),
         values: item ? {
             code: item.id, name: item.name, point_a: item.pointA || "", point_b: item.pointB || "", start_date: item.startDate, end_date: item.endDate,
             contractor: itemExec.contractor || item.contractor || "",
@@ -1837,8 +1988,8 @@ function editSegment(project, item) {
                 ] }
             ] : []),
             ...(!isOther ? [
-                { key: "point_a", label: `📍 ${t("pointA")}`, required: true },
-                { key: "point_b", label: `📍 ${t("pointB")}`, required: true },
+                { key: "point_a", label: `📍 ${t("pointA")}`, required: !isPoints },
+                { key: "point_b", label: `📍 ${t("pointB")}`, required: !isPoints },
                 { key: "start_date", label: t("fieldStart"), type: "date" },
                 { key: "end_date", label: t("fieldEnd"), type: "date" },
                 { key: "total_km", label: isPoints ? "1. Verilən məsafə (km və ya m)" : `1. Nəzərdə tutulan (km)`, type: "number" },
@@ -1900,6 +2051,7 @@ function editSegment(project, item) {
                     }
                 }
                 item.coords = parsedCoords;
+                if (Array.isArray(row._customFields)) item.customFields = row._customFields;
             } else {
                 const col = isOther ? normalizeColorCode(row.custom_color, "#38BDF8") : "";
                 const newSeg = {
@@ -1926,6 +2078,7 @@ function editSegment(project, item) {
                     startDate: row.start_date || "",
                     endDate: row.end_date || "",
                     antennas: Number(row.antennas || 0),
+                    customFields: Array.isArray(row._customFields) ? row._customFields : [],
                     coords: parsedCoords
                 };
                 if (!project.items) project.items = [];
@@ -1946,6 +2099,7 @@ function editSegment(project, item) {
                 delete dbRow.exec_lead;
                 delete dbRow.exec_workers;
                 delete dbRow.exec_phone;
+                delete dbRow._customFields;
                 await api.saveSegment(project.id, oldCode || item?.id, {
                     ...dbRow,
                     point_a: item.pointA || "",
@@ -1953,7 +2107,13 @@ function editSegment(project, item) {
                     antennas: Number(row.antennas || 0),
                     contractor: row.contractor || null,
                     coords: parsedCoords
-                }, { pTyp: item.pointType || "", eLead: item.execLead || "", eWrk: item.execWorkers, ePhn: item.execPhone || "" });
+                }, {
+                    pTyp: item.pointType || "",
+                    eLead: item.execLead || "",
+                    eWrk: item.execWorkers,
+                    ePhn: item.execPhone || "",
+                    cf: Array.isArray(item.customFields) && item.customFields.length ? item.customFields : undefined
+                });
             } catch (e) {
                 console.warn("api.saveSegment xətası (lokal qorunur):", e);
             }
@@ -1961,9 +2121,16 @@ function editSegment(project, item) {
             if (item) state.selected = { projectId: project.id, itemId: row.code };
         },
         onDelete: item && (async () => {
+            markSegmentDeleted(project.id, item.id);
             if (project?.items) {
                 project.items = project.items.filter(r => r.id !== item.id);
             }
+            try {
+                const customList = readStore("bcg.custom.items.v1", []);
+                if (Array.isArray(customList)) {
+                    writeStore("bcg.custom.items.v1", customList.filter(x => !(x && x.projectId === project.id && x.item?.id === item.id)));
+                }
+            } catch {}
             state.selected = null;
             saveImportedProjects();
             try {
@@ -2151,11 +2318,11 @@ function editMaterial(material, presetFlow = null) {
             { key: "invoice_no", label: "📄 Qaimə №", required: true },
             { key: "note", label: "Qeyd (istəyə bağlı)", placeholder: "Məs: Baraban №4" }
         ],
-        onSave: row => {
+        onSave: async row => {
             const norm = normalizeMaterialUnitAndQty(row.qty_num, row.unit);
             const displayQty = `${norm.qty} ${norm.unit}`;
             const autoState = row.flow === "in" || row.flow === "return" ? "in_stock" : "issued";
-            return api.saveMaterial(material?.id, {
+            await api.saveMaterial(material?.id, {
                 ...row,
                 category: detectMaterialCategory(row.material, material?.category),
                 state: material?.state || autoState,
@@ -2165,8 +2332,9 @@ function editMaterial(material, presetFlow = null) {
                 issued_qty: row.flow === "out" ? displayQty : "",
                 used_qty: row.flow === "return" ? displayQty : ""
             });
+            await reloadData();
         },
-        onDelete: material && (() => api.deleteMaterial(material.id))
+        onDelete: material && (async () => { await api.deleteMaterial(material.id); await reloadData(); })
     });
     const flowSel = $("editFields")?.querySelector('select[name="flow"]');
     const projSel = $("editFields")?.querySelector('select[name="project"]');
@@ -2214,6 +2382,24 @@ async function enterSharedView(token) {
     const extras = await api.loadSharedExtras(token).catch(() => null);
     if (extras?.drawings) tools.loadShared(extras.drawings);
     if (extras?.view) map.jumpTo(extras.view);
+
+    // Paylaşılan linkdə də canlı yenilənmə aktiv olsun
+    if (api.configured && typeof api.startLiveSync === "function") {
+        api.startLiveSync(async () => {
+            try {
+                const fresh = await api.loadShared(token);
+                if (Array.isArray(fresh) && fresh.length > 0) {
+                    const known = new Set(state.projects.map(p => p.id));
+                    state.projects = fresh;
+                    fresh.forEach(p => {
+                        if (!known.has(p.id)) state.visibleIds.add(p.id);
+                    });
+                    renderAll();
+                    toast("🔄 Məlumatlar canlı yeniləndi");
+                }
+            } catch {}
+        });
+    }
 }
 
 async function renderShares() {
@@ -2928,7 +3114,7 @@ function mapStyle() {
                1) Uzaqdan (zoom < 7.2): rayon adı
                2) Orta miqyasda / uzaqlaşanda (7.2 <= zoom < 10.2): eyni rayondakı layihələr bir pəncərədə qovuşur (hər birinin öz məlumatı ilə)
                3) Yaxınlaşanda (zoom >= 10.2): pəncərələr ayrılır */
-            { id: "routes-summary-name", type: "symbol", source: "route-labels", minzoom: 3.5, maxzoom: 7.2, filter: ["has", "summaryNameImg"],
+            { id: "routes-summary-name", type: "symbol", source: "route-labels", minzoom: 3.5, maxzoom: 5.8, filter: ["has", "summaryNameImg"],
                 layout: {
                     "icon-image": ["get", "summaryNameImg"],
                     "icon-anchor": ["get", "nameAnchor"],
@@ -2939,11 +3125,11 @@ function mapStyle() {
                     "icon-ignore-placement": true
                 },
                 paint: { "icon-opacity": ["case", ["get", "dim"], 0.28, 1] } },
-            { id: "routes-summary-card-merged", type: "symbol", source: "route-labels", minzoom: 7.2, maxzoom: 10.2, filter: ["has", "mergedCardImg"],
+            { id: "routes-summary-card-merged", type: "symbol", source: "route-labels", minzoom: 5.8, maxzoom: 10.2, filter: ["has", "mergedCardImg"],
                 layout: {
                     "icon-image": ["get", "mergedCardImg"],
-                    "icon-anchor": "left",
-                    "icon-offset": [14, 0],
+                    "icon-anchor": ["get", "cardAnchor"],
+                    "icon-offset": ["get", "cardOffset"],
                     "icon-size": 0.80,
                     "icon-allow-overlap": true,
                     "icon-ignore-placement": true
@@ -3199,7 +3385,7 @@ function ensureSummaryCardImage({ name, color, shapeSymbol, folderName, antennas
     const folder = folderName || "";
     const sym = shapeSymbol || "";
     const antLabel = formatPointAntLabel(antennas, pointType);
-    const key = `sumcard_v8:${light ? "l" : "d"}:${color}:${sym}:${name}:${folder}:${antLabel}:${doneM}:${totalM}:${pct}:${contractor}`;
+    const key = `sumcard_v9:${light ? "l" : "d"}:${color}:${sym}:${name}:${folder}:${antLabel}:${doneM}:${totalM}:${pct}:${contractor}`;
     if (map.hasImage(key)) return key;
 
     const ratio = 2;
@@ -3237,8 +3423,11 @@ function ensureSummaryCardImage({ name, color, shapeSymbol, folderName, antennas
     ctx.lineTo(r, H); ctx.quadraticCurveTo(0, H, 0, H - r);
     ctx.lineTo(0, r); ctx.quadraticCurveTo(0, 0, r, 0);
     ctx.closePath();
-    ctx.fillStyle = light ? "rgba(255,255,255,0.96)" : "rgba(10,16,28,0.90)";
+    ctx.fillStyle = light ? "rgba(255,255,255,0.96)" : "rgba(11,18,32,0.95)";
     ctx.fill();
+    ctx.lineWidth = 1.2;
+    ctx.strokeStyle = light ? "rgba(15,23,42,0.18)" : "rgba(226,232,240,0.45)";
+    ctx.stroke();
     ctx.save();
     ctx.clip();
     ctx.fillStyle = color;
@@ -3246,9 +3435,9 @@ function ensureSummaryCardImage({ name, color, shapeSymbol, folderName, antennas
     ctx.restore();
 
     const x0 = stripe + padX;
-    const mainColor = light ? "#0F172A" : "#FFFFFF";
-    const subColor = light ? "#475569" : "#94A3B8";
-    const folderColor = light ? "#334155" : "#CBD5E1";
+    const mainColor = light ? "#0F172A" : "#F8FAFC";
+    const subColor = light ? "#475569" : "#CBD5E1";
+    const folderColor = light ? "#334155" : "#E2E8F0";
     ctx.textBaseline = "middle";
     ctx.textAlign = "left";
     let y = padY;
@@ -4139,12 +4328,40 @@ function drawRoutes() {
     // Rayon nöqtə layihələrinin qruplaşdırılması:
     // - Uzaqlaşanda (zoom < 10.2): eyni rayondakı nöqtə layihələri bir pəncərədə qovuşur (hər birinin öz məlumatı qalır)
     // - Yaxınlaşanda (zoom >= 10.2): nöqtələr və pəncərələri sağa-sola ayrılır və məsafələr metr (m) ilə göstərilir
-    Object.values(pointSlots).forEach(grp => {
+    // Yaxın nöqtələrin kartları üst-üstə düşməsin deyə coğrafi yaxınlığa görə künclərə (yuxarı / aşağı) payla
+    const CORNER_SLOTS = [
+        { anchor: "bottom-left", offset: [10, -8] },   // Yuxarı sağ künc
+        { anchor: "top-left", offset: [10, 8] },       // Aşağı sağ künc
+        { anchor: "bottom-right", offset: [-10, -8] }, // Yuxarı sol künc
+        { anchor: "top-right", offset: [-10, 8] }      // Aşağı sol künc
+    ];
+    const groupList = Object.values(pointSlots).filter(g => g.entries.length > 0).map(g => ({
+        ...g,
+        centerLat: g.latSum / g.entries.length,
+        centerLng: g.lngSum / g.entries.length,
+        cornerIdx: 0
+    })).sort((a, b) => b.centerLat - a.centerLat || a.centerLng - b.centerLng);
+
+    for (let i = 0; i < groupList.length; i++) {
+        const usedSlots = new Set();
+        for (let j = 0; j < i; j++) {
+            const dLat = Math.abs(groupList[i].centerLat - groupList[j].centerLat);
+            const dLng = Math.abs(groupList[i].centerLng - groupList[j].centerLng);
+            if (dLat < 0.26 && dLng < 0.48) {
+                usedSlots.add(groupList[j].cornerIdx);
+            }
+        }
+        let chosen = 0;
+        while (usedSlots.has(chosen) && chosen < CORNER_SLOTS.length - 1) chosen++;
+        if (usedSlots.has(chosen)) chosen = i % CORNER_SLOTS.length;
+        groupList[i].cornerIdx = chosen;
+    }
+
+    groupList.forEach(grp => {
         const n = grp.entries.length;
-        if (n === 0) return;
-        const centerLat = grp.latSum / n;
-        const centerLng = grp.lngSum / n;
+        const { centerLat, centerLng } = grp;
         const first = grp.entries[0];
+        const grpCorner = CORNER_SLOTS[grp.cornerIdx] || CORNER_SLOTS[0];
 
         const mergedTip = n > 1
             ? `<b>📍 ${esc(grp.rayonName)}</b><br>` + grp.entries.map(e =>
@@ -4194,8 +4411,8 @@ function drawRoutes() {
                 projectId: first.project.id,
                 itemId: first.r.id,
                 tip: mergedTip,
-                cardAnchor: "left",
-                cardOffset: [n > 1 ? 18 : 14, 0],
+                cardAnchor: grpCorner.anchor,
+                cardOffset: grpCorner.offset,
                 nameAnchor: "top",
                 nameOffset: [0, 10],
                 summaryNameImg: ensureSummaryNameImage(grp.rayonName, first.stColor),
@@ -4230,34 +4447,29 @@ function drawRoutes() {
                 }
             });
 
-            // 2) Yaxın miqyas (zoom >= 10.2) üçün ayrılmış nöqtələr və əks tərəflərə açılan fərdi kartlar
+            // 2) Yaxın miqyas (zoom >= 10.2) üçün ayrılmış nöqtələr və künclərə açılan fərdi kartlar
             let splitLng = e.lng;
             let splitLat = e.lat;
-            let cardAnchor = "left";
-            let cardOffset = [14, 0];
+            let cardAnchor = grpCorner.anchor;
+            let cardOffset = grpCorner.offset;
 
             if (n >= 2) {
+                const slot = CORNER_SLOTS[idx % CORNER_SLOTS.length];
+                cardAnchor = slot.anchor;
+                cardOffset = slot.offset;
                 if (idx === 0) {
-                    splitLng = centerLng - 0.013;
-                    splitLat = centerLat;
-                    cardAnchor = "right";
-                    cardOffset = [-14, 0];
+                    splitLng = centerLng - 0.008;
+                    splitLat = centerLat + 0.006;
                 } else if (idx === 1) {
-                    splitLng = centerLng + 0.013;
-                    splitLat = centerLat;
-                    cardAnchor = "left";
-                    cardOffset = [14, 0];
+                    splitLng = centerLng + 0.008;
+                    splitLat = centerLat - 0.006;
                 } else if (idx === 2) {
-                    splitLng = centerLng;
-                    splitLat = centerLat + 0.011;
-                    cardAnchor = "bottom";
-                    cardOffset = [0, -14];
+                    splitLng = centerLng - 0.008;
+                    splitLat = centerLat - 0.006;
                 } else {
                     const angle = (idx * 60) * (Math.PI / 180);
-                    splitLng = centerLng + Math.cos(angle) * 0.016;
-                    splitLat = centerLat + Math.sin(angle) * 0.012;
-                    cardAnchor = Math.cos(angle) >= 0 ? "left" : "right";
-                    cardOffset = [Math.cos(angle) >= 0 ? 14 : -14, 0];
+                    splitLng = centerLng + Math.cos(angle) * 0.012;
+                    splitLat = centerLat + Math.sin(angle) * 0.009;
                 }
             }
 
@@ -4592,8 +4804,8 @@ function renderChips() {
     const count = key => showDashes ? "-" : (key === "all" ? items.length : items.filter(r => r.status === key).length);
     const chips = [{ key: "all", label: t("filterAll") }, ...STATUSES.map(s => ({ key: s, label: t(`status${s}`), color: STATUS_COLORS[s] }))];
     $("statusChips").innerHTML = chips.map(c => `
-        <button class="chip ${state.statusFilter === c.key ? "active" : ""}" data-status="${c.key}">
-            ${c.color ? `<span class="dot" style="background:${c.color}"></span>` : ""}${c.label} <b>${count(c.key)}</b>
+        <button class="chip ${state.statusFilter === c.key ? "active" : ""}" data-status="${c.key}" title="${esc(c.label)}">
+            ${c.color ? `<span class="dot" style="background:${c.color}"></span>` : `${esc(c.label)} `}<b>${count(c.key)}</b>
         </button>
     `).join("");
 }
@@ -4660,8 +4872,11 @@ function renderProjects() {
     if ($("listHeadTitle")) {
         $("listHeadTitle").innerHTML = activeOrder.length === 1
             ? folderMeta[activeOrder[0]].title
-            : "Seçilmiş qovluqlar";
+            : "Layihələr";
     }
+    if ($("addProjectBtn")) { $("addProjectBtn").textContent = "+ Yeni"; $("addProjectBtn").title = t("addProject"); }
+    if ($("showAllBtn")) { $("showAllBtn").textContent = "Göstər"; $("showAllBtn").title = t("showAll"); }
+    if ($("hideAllBtn")) { $("hideAllBtn").textContent = "Gizlət"; $("hideAllBtn").title = t("hideAll"); }
 
     const showGroupHead = activeOrder.length > 1;
     const filtering = state.statusFilter !== "all" || state.query;
@@ -5090,6 +5305,7 @@ function renderDetail() {
             <dl class="spec">
                 ${row(t("thContractor"), esc(r.contractor || t("notAssigned")))}
                 ${info ? row(t("workers"), info.workers) + row(t("machinery"), info.machinery) + row(t("engineer"), esc(info.engineer)) : ""}
+                ${Array.isArray(r.customFields) ? r.customFields.filter(cf => cf && (cf.label || cf.value)).map(cf => row(esc(cf.label || "Məlumat"), esc(cf.value || "—"))).join("") : ""}
             </dl>`)}
             <button class="btn btn-outline" data-action="zoom"><i class="fa-solid fa-crosshairs"></i> ${t("zoomTo")}</button>
             ${isAdmin() ? `<button class="btn btn-primary" data-action="edit"><i class="fa-solid fa-pen"></i> ${t("editSegment")}</button>` : ""}
@@ -6102,7 +6318,7 @@ function bindEvents() {
         fileInput.value = "";
     });
     $("importFile").addEventListener("change", handleImport);
-    $("noteForm").addEventListener("submit", addNote);
+    $("noteForm").addEventListener("submit", e => window.addNote(e));
     $("notesList").addEventListener("click", e => {
         const button = e.target.closest("[data-id]");
         if (button) deleteNote(Number(button.dataset.id));
@@ -6572,7 +6788,7 @@ document.addEventListener("DOMContentLoaded", init);
                     </div>
                     <button class="icon-btn" type="button" data-mm-close title="Bağla"><i class="fa-solid fa-xmark"></i></button>
                 </div>
-                <form id="mmForm" class="edit-form">
+                <form id="mmForm" class="edit-form" novalidate>
                     <div class="edit-fields" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
                         <label class="wide" style="grid-column:1 / -1">
                             <span>Aktiv qovluqdakı Layihəni seçin *</span>
@@ -6635,6 +6851,13 @@ document.addEventListener("DOMContentLoaded", init);
                             <span>Xəritədə seçilmiş koordinatlar</span>
                             <textarea class="input mono" id="mmCoordsText" rows="3" required></textarea>
                         </label>
+                        <div class="wide cf-editor" id="mmCustomFieldsWrap" style="grid-column:1 / -1">
+                            <div class="cf-head">
+                                <span>📝 Sərbəst başlıqlar (öz məlumatlarınız)</span>
+                                <button type="button" class="link" id="mmAddCfBtn">+ Yeni başlıq əlavə et</button>
+                            </div>
+                            <div class="cf-rows" id="mmCfRows"></div>
+                        </div>
                     </div>
                     <p class="form-error" id="mmFormError" role="alert"></p>
                     <div class="edit-actions">
@@ -6649,6 +6872,20 @@ document.addEventListener("DOMContentLoaded", init);
             modal.addEventListener("click", e => {
                 if (e.target === modal || e.target.closest("[data-mm-close]")) {
                     modal.close();
+                    return;
+                }
+                if (e.target.closest("#mmAddCfBtn")) {
+                    const rowsEl = $("mmCfRows");
+                    if (!rowsEl) return;
+                    const row = document.createElement("div");
+                    row.className = "cf-row";
+                    row.innerHTML = `<input type="text" class="input cf-lbl" placeholder="Başlıq (özünüz yazın)…"><input type="text" class="input cf-val" placeholder="Məlumat / Dəyər…"><button type="button" class="icon-btn small cf-del" title="Sil"><i class="fa-solid fa-xmark"></i></button>`;
+                    rowsEl.appendChild(row);
+                    row.querySelector(".cf-lbl")?.focus();
+                    return;
+                }
+                if (e.target.closest(".cf-del")) {
+                    e.target.closest(".cf-row")?.remove();
                 }
             });
             $("mmBackToMapBtn")?.addEventListener("click", () => {
@@ -7523,6 +7760,11 @@ document.addEventListener("DOMContentLoaded", init);
         $("mmDoneVal").value = 0;
         $("mmCoordsText").value = mmCreateState.coords.map(c => `${c[0]}, ${c[1]}`).join("\n");
         $("mmFormError").textContent = "";
+        if ($("mmCfRows")) {
+            $("mmCfRows").innerHTML = mmCreateState.mode === "point"
+                ? `<div class="cf-row"><input type="text" class="input cf-lbl" placeholder="Başlıq (özünüz yazın)…"><input type="text" class="input cf-val" placeholder="Məlumat / Dəyər…"><button type="button" class="icon-btn small cf-del" title="Sil"><i class="fa-solid fa-xmark"></i></button></div>`
+                : "";
+        }
 
         syncMmFormForProject();
         $("mapMarkerModal")?.showModal();
@@ -7541,6 +7783,10 @@ document.addEventListener("DOMContentLoaded", init);
         const planVal = Math.max(0, Number($("mmPlanVal").value) || 0);
         const doneVal = Math.max(0, Number($("mmDoneVal").value) || 0);
         const antennas = Math.max(0, Number($("mmAntennasVal").value) || 0);
+        const customFields = [...document.querySelectorAll("#mmCfRows .cf-row")].map(r => ({
+            label: r.querySelector(".cf-lbl")?.value.trim() || "",
+            value: r.querySelector(".cf-val")?.value.trim() || ""
+        })).filter(x => x.label || x.value);
 
         if (!itemName) {
             $("mmFormError").textContent = "Adı (Name) daxil edin";
@@ -7583,7 +7829,11 @@ document.addEventListener("DOMContentLoaded", init);
             state.activeFolders.add(activeCat);
         }
 
-        if (!targetProj) return;
+        if (!targetProj) {
+            $("mmFormError").textContent = "Layihə seçilməyib";
+            return;
+        }
+        if (!Array.isArray(targetProj.items)) targetProj.items = [];
 
         const newItemId = `${mmCreateState.mode === "point" ? "PT" : "LN"}-${Date.now().toString().slice(-4)}`;
         const fiberCount = normalizeFiberCount($("mmFiberSelect")?.value || "FO 48");
@@ -7607,6 +7857,7 @@ document.addEventListener("DOMContentLoaded", init);
             closures: 0,
             manholes: 0,
             antennas: mmCreateState.mode === "point" ? Math.max(1, antennas) : antennas,
+            customFields,
             coords
         };
 
@@ -7626,25 +7877,11 @@ document.addEventListener("DOMContentLoaded", init);
         });
         writeStore(CUSTOM_ITEMS_STORE_KEY, savedList);
 
-        // Supabase aktivdirsə bazaya da göndər
-        if (api.configured) {
-            try {
-                await api.saveSegment(targetProj.id, null, {
-                    code: newItem.id,
-                    name: newItem.name,
-                    point_a: newItem.pointA,
-                    point_b: newItem.pointB,
-                    start_date: newItem.startDate,
-                    end_date: null,
-                    contractor: newItem.contractor,
-                    total_km: newItem.totalKm,
-                    done_km: newItem.doneKm,
-                    status: newItem.status,
-                    antennas: newItem.antennas,
-                    coords: newItem.coords
-                });
-            } catch { /* lokal olaraq saxlanılıb */ }
-        }
+        // Pəncərəni DƏRHAL bağla və xəritədə göstər (şəbəkə gözləmədən!)
+        $("mapMarkerModal")?.close();
+        cancelMapMarkerCreate(true);
+        selectSegment(targetProj, newItem);
+        toast(`✅ "${newItem.name}" layihəyə (${targetProj.name}) əlavə olundu!`);
 
         recordAuditLog(
             mmCreateState.mode === "point" ? "Yeni Nöqtə Əlavəsi" : "Yeni Xətt Əlavəsi",
@@ -7653,10 +7890,34 @@ document.addEventListener("DOMContentLoaded", init);
             `Status: ${t("status" + newItem.status)} · Plan: ${newItem.totalKm} / Faktiki: ${newItem.doneKm}`
         );
 
-        $("mapMarkerModal")?.close();
-        cancelMapMarkerCreate(true);
-        selectSegment(targetProj, newItem);
-        toast(`✅ "${newItem.name}" layihəyə (${targetProj.name}) əlavə olundu!`);
+        // Supabase aktivdirsə arxa fonda bazaya yaz
+        if (api.configured) {
+            (async () => {
+                try {
+                    if (newProjectMeta) {
+                        await api.saveProjectRow(targetProj.id, {
+                            name: targetProj.name,
+                            status: targetProj.status || "layihe",
+                            project_type: targetProj.type || "points"
+                        });
+                    }
+                    await api.saveSegment(targetProj.id, null, {
+                        code: newItem.id,
+                        name: newItem.name,
+                        point_a: newItem.pointA,
+                        point_b: newItem.pointB,
+                        start_date: newItem.startDate,
+                        end_date: null,
+                        contractor: newItem.contractor,
+                        total_km: newItem.totalKm,
+                        done_km: newItem.doneKm,
+                        status: newItem.status,
+                        antennas: newItem.antennas,
+                        coords: newItem.coords
+                    }, customFields.length ? { cf: customFields } : null);
+                } catch {}
+            })();
+        }
     }
 
     window.handleMapMarkerClick = handleMapMarkerClick;
@@ -7778,7 +8039,7 @@ document.addEventListener("DOMContentLoaded", init);
 
         const entry = selectedEntry();
         const proj = entry ? entry.project : state.projects.find(p => p.id === activeProjectId);
-        if (!proj) {
+        if (!proj || !state.visibleIds.has(proj.id) || !state.activeFolders.has(proj.category || "project")) {
             card.hidden = true;
             return;
         }
@@ -8010,6 +8271,10 @@ document.addEventListener("DOMContentLoaded", init);
                                         ${executorOptionsHtml(r.contractor, r)}
                                     </div>` : ""}
                                     ${renderExecDetailBlockHtml(r, proj, Boolean(entry))}
+                                    ${Array.isArray(r.customFields) && r.customFields.some(cf => cf && (cf.label || cf.value)) ? `
+                                    <dl class="info-kv" style="margin-top:4px">
+                                        ${r.customFields.filter(cf => cf && (cf.label || cf.value)).map(cf => `<dt>${esc(cf.label || "Məlumat")}</dt><dd>${esc(cf.value || "—")}</dd>`).join("")}
+                                    </dl>` : ""}
                                 </div>
                             `;
                         }).join("")}
@@ -8086,6 +8351,10 @@ document.addEventListener("DOMContentLoaded", init);
                                         </select>
                                     </div>` : ""}
                                     ${!isLifSeg ? renderExecDetailBlockHtml(r, proj) : ""}
+                                    ${Array.isArray(r.customFields) && r.customFields.some(cf => cf && (cf.label || cf.value)) ? `
+                                    <dl class="info-kv" style="margin-top:4px">
+                                        ${r.customFields.filter(cf => cf && (cf.label || cf.value)).map(cf => `<dt>${esc(cf.label || "Məlumat")}</dt><dd>${esc(cf.value || "—")}</dd>`).join("")}
+                                    </dl>` : ""}
                                     <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;font-size:11px;color:var(--ink-2)">
                                         <span class="muted">${!isLifSeg && !r.contractor && isAdmin() ? `<a href="admin.html#contractors" target="_blank" style="color:#38BDF8;text-decoration:none">⚙️ Admin Paneldə İcraçı əlavə et</a>` : ""}</span>
                                         ${isAdmin() ? `<div style="display:flex;gap:4px">
@@ -8497,6 +8766,7 @@ document.addEventListener("DOMContentLoaded", init);
     window.renderAll = function () {
         ensureDefaultNimAndAzconnect();
         applySavedCustomItems();
+        purgeDeletedFromState();
         applySavedGeomOverrides();
         applySavedMetaOverrides();
         if ($("mapMarkerDock")) $("mapMarkerDock").hidden = !isAdmin();
@@ -8673,8 +8943,15 @@ document.addEventListener("DOMContentLoaded", init);
             const projId = projEl.dataset.id;
             const btn = e.target.closest("[data-action]");
             if (btn && (btn.dataset.action === "expand" || btn.dataset.action === "toggle")) {
-                activeProjectId = projId;
-                window.__activeProjectId = projId;
+                const projObj = state.projects.find(p => p.id === projId);
+                const isProjVisible = Boolean(projObj && state.visibleIds.has(projId) && state.activeFolders.has(projObj.category || "project"));
+                if (isProjVisible) {
+                    activeProjectId = projId;
+                    window.__activeProjectId = projId;
+                } else {
+                    activeProjectId = null;
+                    window.__activeProjectId = null;
+                }
                 state.selected = null;
                 renderInfoCard();
                 renderChips();
@@ -8874,9 +9151,13 @@ document.addEventListener("DOMContentLoaded", init);
     window.renderNotes = function () {
         populateNoteRecipients();
         const now = Date.now();
-        const myEmail = state.user?.email;
+        const myEmail = String(state.user?.email || "").trim().toLowerCase();
         const active = state.notes.filter(n => !n.expiresAt || new Date(n.expiresAt).getTime() > now);
-        const visibleForMe = active.filter(n => isAdmin() || !n.recipient || n.recipient === "all" || n.recipient === myEmail || n.author === myEmail);
+        const visibleForMe = active.filter(n => {
+            const rec = String(n.recipient || "all").trim().toLowerCase();
+            const auth = String(n.author || "").trim().toLowerCase();
+            return isAdmin() || !rec || rec === "all" || (myEmail && (rec === myEmail || auth === myEmail));
+        });
 
         $("notesList").innerHTML = visibleForMe.length === 0
             ? `<div class="empty">${t("notesEmpty")}</div>`
@@ -8892,13 +9173,16 @@ document.addEventListener("DOMContentLoaded", init);
                             </div>
                             <p>${esc(n.text)}<small>${esc(n.author)} · ${new Date(n.date).toLocaleString(state.lang)}</small></p>
                         </div>
-                        ${isAdmin() || n.userId === state.user?.id ? `<button class="icon-btn small" data-id="${n.id}" title="${t("delete")}"><i class="fa-solid fa-trash"></i></button>` : ""}
+                        ${isAdmin() || n.userId === state.user?.id || (myEmail && String(n.author || "").trim().toLowerCase() === myEmail) ? `<button class="icon-btn small" data-id="${n.id}" title="${t("delete")}"><i class="fa-solid fa-trash"></i></button>` : ""}
                     </div>`;
             }).join("");
         $("notesCount").hidden = visibleForMe.length === 0;
         $("notesCount").textContent = visibleForMe.length;
 
-        const incoming = visibleForMe.find(n => (n.recipient === myEmail || n.recipient === "all") && !notifiedIds.has(n.id));
+        const incoming = visibleForMe.find(n => {
+            const rec = String(n.recipient || "all").trim().toLowerCase();
+            return ((myEmail && rec === myEmail) || rec === "all") && !notifiedIds.has(n.id);
+        });
         if (incoming && myEmail) {
             visibleForMe.forEach(n => notifiedIds.add(n.id));
             showNoteNotification(incoming);

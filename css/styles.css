@@ -1373,8 +1373,14 @@ body.shared .user, body.shared #logoutBtn, body.shared .bar-sep, body.shared .ta
 .fo-status-coupler { display: none !important; }
 
 /* Daha dar sol panel üçün yığcam sətirlər (Masaüstü) */
-.filters { padding: 10px 12px; }
-.list-head { padding: 10px 12px 6px; }
+.filters { padding: 6px 10px; }
+#statusChips { flex-wrap: nowrap; justify-content: space-between; gap: 4px; }
+#statusChips .chip { flex: 1; justify-content: center; height: 24px; padding: 0 5px; font-size: 11px; min-width: 0; }
+#statusChips .chip .dot { width: 9px; height: 9px; }
+.list-head { padding: 5px 10px 4px; gap: 4px; flex-wrap: nowrap; }
+.list-head h2 { font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.list-head > span { display: inline-flex; align-items: center; gap: 6px; flex: none; white-space: nowrap; }
+.list-head .link + .link { margin-left: 0; }
 .project-row { padding: 7px 6px 7px 12px; gap: 6px; }
 .segments { padding: 0 6px 8px 24px; }
 .chip { padding: 0 6px; font-size: 11.5px; }
@@ -1698,6 +1704,37 @@ body.shared .user, body.shared #logoutBtn, body.shared .bar-sep, body.shared .ta
 .project.fiber-linked.hidden-on-map::after {
     opacity: 0.22;
     box-shadow: none;
+}
+
+/* === Sərbəst başlıqlar (öz məlumatlarınız) redaktoru === */
+.cf-editor {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px;
+    border-radius: var(--radius);
+    background: var(--canvas);
+    border: 1px dashed var(--line-strong);
+}
+.cf-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--ink-2);
+}
+.cf-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.cf-row {
+    display: grid;
+    grid-template-columns: 1fr 1.2fr auto;
+    gap: 6px;
+    align-items: center;
 }
 
 
