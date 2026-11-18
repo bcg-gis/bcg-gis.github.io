@@ -395,7 +395,6 @@
         </div>
         <div class="top-actions">
             <span class="pill green"><i class="fa-solid fa-circle-check"></i> Sistem Aktivdir</span>
-            <a href="bcg_tam_onbaxis.html" class="btn"><i class="fa-solid fa-map-location-dot"></i> Önbaxış Xəritəsinə qayıt</a>
             <a href="index.html" class="btn btn-primary"><i class="fa-solid fa-earth-americas"></i> Əsas Xəritəni aç</a>
         </div>
     </header>
@@ -424,28 +423,28 @@
             <div class="kpi-grid" style="margin-bottom:16px">
                 <div class="kpi-card">
                     <div class="kpi-head"><span>Cəmi Qovluq / Kateqoriya</span><i class="fa-solid fa-folder-tree" style="color:var(--brand)"></i></div>
-                    <div class="kpi-val">4 Qovluq</div>
-                    <div class="kpi-sub">🏢 BCG · 🚦 NİM · 🌐 Azconnect · 🗂️ Digər</div>
+                    <div class="kpi-val" id="kpiFoldersVal">4 Qovluq</div>
+                    <div class="kpi-sub">🏢 BCG · 🚦 NİİM · 🌐 Azərconnect · 🗂️ Digər</div>
                 </div>
                 <div class="kpi-card">
                     <div class="kpi-head"><span>Ümumi Optik Şəbəkə</span><i class="fa-solid fa-route" style="color:var(--green)"></i></div>
-                    <div class="kpi-val">542.4 km</div>
-                    <div class="kpi-sub">Faktiki çəkilən: <b style="color:var(--green)">348.9 km (64%)</b></div>
+                    <div class="kpi-val" id="kpiTotalKmVal">— km</div>
+                    <div class="kpi-sub" id="kpiTotalKmSub">Faktiki çəkilən: <b style="color:var(--green)">— km</b></div>
                 </div>
                 <div class="kpi-card">
-                    <div class="kpi-head"><span>🚦 NİM Svetofor / Kəsişmə</span><i class="fa-solid fa-traffic-light" style="color:var(--amber)"></i></div>
-                    <div class="kpi-val">18 Kəsişmə</div>
-                    <div class="kpi-sub">11 Bitmiş · 5 İcrada · 2 Layihə</div>
+                    <div class="kpi-head"><span>🚦 NİİM Svetofor / Kəsişmə</span><i class="fa-solid fa-traffic-light" style="color:var(--amber)"></i></div>
+                    <div class="kpi-val" id="kpiNimVal">— Kəsişmə</div>
+                    <div class="kpi-sub" id="kpiNimSub">— Bitmiş · — İcrada · — Layihə</div>
                 </div>
                 <div class="kpi-card">
-                    <div class="kpi-head"><span>🌐 Azconnect Magistral Xətlər</span><i class="fa-solid fa-network-wired" style="color:var(--cyan)"></i></div>
-                    <div class="kpi-val">126.5 km</div>
-                    <div class="kpi-sub">5 aktiv xətt marşrutu</div>
+                    <div class="kpi-head"><span>🌐 Azərconnect Magistral Xətlər</span><i class="fa-solid fa-network-wired" style="color:var(--cyan)"></i></div>
+                    <div class="kpi-val" id="kpiAzcVal">— km</div>
+                    <div class="kpi-sub" id="kpiAzcSub">Aktiv xətt marşrutları</div>
                 </div>
                 <div class="kpi-card">
                     <div class="kpi-head"><span>Bu gün sayta giriş və əməliyyat</span><i class="fa-solid fa-user-clock" style="color:var(--purple)"></i></div>
-                    <div class="kpi-val" id="kpiTodayActions">24 əməliyyat</div>
-                    <div class="kpi-sub" id="kpiActiveUsers">Aktiv istifadəçilər: 5 nəfər</div>
+                    <div class="kpi-val" id="kpiTodayActions">0 əməliyyat</div>
+                    <div class="kpi-sub" id="kpiActiveUsers">Aktiv istifadəçilər: 1 nəfər</div>
                 </div>
                 <div class="kpi-card" style="border-color:rgba(56,189,248,0.3)">
                     <div class="kpi-head"><span>⚡ Sistem Keşi & Brauzer Yaddaşı</span><i class="fa-solid fa-microchip" style="color:var(--brand)"></i></div>
@@ -466,22 +465,22 @@
                     <div class="folder-summary-grid">
                         <div class="folder-box">
                             <strong><span>🏢 BCG</span> <span class="pill green">Aktiv</span></strong>
-                            <div style="color:var(--ink-2)">Magistral və Antena layihələri (Gəncə-Qazax, Bakı-Şamaxı, Bakı-Quba, Cənub və Qərb antena layihələri)</div>
+                            <div style="color:var(--ink-2)">Magistral və Nöqtə layihələri (Gəncə-Qazax, Bakı-Şamaxı, Bakı-Quba, Cənub və Qərb nöqtə layihələri)</div>
                             <small style="color:var(--ink-3)">Status çipləri və icra faizi hesablanır</small>
                         </div>
                         <div class="folder-box">
-                            <strong><span>🚦 NİM (Svetofor / Kəsişmə)</span> <span class="pill amber">Nöqtə + Status</span></strong>
+                            <strong><span>🚦 NİİM (Svetofor / Kəsişmə)</span> <span class="pill amber">Nöqtə + Status</span></strong>
                             <div style="color:var(--ink-2)">Kəsişmələrdə svetofor nöqtələri. Xəritədə nöqtənin üzərində birbaşa <b>adı və statusu</b> göstərilir.</div>
-                            <small style="color:var(--ink-3)">Nümunə: 20 Yanvar dairəsi, Тбилиси pr. – Həsən Əliyev kəsişməsi və s.</small>
+                            <small style="color:var(--ink-3)">Nümunə: 20 Yanvar dairəsi, Tbilisi pr. – Həsən Əliyev kəsişməsi və s.</small>
                         </div>
                         <div class="folder-box">
-                            <strong><span>🌐 Azconnect</span> <span class="pill cyan">Yalnız Xətlər</span></strong>
+                            <strong><span>🌐 Azərconnect</span> <span class="pill cyan">Yalnız Xətlər</span></strong>
                             <div style="color:var(--ink-2)">Yalnız optik magistral və paylayıcı xətlər (Plan / Faktiki km, İcraçı və status rəngi ilə).</div>
-                            <small style="color:var(--ink-3)">Nümunə: Azconnect Bakı–Sumqayıt, Xırdalan–Masazır, Ələt–Şirvan xətləri</small>
+                            <small style="color:var(--ink-3)">Nümunə: Azərconnect Bakı–Sumqayıt, Xırdalan–Masazır, Ələt–Şirvan xətləri</small>
                         </div>
                         <div class="folder-box">
                             <strong><span>🗂️ Digər</span> <span class="pill purple">Köməkçi Qatlar</span></strong>
-                            <div style="color:var(--ink-2)">RM-lər, Dendrologiya bağı və istifadəçilərin yüklədiyi köməkçi KMZ/KML fayllar.</div>
+                            <div style="color:var(--ink-2)">RM-lər, rayon sərhədləri və istifadəçilərin yüklədiyi köməkçi KMZ/KML fayllar.</div>
                             <small style="color:var(--ink-3)">Üzərinə gələndə yalnız öz adı göstərilir</small>
                         </div>
                     </div>
@@ -519,7 +518,6 @@
                 <div class="card-head">
                     <h2><i class="fa-solid fa-user-check" style="color:var(--green)"></i> Giriş Tarixçəsi və İstifadəçi Fəaliyyət Jurnalı (Audit Log)</h2>
                     <div style="display:flex;gap:8px">
-                        <button class="btn" id="addTestLogBtn"><i class="fa-solid fa-plus"></i> Simulyasiya Qeydi Əlavə Et</button>
                         <button class="btn btn-primary" id="exportLogsCsvBtn"><i class="fa-solid fa-file-csv"></i> Excel / CSV Yüklə</button>
                     </div>
                 </div>
@@ -527,7 +525,7 @@
                     <div class="filter-bar">
                         <label>
                             <span>Axtarış (İstifadəçi, layihə, əməliyyat):</span>
-                            <input class="input" type="search" id="logSearch" placeholder="Məs: rashad@bcg.az, NİM, Azconnect, status...">
+                            <input class="input" type="search" id="logSearch" placeholder="Məs: turan.bagirov@bcg.az, NİİM, Azərconnect, status...">
                         </label>
                         <label>
                             <span>İstifadəçi:</span>
@@ -539,8 +537,8 @@
                                 <option value="all">Bütün əməliyyatlar</option>
                                 <option value="login">🔐 Sayta Giriş / Çıxış</option>
                                 <option value="status">🔄 Status və İcra Dəyişikliyi</option>
-                                <option value="nim">🚦 NİM Svetofor / Kəsişmə İşi</option>
-                                <option value="azconnect">🌐 Azconnect Xətt İşi</option>
+                                <option value="nim">🚦 NİİM Svetofor / Kəsişmə İşi</option>
+                                <option value="azconnect">🌐 Azərconnect Xətt İşi</option>
                                 <option value="import">📂 KMZ / KML İdxalı</option>
                                 <option value="material">📄 Anbar Qaiməsi / Material</option>
                                 <option value="note">📌 Xəritə Qeydi / Çizim</option>
@@ -686,15 +684,30 @@
     </main>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js" crossorigin="anonymous"></script>
-    <script src="js/config.js?v=20261116i"></script>
-    <script src="js/api.js?v=20261116i"></script>
+    <script src="js/config.js?v=20261118l"></script>
+    <script src="js/api.js?v=20261118l"></script>
     <script>
         const USERS_KEY = "bcg.admin.users.v1";
+        const DELETED_USERS_KEY = "bcg.deleted.users.v1";
         const LOGS_KEY = "bcg.audit.logs.v1";
         const CONTRACTORS_KEY = "bcg.admin.contractors.v2";
+        const LEGACY_TEMPLATE_EMAILS = new Set(["admin@bcg.az", "rashad@bcg.az", "elvin@bcg.az", "orxan@bcg.az", "kamran@bcg.az"]);
         let editingContractorKey = null;
         const $ = id => document.getElementById(id);
         const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+        function getDeletedUsersSet() {
+            try {
+                const raw = JSON.parse(localStorage.getItem(DELETED_USERS_KEY) || "[]");
+                return new Set(Array.isArray(raw) ? raw.map(e => String(e).trim().toLowerCase()) : []);
+            } catch {
+                return new Set();
+            }
+        }
+
+        function saveDeletedUsersSet(set) {
+            localStorage.setItem(DELETED_USERS_KEY, JSON.stringify([...set]));
+        }
 
         function getContractors() {
             try {
@@ -722,33 +735,39 @@
         }
 
         function defaultUsers() {
+            const delSet = getDeletedUsersSet();
+            if (delSet.has("turan.bagirov@bcg.az")) return [];
             return [
-                { id: 1, name: "Bağır (Baş Admin)", email: "admin@bcg.az", role: "admin", authMode: "🔑 Şifrə + Email", lastLogin: "04.11.2026 22:28", lastAction: "Admin panelini və NİM/Azconnect qovluqlarını yoxladı" },
-                { id: 2, name: "Rəşad Məmmədov", email: "rashad@bcg.az", role: "editor", authMode: "📧 Email kodu ilə (OTP)", lastLogin: "04.11.2026 21:45", lastAction: "🚦 NİM — 20 Yanvar kəsişməsi svetofor statusunu 'İcrada' etdi" },
-                { id: 3, name: "Elvin Hüseynov", email: "elvin@bcg.az", role: "editor", authMode: "🔑 Şifrə (Bcg#2026)", lastLogin: "04.11.2026 20:15", lastAction: "🌐 Azconnect — Bakı-Sumqayıt magistral xəttində 4.2 km faktiki iş daxil etdi" },
-                { id: 4, name: "Orxan Quliyev", email: "orxan@bcg.az", role: "viewer", authMode: "📧 Email kodu ilə (OTP)", lastLogin: "04.11.2026 18:30", lastAction: "🗂️ Digər bölməsinə 'RM_Merkez_2026.kmz' faylını yüklədi" },
-                { id: 5, name: "Kamran Əliyev", email: "kamran@bcg.az", role: "editor", authMode: "🔑 Şifrə (Kam#901)", lastLogin: "04.11.2026 16:10", lastAction: "📁 Layihələr — Qax antena sahəsində 1,500 m icra qeyd etdi" }
+                { id: 1, name: "Turan Bağırov (Admin)", email: "turan.bagirov@bcg.az", role: "admin", authMode: "🔑 Şifrə + Email", lastLogin: "Aktiv sessiya", lastAction: "Sistemin idarəetməsi", customAdded: true }
             ];
         }
 
         function defaultLogs() {
+            const now = new Date();
+            const pad = n => String(n).padStart(2, "0");
+            const timeStr = `${pad(now.getDate())}.${pad(now.getMonth() + 1)}.${now.getFullYear()} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
             return [
-                { id: 101, time: "2026-11-04 22:28", user: "Bağır (admin@bcg.az)", role: "admin", type: "login", folder: "🛡️ Sistem", detail: "Sayta daxil oldu və Mərkəzi Admin Panelini açdı", ip: "185.43.112.19 · Windows Chrome" },
-                { id: 102, time: "2026-11-04 22:10", user: "Rəşad Məmmədov (rashad@bcg.az)", role: "editor", type: "nim", folder: "🚦 NİM", detail: "Kəsişmə #04 (Tbilisi pr. – Həsən Əliyev küç.) svetofor nöqtəsinin statusunu 'İcrada' olaraq yenilədi", ip: "94.20.74.11 · Windows Edge" },
-                { id: 103, time: "2026-11-04 21:45", user: "Rəşad Məmmədov (rashad@bcg.az)", role: "editor", type: "login", folder: "🛡️ Sistem", detail: "Email OTP kodu ilə sistemə daxil oldu", ip: "94.20.74.11 · Windows Edge" },
-                { id: 104, time: "2026-11-04 20:22", user: "Elvin Hüseynov (elvin@bcg.az)", role: "editor", type: "azconnect", folder: "🌐 Azconnect", detail: "Azconnect Bakı–Sumqayıt Xətti üzrə Faktiki məsafəni 34.0 km → 38.2 km olaraq yenilədi", ip: "31.171.88.40 · macOS Safari" },
-                { id: 105, time: "2026-11-04 19:50", user: "Bağır (admin@bcg.az)", role: "admin", type: "material", folder: "📄 Anbar Qaiməsi", detail: "QAİMƏ-2026-0148 nömrəli qaimə ilə 12,000 m ADSS 48F optik kabel əlavə etdi", ip: "185.43.112.19 · Windows Chrome" },
-                { id: 106, time: "2026-11-04 18:35", user: "Orxan Quliyev (orxan@bcg.az)", role: "viewer", type: "import", folder: "🗂️ Digər", detail: "'RM_Yasamal_Qovsaq.kmz' faylını 🗂️ Digər qovluğuna idxal etdi", ip: "82.194.12.90 · Windows Chrome" },
-                { id: 107, time: "2026-11-04 17:15", user: "Kamran Əliyev (kamran@bcg.az)", role: "editor", type: "status", folder: "📁 Layihələr", detail: "Qərb-Şimal Antena Layihəsi — Qax məntəqəsində icraçı briqadanı 'Optik İnşaat MMC' seçdi", ip: "185.129.4.55 · Android Chrome" },
-                { id: 108, time: "2026-11-04 16:05", user: "Elvin Hüseynov (elvin@bcg.az)", role: "editor", type: "note", folder: "📌 Xəritə Qeydi", detail: "Xəritə üzərinə 'Salyan şossesi 14-cü km quyu baxışı' qeydini əlavə etdi (24 saatlıq)", ip: "31.171.88.40 · macOS Safari" },
-                { id: 109, time: "2026-11-04 14:30", user: "Rəşad Məmmədov (rashad@bcg.az)", role: "editor", type: "nim", folder: "🚦 NİM", detail: "Kəsişmə #01 (28 May – Rəşid Behbudov svetoforu) statusunu 'Bitmiş' olaraq təsdiqlədi", ip: "94.20.74.11 · Windows Edge" }
+                { id: 1, time: timeStr, user: "Turan Bağırov (turan.bagirov@bcg.az)", role: "admin", type: "login", folder: "🛡️ Sistem", detail: "Mərkəzi Admin Panelinə daxil oldu", ip: "185.18.244.12 · Chrome" }
             ];
         }
 
         function getUsers() {
+            const delSet = getDeletedUsersSet();
             try {
                 const raw = JSON.parse(localStorage.getItem(USERS_KEY));
-                if (Array.isArray(raw) && raw.length) return raw;
+                if (Array.isArray(raw)) {
+                    const cleaned = raw.filter(u => {
+                        if (!u || !u.email) return false;
+                        const em = String(u.email).trim().toLowerCase();
+                        if (delSet.has(em)) return false;
+                        if (!u.customAdded && LEGACY_TEMPLATE_EMAILS.has(em)) return false;
+                        return true;
+                    });
+                    if (cleaned.length !== raw.length) {
+                        localStorage.setItem(USERS_KEY, JSON.stringify(cleaned));
+                    }
+                    if (cleaned.length > 0 || raw.length === 0) return cleaned;
+                }
             } catch {}
             const d = defaultUsers();
             localStorage.setItem(USERS_KEY, JSON.stringify(d));
@@ -762,10 +781,46 @@
             }
         }
 
+        function normalizeLogRecord(l) {
+            if (!l || typeof l !== "object") return null;
+            if (l.id >= 101 && l.id <= 109) return null;
+            const rawEmail = String(l.userEmail || l.user || "").toLowerCase();
+            if (["rashad@bcg.az", "elvin@bcg.az", "orxan@bcg.az", "kamran@bcg.az"].some(em => rawEmail.includes(em))) {
+                return null;
+            }
+            let userDisplay = l.user || (l.userName ? `${l.userName} (${l.userEmail || "turan.bagirov@bcg.az"})` : "Turan Bağırov (turan.bagirov@bcg.az)");
+            userDisplay = userDisplay.replace(/Bağır\s*\(Baş Admin\)/gi, "Turan Bağırov (Admin)").replace(/Bağır\s*\(admin@bcg\.az\)/gi, "Turan Bağırov (turan.bagirov@bcg.az)").replace(/admin@bcg\.az/gi, "turan.bagirov@bcg.az");
+            const folder = String(l.folder || "🏢 BCG").replace(/\bNİM\b/g, "NİİM").replace(/\bAzconnect\b/gi, "Azərconnect");
+            const detail = l.detail || (l.target ? `${l.target}: ${l.details || ""}` : (l.details || l.actionType || ""));
+            let type = l.type || "status";
+            if (!l.type && l.actionType) {
+                const act = String(l.actionType).toLowerCase();
+                if (act.includes("giriş") || act.includes("login")) type = "login";
+                else if (folder.includes("NİİM")) type = "nim";
+                else if (folder.includes("Azərconnect")) type = "azconnect";
+                else if (act.includes("idxal") || act.includes("import")) type = "import";
+                else if (act.includes("anbar") || act.includes("qaimə")) type = "material";
+                else if (act.includes("qeyd")) type = "note";
+            }
+            return {
+                id: l.id || Date.now(),
+                time: l.time || "",
+                user: userDisplay,
+                role: l.role || "admin",
+                type,
+                folder,
+                detail,
+                ip: l.ip || "185.18.244.12 · Chrome"
+            };
+        }
+
         function getLogs() {
             try {
                 const raw = JSON.parse(localStorage.getItem(LOGS_KEY));
-                if (Array.isArray(raw) && raw.length) return raw;
+                if (Array.isArray(raw) && raw.length) {
+                    const cleaned = raw.map(normalizeLogRecord).filter(Boolean);
+                    if (cleaned.length > 0) return cleaned;
+                }
             } catch {}
             const d = defaultLogs();
             localStorage.setItem(LOGS_KEY, JSON.stringify(d));
@@ -780,8 +835,8 @@
             const map = {
                 login: ["pill purple", "🔐 Giriş / Sessiya"],
                 status: ["pill green", "🔄 Status Yeniləmə"],
-                nim: ["pill amber", "🚦 NİM Svetofor"],
-                azconnect: ["pill cyan", "🌐 Azconnect Xətt"],
+                nim: ["pill amber", "🚦 NİİM Svetofor"],
+                azconnect: ["pill cyan", "🌐 Azərconnect Xətt"],
                 import: ["pill", "📂 KMZ İdxalı"],
                 material: ["pill green", "📄 Anbar Qaiməsi"],
                 note: ["pill amber", "📌 Xəritə Qeydi"]
@@ -796,9 +851,61 @@
             return `<span class="pill">👁️ Yalnız Baxış</span>`;
         };
 
+        function updateLiveKpisFromProjects() {
+            try {
+                const snap = JSON.parse(localStorage.getItem("bcg.db.snapshot.v1") || "null");
+                const imp = JSON.parse(localStorage.getItem("bcg.imported_projects.v2") || "[]");
+                const delProjs = new Set(JSON.parse(localStorage.getItem("bcg.deleted.projects.v1") || "[]"));
+                const byId = new Map();
+                [...(snap?.projects || []), ...(Array.isArray(imp) ? imp : [])].forEach(p => {
+                    if (p && p.id && !delProjs.has(p.id)) byId.set(p.id, p);
+                });
+                const projs = [...byId.values()];
+                if (projs.length === 0) return;
+
+                let totalPlanKm = 0, totalDoneKm = 0;
+                let nimTotal = 0, nimDone = 0, nimIcrada = 0, nimLayihe = 0;
+                let azcKm = 0, azcRoutes = 0;
+
+                projs.forEach(p => {
+                    const cat = p.category || "project";
+                    if (cat === "other") return;
+                    const isPts = p.type === "points" || cat === "nim";
+                    (p.items || []).forEach(r => {
+                        if (cat === "nim") {
+                            nimTotal++;
+                            if (r.status === "bitmis" || r.status === "tehvil") nimDone++;
+                            else if (r.status === "icrada") nimIcrada++;
+                            else nimLayihe++;
+                            return;
+                        }
+                        const rawP = Number(r.totalKm) || 0;
+                        const rawD = Number(r.doneKm) || 0;
+                        const pKm = isPts && (r.unit === "m" || rawP >= 100 || rawD >= 100) ? rawP / 1000 : rawP;
+                        const dKm = isPts && (r.unit === "m" || rawP >= 100 || rawD >= 100) ? rawD / 1000 : rawD;
+                        totalPlanKm += pKm;
+                        totalDoneKm += dKm;
+                        if (cat === "azconnect") {
+                            azcKm += pKm;
+                            azcRoutes++;
+                        }
+                    });
+                });
+
+                const pct = totalPlanKm > 0 ? Math.min(100, Math.round((totalDoneKm / totalPlanKm) * 100)) : 0;
+                if ($("kpiTotalKmVal")) $("kpiTotalKmVal").textContent = `${totalPlanKm.toFixed(1)} km`;
+                if ($("kpiTotalKmSub")) $("kpiTotalKmSub").innerHTML = `Faktiki çəkilən: <b style="color:var(--green)">${totalDoneKm.toFixed(1)} km (${pct}%)</b>`;
+                if ($("kpiNimVal")) $("kpiNimVal").textContent = `${nimTotal} Kəsişmə`;
+                if ($("kpiNimSub")) $("kpiNimSub").textContent = `${nimDone} Bitmiş · ${nimIcrada} İcrada · ${nimLayihe} Layihə`;
+                if ($("kpiAzcVal")) $("kpiAzcVal").textContent = `${azcKm.toFixed(1)} km`;
+                if ($("kpiAzcSub")) $("kpiAzcSub").textContent = `${azcRoutes} aktiv xətt marşrutu`;
+            } catch {}
+        }
+
         function renderAll() {
             const users = getUsers();
             const logs = getLogs();
+            updateLiveKpisFromProjects();
 
             $("logCountBadge").textContent = logs.length;
             $("userCountBadge").textContent = users.length;
@@ -851,7 +958,9 @@
             `).join("");
 
             // Users table
-            $("adminUsersBody").innerHTML = users.map(u => `
+            $("adminUsersBody").innerHTML = users.length === 0
+                ? `<tr><td colspan="7" style="text-align:center;color:var(--ink-3);padding:20px">İstifadəçi siyahısı boşdur. Yuxarıdakı formadan yeni istifadəçi əlavə edin.</td></tr>`
+                : users.map(u => `
                 <tr>
                     <td><b>${esc(u.name)}</b></td>
                     <td class="mono">${esc(u.email)}</td>
@@ -929,25 +1038,6 @@
             renderAll();
         });
 
-        $("addTestLogBtn").addEventListener("click", () => {
-            const logs = getLogs();
-            const now = new Date();
-            const timeStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")} ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
-            logs.unshift({
-                id: Date.now(),
-                time: timeStr,
-                user: "Bağır (admin@bcg.az)",
-                role: "admin",
-                type: "nim",
-                folder: "🚦 NİM",
-                detail: "Yeni svetofor kəsişmə nöqtəsi (Heydər Əliyev pr. – Koroğlu qovşağı) yoxlanıldı",
-                ip: "185.43.112.19 · Windows Chrome"
-            });
-            saveLogs(logs);
-            renderAll();
-            toast("✅ Yeni fəaliyyət qeydi jurnala əlavə olundu");
-        });
-
         $("exportLogsCsvBtn").addEventListener("click", () => {
             const logs = getLogs();
             const header = ["Tarix_Saat", "Istifadeci", "Rol", "Nov", "Qovluq", "Gorulen_Is", "IP_Cihaz"];
@@ -985,6 +1075,10 @@
             if (!name || !email) return;
 
             const cleanEmail = email.toLowerCase();
+            const delSet = getDeletedUsersSet();
+            delSet.delete(cleanEmail);
+            saveDeletedUsersSet(delSet);
+
             const users = getUsers().filter(u => String(u.email || "").trim().toLowerCase() !== cleanEmail);
             const newUserObj = {
                 id: Date.now(),
@@ -995,7 +1089,8 @@
                 role,
                 authMode: pass ? `🔑 Şifrə (${pass})` : "📧 Email kodu ilə (OTP)",
                 lastLogin: "Hələ daxil olmayıb",
-                lastAction: "Admin tərəfindən yaradıldı"
+                lastAction: "Admin tərəfindən yaradıldı",
+                customAdded: true
             };
             users.unshift(newUserObj);
             saveUsers(users);
@@ -1009,12 +1104,12 @@
             logs.unshift({
                 id: Date.now() + 1,
                 time: timeStr,
-                user: "Bağır (admin@bcg.az)",
+                user: "Turan Bağırov (turan.bagirov@bcg.az)",
                 role: "admin",
                 type: "login",
                 folder: "👥 İstifadəçilər",
                 detail: `Yeni istifadəçi əlavə edildi: ${name} (${email}) — Səlahiyyət: ${role}`,
-                ip: "185.43.112.19 · Admin Panel"
+                ip: "185.18.244.12 · Admin Panel"
             });
             saveLogs(logs);
 
@@ -1033,6 +1128,7 @@
             const u = users.find(x => x.id === id);
             if (!u) return;
             u.role = sel.value;
+            u.customAdded = true;
             saveUsers(users);
             toast(`🔄 ${u.name} üçün səlahiyyət yeniləndi: ${sel.value}`);
             renderAll();
@@ -1042,10 +1138,17 @@
             const del = e.target.closest("[data-del-id]");
             if (!del) return;
             const id = Number(del.dataset.delId);
-            const users = getUsers().filter(x => x.id !== id);
+            const curUsers = getUsers();
+            const target = curUsers.find(x => x.id === id);
+            if (target?.email) {
+                const delSet = getDeletedUsersSet();
+                delSet.add(String(target.email).trim().toLowerCase());
+                saveDeletedUsersSet(delSet);
+            }
+            const users = curUsers.filter(x => x.id !== id);
             saveUsers(users);
             renderAll();
-            toast("🗑️ İstifadəçi silindi");
+            toast("🗑️ İstifadəçi həmişəlik silindi");
         });
 
         // 👷 İş İcraçıları İdarəetməsi (Əlavə et / Redaktə et / Sil)

@@ -7998,11 +7998,12 @@ document.addEventListener("DOMContentLoaded", init);
             const now = new Date();
             const pad = n => String(n).padStart(2, "0");
             const timeStr = `${pad(now.getDate())}.${pad(now.getMonth() + 1)}.${now.getFullYear()} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
-            const email = state.user?.email || "admin@bcg.az";
+            const email = state.user?.email || "turan.bagirov@bcg.az";
+            const displayUser = state.user?.name || (isAdmin() ? "Turan Bağırov (Admin)" : email.split("@")[0]);
             list.unshift({
                 id: Date.now(),
                 time: timeStr,
-                userName: isAdmin() ? "Bağır (Baş Admin)" : email.split("@")[0],
+                userName: displayUser,
                 userEmail: email,
                 role: state.role || "admin",
                 ip: "185.18.244.12 · Chrome",
@@ -8019,7 +8020,7 @@ document.addEventListener("DOMContentLoaded", init);
         if (!state.projects.some(p => p.category === "nim")) {
             const nim1 = {
                 id: "nim_baki_svetofor",
-                name: "NİM – Bakı Svetofor Kəsişmələri",
+                name: "NİİM – Bakı Svetofor Kəsişmələri",
                 category: "nim",
                 type: "points",
                 status: "icrada",
@@ -8034,7 +8035,7 @@ document.addEventListener("DOMContentLoaded", init);
             };
             const nim2 = {
                 id: "nim_sumqayit_gence",
-                name: "NİM – Sumqayıt və Gəncə Svetoforları",
+                name: "NİİM – Sumqayıt və Gəncə Svetoforları",
                 category: "nim",
                 type: "points",
                 status: "icrada",
@@ -8051,23 +8052,23 @@ document.addEventListener("DOMContentLoaded", init);
         if (!state.projects.some(p => p.category === "azconnect")) {
             const azc1 = {
                 id: "azc_abseron_ring",
-                name: "Azconnect – Bakı-Abşeron Magistral Halqası",
+                name: "Azərconnect – Bakı-Abşeron Magistral Halqası",
                 category: "azconnect",
                 type: "lines",
                 status: "icrada",
                 items: [
-                    { id: "AZC-01", name: "Bakı Mərkəz – Xırdalan – Sumqayıt xətti", pointA: "Bakı Mərkəz Qovşaq", pointB: "Sumqayıt Stansiya", status: "bitmis", fiberCount: "FO 48", totalKm: 36.4, doneKm: 36.4, contractor: "Azconnect", coords: [[40.4093, 49.8671], [40.4520, 49.7550], [40.5897, 49.6686]] },
+                    { id: "AZC-01", name: "Bakı Mərkəz – Xırdalan – Sumqayıt xətti", pointA: "Bakı Mərkəz Qovşaq", pointB: "Sumqayıt Stansiya", status: "bitmis", fiberCount: "FO 48", totalKm: 36.4, doneKm: 36.4, contractor: "Azərconnect", coords: [[40.4093, 49.8671], [40.4520, 49.7550], [40.5897, 49.6686]] },
                     { id: "AZC-02", name: "Bakı – Hövsan – Türkan – Zirə xətti", pointA: "Bakı Şərq Qovşaq", pointB: "Zirə Qovşaq", status: "icrada", fiberCount: "FO 24", totalKm: 42.0, doneKm: 28.5, contractor: "BCG", execLead: "Samir Əliyev", execWorkers: 5, execPhone: "+994502221100", coords: [[40.3890, 49.9520], [40.3690, 50.0850], [40.3640, 50.2910]] }
                 ]
             };
             const azc2 = {
                 id: "azc_merkez_west",
-                name: "Azconnect – Qərb və Mərkəzi Aran Xətti",
+                name: "Azərconnect – Qərb və Mərkəzi Aran Xətti",
                 category: "azconnect",
                 type: "lines",
                 status: "icrada",
                 items: [
-                    { id: "AZC-03", name: "Hacıqabul – Kürdəmir – Ucar – Yevlax xətti", pointA: "Hacıqabul Qovşaq", pointB: "Yevlax Qovşaq", status: "icrada", fiberCount: "FO 48", totalKm: 168.0, doneKm: 119.5, contractor: "Azconnect", coords: [[40.0394, 48.9356], [40.3425, 48.1564], [40.5180, 47.6500], [40.6172, 47.1500]] },
+                    { id: "AZC-03", name: "Hacıqabul – Kürdəmir – Ucar – Yevlax xətti", pointA: "Hacıqabul Qovşaq", pointB: "Yevlax Qovşaq", status: "icrada", fiberCount: "FO 48", totalKm: 168.0, doneKm: 119.5, contractor: "Azərconnect", coords: [[40.0394, 48.9356], [40.3425, 48.1564], [40.5180, 47.6500], [40.6172, 47.1500]] },
                     { id: "AZC-04", name: "Yevlax – Gəncə – Şəmkir xətti", pointA: "Yevlax Qovşaq", pointB: "Şəmkir Stansiya", status: "tehvil", fiberCount: "FO 12", totalKm: 104.5, doneKm: 104.5, contractor: "BCG", execLead: "Rəşad Quliyev", execWorkers: 6, execPhone: "+994503332211", coords: [[40.6172, 47.1500], [40.6828, 46.3606], [40.8297, 46.0178]] }
                 ]
             };
@@ -8791,14 +8792,37 @@ document.addEventListener("DOMContentLoaded", init);
 
     // 👥 Admin İstifadəçilər Pəncərəsi (Şifrə / Email OTP və Səlahiyyət)
     const USERS_STORE_KEY = "bcg.admin.users.v1";
+    const DELETED_USERS_STORE_KEY = "bcg.deleted.users.v1";
+    const TEMPLATE_EMAIL_SET = new Set(["admin@bcg.az", "rashad@bcg.az", "elvin@bcg.az", "orxan@bcg.az", "kamran@bcg.az"]);
+
+    function getDeletedUsersEmailSet() {
+        const arr = readStore(DELETED_USERS_STORE_KEY, []);
+        return new Set(Array.isArray(arr) ? arr.map(e => String(e).trim().toLowerCase()) : []);
+    }
+
     function loadUsersRegistry() {
+        const delSet = getDeletedUsersEmailSet();
         const stored = readStore(USERS_STORE_KEY, null);
-        if (stored && Array.isArray(stored) && stored.length) return stored;
-        return [
-            { id: 1, name: "Bağır (Baş Admin)", email: state.user?.email || "admin@bcg.az", role: "admin", authMode: "Şifrə + Email", passMask: "••••••••" },
-            { id: 2, name: "Rəşad Məmmədov", email: "rashad@bcg.az", role: "editor", authMode: "📧 Email kodu ilə", passMask: "OTP" },
-            { id: 3, name: "Elvin Hüseynov", email: "elvin@bcg.az", role: "viewer", authMode: "🔑 Şifrə təyin edilib", passMask: "Bcg#2026" }
+        if (stored && Array.isArray(stored)) {
+            const filtered = stored.filter(u => {
+                if (!u || !u.email) return false;
+                const em = String(u.email).trim().toLowerCase();
+                if (delSet.has(em)) return false;
+                if (!u.customAdded && TEMPLATE_EMAIL_SET.has(em)) return false;
+                return true;
+            });
+            if (filtered.length !== stored.length) {
+                writeStore(USERS_STORE_KEY, filtered);
+            }
+            if (filtered.length > 0 || stored.length === 0) return filtered;
+        }
+        const defEmail = state.user?.email || "turan.bagirov@bcg.az";
+        if (delSet.has(String(defEmail).toLowerCase())) return [];
+        const initList = [
+            { id: 1, name: "Turan Bağırov (Admin)", email: defEmail, role: "admin", authMode: "🔑 Şifrə + Email", passMask: "••••••••", customAdded: true }
         ];
+        writeStore(USERS_STORE_KEY, initList);
+        return initList;
     }
 
     function renderUsersModal() {
@@ -8826,8 +8850,13 @@ document.addEventListener("DOMContentLoaded", init);
     function populateNoteRecipients() {
         const sel = $("noteRecipient");
         if (!sel) return;
+        const delSet = getDeletedUsersEmailSet();
         const regEmails = loadUsersRegistry().map(u => u.email);
-        const emails = [...new Set([...(state.users || []), ...regEmails, state.user?.email].filter(Boolean))];
+        const emails = [...new Set([...(state.users || []), ...regEmails, state.user?.email].filter(Boolean))]
+            .filter(e => {
+                const low = String(e).trim().toLowerCase();
+                return !delSet.has(low) && !TEMPLATE_EMAIL_SET.has(low);
+            });
         const current = sel.value || "all";
         sel.innerHTML = `<option value="all">Hamıya (All)</option>` + emails.map(e => `<option value="${esc(e)}">${esc(e)}</option>`).join("");
         sel.value = emails.includes(current) ? current : "all";
@@ -8966,6 +8995,9 @@ document.addEventListener("DOMContentLoaded", init);
             const role = rawRole === "view" ? "viewer" : (rawRole === "edit" ? "editor" : rawRole);
             if (!name || !email) return;
             const cleanEmail = email.toLowerCase();
+            const delSet = getDeletedUsersEmailSet();
+            delSet.delete(cleanEmail);
+            writeStore(DELETED_USERS_STORE_KEY, [...delSet]);
             const list = loadUsersRegistry().filter(u => String(u.email || "").trim().toLowerCase() !== cleanEmail);
             const newUserObj = {
                 id: Date.now(),
@@ -8976,7 +9008,8 @@ document.addEventListener("DOMContentLoaded", init);
                 authMode: pass ? `🔑 Şifrə (${pass})` : "📧 Email kodu ilə",
                 passMask: pass || "OTP",
                 lastLogin: "Hələ daxil olmayıb",
-                lastAction: "Admin tərəfindən yaradıldı"
+                lastAction: "Admin tərəfindən yaradıldı",
+                customAdded: true
             };
             list.unshift(newUserObj);
             writeStore(USERS_STORE_KEY, list);
@@ -8997,7 +9030,14 @@ document.addEventListener("DOMContentLoaded", init);
             const del = e.target.closest("[data-del-user]");
             if (!del) return;
             const id = Number(del.dataset.delUser);
-            const list = loadUsersRegistry().filter(u => u.id !== id);
+            const curList = loadUsersRegistry();
+            const target = curList.find(u => u.id === id);
+            if (target?.email) {
+                const delSet = getDeletedUsersEmailSet();
+                delSet.add(String(target.email).trim().toLowerCase());
+                writeStore(DELETED_USERS_STORE_KEY, [...delSet]);
+            }
+            const list = curList.filter(u => u.id !== id);
             writeStore(USERS_STORE_KEY, list);
             if (typeof api !== "undefined" && api.syncCloudRegistry) {
                 api.syncCloudRegistry().catch(() => {});

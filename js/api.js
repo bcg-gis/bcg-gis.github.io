@@ -146,12 +146,37 @@ const api = (() => {
     };
 
     const USERS_STORAGE_KEY = "bcg.admin.users.v1";
+    const DELETED_USERS_KEY = "bcg.deleted.users.v1";
     const LOCAL_SESSION_KEY = "bcg.local.session.v1";
     const DB_SNAPSHOT_KEY = "bcg.db.snapshot.v1";
     const CLOUD_NOTES_KEY = "bcg.cloud.notes.v1";
     const DELETED_PROJECTS_KEY = "bcg.deleted.projects.v1";
     const DELETED_SEGMENTS_KEY = "bcg.deleted.segments.v1";
     const CLOUD_SYNC_TOKEN = "00000000-0000-4000-8000-00000000bc60";
+
+    const LEGACY_TEMPLATE_EMAILS = new Set([
+        "admin@bcg.az",
+        "rashad@bcg.az",
+        "elvin@bcg.az",
+        "orxan@bcg.az",
+        "kamran@bcg.az"
+    ]);
+
+    function getDeletedUsersSet() {
+        try {
+            const arr = JSON.parse(localStorage.getItem(DELETED_USERS_KEY) || "[]");
+            return new Set(Array.isArray(arr) ? arr.map(e => String(e).trim().toLowerCase()) : []);
+        } catch {
+            return new Set();
+        }
+    }
+
+    function isLegacyTemplateUser(u) {
+        if (!u || !u.email) return true;
+        const em = String(u.email).trim().toLowerCase();
+        if (u.customAdded) return false;
+        return LEGACY_TEMPLATE_EMAILS.has(em);
+    }
 
     function getDeletedProjectsSet() {
         try {
@@ -193,27 +218,30 @@ const api = (() => {
     }
 
     const DEFAULT_ADMIN_USERS = [
-        { id: 1, name: "Bağır (Baş Admin)", email: "admin@bcg.az", role: "admin", authMode: "🔑 Şifrə + Email" },
-        { id: 2, name: "Rəşad Məmmədov", email: "rashad@bcg.az", role: "editor", authMode: "📧 Email kodu ilə (OTP)", passMask: "OTP" },
-        { id: 3, name: "Elvin Hüseynov", email: "elvin@bcg.az", role: "editor", password: "Bcg#2026", passMask: "Bcg#2026", authMode: "🔑 Şifrə (Bcg#2026)" },
-        { id: 4, name: "Orxan Quliyev", email: "orxan@bcg.az", role: "viewer", authMode: "📧 Email kodu ilə (OTP)", passMask: "OTP" },
-        { id: 5, name: "Kamran Əliyev", email: "kamran@bcg.az", role: "editor", password: "Kam#901", passMask: "Kam#901", authMode: "🔑 Şifrə (Kam#901)" }
+        { id: 1, name: "Turan Bağırov (Admin)", email: "turan.bagirov@bcg.az", role: "admin", authMode: "🔑 Şifrə + Email", customAdded: true }
     ];
 
     function getAdminUsersList() {
-        let stored = [];
+        const delUsers = getDeletedUsersSet();
+        let stored = null;
         try {
-            const raw = JSON.parse(localStorage.getItem(USERS_STORAGE_KEY) || "[]");
+            const raw = JSON.parse(localStorage.getItem(USERS_STORAGE_KEY) || "null");
             if (Array.isArray(raw)) stored = raw;
         } catch {}
         const byEmail = new Map();
-        DEFAULT_ADMIN_USERS.forEach(u => byEmail.set(String(u.email).toLowerCase(), { ...u }));
-        stored.forEach(u => {
-            if (u && u.email) {
-                const k = String(u.email).trim().toLowerCase();
-                byEmail.set(k, { ...(byEmail.get(k) || {}), ...u });
-            }
+        const sourceList = stored !== null ? stored : DEFAULT_ADMIN_USERS;
+        sourceList.forEach(u => {
+            if (!u || !u.email) return;
+            const k = String(u.email).trim().toLowerCase();
+            if (delUsers.has(k) || isLegacyTemplateUser(u)) return;
+            byEmail.set(k, { ...u });
         });
+        if (byEmail.size === 0 && stored === null) {
+            DEFAULT_ADMIN_USERS.forEach(u => {
+                const k = String(u.email).trim().toLowerCase();
+                if (!delUsers.has(k)) byEmail.set(k, { ...u });
+            });
+        }
         return [...byEmail.values()];
     }
 
@@ -231,19 +259,26 @@ const api = (() => {
             const { data, error } = await client.rpc("get_shared_extras", { link: CLOUD_SYNC_TOKEN });
             if (error || !data || !data.view || typeof data.view !== "object") return null;
             const v = data.view;
-            if (Array.isArray(v.adminUsers) && v.adminUsers.length > 0) {
+            if (Array.isArray(v.deletedUsers)) {
+                try {
+                    const delSet = getDeletedUsersSet();
+                    v.deletedUsers.forEach(em => { if (em) delSet.add(String(em).trim().toLowerCase()); });
+                    localStorage.setItem(DELETED_USERS_KEY, JSON.stringify([...delSet]));
+                } catch {}
+            }
+            if (Array.isArray(v.adminUsers)) {
+                const delUsers = getDeletedUsersSet();
                 const localRaw = JSON.parse(localStorage.getItem(USERS_STORAGE_KEY) || "[]");
                 const mergedMap = new Map();
-                DEFAULT_ADMIN_USERS.forEach(u => mergedMap.set(String(u.email).toLowerCase(), { ...u }));
-                (Array.isArray(localRaw) ? localRaw : []).forEach(u => {
-                    if (u?.email) mergedMap.set(String(u.email).trim().toLowerCase(), u);
+                [...v.adminUsers, ...(Array.isArray(localRaw) ? localRaw : [])].forEach(u => {
+                    if (!u || !u.email) return;
+                    const k = String(u.email).trim().toLowerCase();
+                    if (delUsers.has(k) || isLegacyTemplateUser(u)) return;
+                    mergedMap.set(k, { ...(mergedMap.get(k) || {}), ...u });
                 });
-                v.adminUsers.forEach(u => {
-                    if (u?.email) {
-                        const k = String(u.email).trim().toLowerCase();
-                        mergedMap.set(k, { ...(mergedMap.get(k) || {}), ...u });
-                    }
-                });
+                if (mergedMap.size === 0 && !delUsers.has("turan.bagirov@bcg.az")) {
+                    DEFAULT_ADMIN_USERS.forEach(u => mergedMap.set(String(u.email).toLowerCase(), { ...u }));
+                }
                 localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify([...mergedMap.values()]));
             }
             if (v.contractors && typeof v.contractors === "object" && !Array.isArray(v.contractors)) {
@@ -341,6 +376,7 @@ const api = (() => {
             let cloudNotes = [];
             let deletedProjects = [];
             let deletedSegments = [];
+            let deletedUsers = [];
             let customItems = [];
             let snapshot = extraSnapshot;
             try { contractors = JSON.parse(localStorage.getItem("bcg.admin.contractors.v2") || "{}"); } catch {}
@@ -350,6 +386,7 @@ const api = (() => {
             try { cloudNotes = JSON.parse(localStorage.getItem(CLOUD_NOTES_KEY) || "[]"); } catch {}
             try { deletedProjects = [...getDeletedProjectsSet()]; } catch {}
             try { deletedSegments = [...getDeletedSegmentsSet()]; } catch {}
+            try { deletedUsers = [...getDeletedUsersSet()]; } catch {}
             try { customItems = JSON.parse(localStorage.getItem("bcg.custom.items.v1") || "[]"); } catch {}
             if (!snapshot) {
                 try { snapshot = JSON.parse(localStorage.getItem(DB_SNAPSHOT_KEY) || "null"); } catch {}
@@ -378,6 +415,7 @@ const api = (() => {
                     cloudNotes,
                     deletedProjects,
                     deletedSegments,
+                    deletedUsers,
                     customItems,
                     snapshot,
                     updatedAt: nowIso
@@ -663,13 +701,17 @@ const api = (() => {
                 const mappedNotes = mergeNoteLists(notes.map(toNote), localCloudNotes);
                 const mappedMaterials = (materials || []).map(toMaterial);
 
+                const delUsersSet = getDeletedUsersSet();
+                const cleanUsersList = [...new Set([...profiles.map(p => p.email), ...adminUserEmails])]
+                    .filter(em => em && !delUsersSet.has(String(em).trim().toLowerCase()) && !LEGACY_TEMPLATE_EMAILS.has(String(em).trim().toLowerCase()));
+
                 // Əgər bazadan məlumat gəlibsə (məs. Admin sessiyası zamanı), lokal istifadəçilər və digər kompüterlər üçün keşi yenilə
                 if (mappedProjects.length > 0) {
                     const snapPayload = {
                         projects: mappedProjects,
                         materials: mappedMaterials,
                         notes: mappedNotes,
-                        users: [...new Set([...profiles.map(p => p.email), ...adminUserEmails])]
+                        users: cleanUsersList
                     };
                     try {
                         localStorage.setItem(DB_SNAPSHOT_KEY, JSON.stringify(snapPayload));
@@ -692,7 +734,7 @@ const api = (() => {
                     const snap = JSON.parse(localStorage.getItem(DB_SNAPSHOT_KEY) || "null");
                     return {
                         role: matchedAdminUser?.role || localSession.role || "viewer",
-                        users: snap?.users || adminUserEmails,
+                        users: cleanUsersList.length ? cleanUsersList : adminUserEmails,
                         projects: sharedProjects.length ? sharedProjects : filterOutDeleted(snap?.projects?.length ? snap.projects : fallbackSeedProjects()),
                         contractors: contractorMap,
                         materials: snap?.materials || [],
@@ -704,7 +746,7 @@ const api = (() => {
 
                 return {
                     role: resolvedRole,
-                    users: [...new Set([...profiles.map(p => p.email), ...adminUserEmails])],
+                    users: cleanUsersList,
                     projects: mappedProjects,
                     contractors: contractorMap,
                     materials: mappedMaterials,
