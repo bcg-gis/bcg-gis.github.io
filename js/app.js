@@ -371,6 +371,7 @@ function renderRole() {
     $("importBtn").hidden = !isAdmin();
     $("addProjectBtn").hidden = !isAdmin();
     if ($("usersBtn")) $("usersBtn").hidden = !isAdmin();
+    if ($("pmoExcelBtn")) $("pmoExcelBtn").hidden = !isAdmin();
     if ($("shareBtn")) $("shareBtn").hidden = !isAdmin();
     if ($("noteForm")) $("noteForm").hidden = false;
     tools.refresh();
@@ -3266,6 +3267,7 @@ function initMap() {
         tools.init();
     });
     map.on("click", onMapClick);
+    map.on("dblclick", onMapDblClick);
     map.on("mousemove", e => {
         $("cursorCoords").textContent = `${e.lngLat.lat.toFixed(5)}, ${e.lngLat.lng.toFixed(5)}`;
     });
@@ -3574,6 +3576,138 @@ function ensureSummaryCardImage({ name, color, shapeSymbol, folderName, antennas
         ctx.font = fSmall;
         ctx.fillStyle = subColor;
         ctx.fillText(contractorText, x0, y + rows[rIdx] / 2);
+    }
+
+    map.addImage(key, ctx.getImageData(0, 0, canvas.width, canvas.height), { pixelRatio: ratio });
+    return key;
+}
+
+/* PMO D2 Rayon Xülasə Kartı: Ümumi faiz, BCG və Avicom ayrı-ayrı, Qoşulma tipləri */
+function ensurePmoRayonCardImage({ name, color, shapeSymbol, folderName, pmoRayon }) {
+    if (!map || !name || !pmoRayon) return null;
+    const light = isLightBaseMap();
+    const sym = shapeSymbol || "●";
+    const pct = Math.max(0, Math.min(100, Math.round(Number(pmoRayon.pct) || 0)));
+    const bcgLine = `BCG: ${pmoRayon.bcgDone}/${pmoRayon.bcgPlan} (${pmoRayon.bcgPct}%)`;
+    const aviLine = `Avicom: ${pmoRayon.avicomDone}/${pmoRayon.avicomPlan} (${pmoRayon.avicomPct}%)`;
+    const c = pmoRayon.conn || {};
+    const connParts = [];
+    if (Number(c.fo) > 0) connParts.push(`FO:${c.fo}`);
+    if (Number(c.g3) > 0) connParts.push(`3G:${c.g3}`);
+    if (Number(c.ant) > 0) connParts.push(`Ant:${c.ant}`);
+    if (Number(c.gpon) > 0) connParts.push(`GPON:${c.gpon}`);
+    const connLine = connParts.length ? `Qoşulma: ${connParts.join(" · ")}` : "";
+    const subCnt = Array.isArray(pmoRayon.subPoints) ? pmoRayon.subPoints.filter(sp => sp.coords).length : 0;
+    const hintLine = subCnt > 0 ? `2x klik: ${subCnt} nöqtəni parçala` : "";
+    const folderText = folderName ? `${sym} ${String(folderName).trim()}` : "";
+
+    const key = `pmorayon_v1:${light ? "l" : "d"}:${color}:${name}:${folderText}:${pct}:${bcgLine}:${aviLine}:${connLine}:${hintLine}`;
+    if (map.hasImage(key)) return key;
+
+    const ratio = 2;
+    const padX = 8;
+    const padY = 5;
+    const stripe = 3.5;
+    const fFolder = `700 9.5px ${LABEL_FONT}`;
+    const fTitle = `800 11.5px ${LABEL_FONT}`;
+    const fBody = `600 9.8px ${LABEL_FONT}`;
+    const fSmall = `600 8.8px ${LABEL_FONT}`;
+
+    const m = document.createElement("canvas").getContext("2d");
+    m.font = fTitle; const titleW = m.measureText(name).width + 36;
+    m.font = fFolder; const folderW = folderText ? m.measureText(folderText).width : 0;
+    m.font = fBody; const bW = m.measureText(bcgLine).width; const aW = m.measureText(aviLine).width;
+    m.font = fSmall; const cnW = connLine ? m.measureText(connLine).width : 0; const hW = hintLine ? m.measureText(hintLine).width : 0;
+    const innerW = Math.max(titleW, folderW, bW, aW, cnW, hW, 118);
+    const W = Math.ceil(stripe + padX * 2 + innerW);
+
+    const rows = [];
+    if (folderText) rows.push(11);
+    rows.push(14);
+    rows.push(8);
+    rows.push(12);
+    rows.push(12);
+    if (connLine) rows.push(11);
+    if (hintLine) rows.push(11);
+    const H = Math.ceil(padY * 2 + rows.reduce((a, b) => a + b, 0));
+
+    const canvas = document.createElement("canvas");
+    canvas.width = W * ratio;
+    canvas.height = H * ratio;
+    const ctx = canvas.getContext("2d");
+    ctx.scale(ratio, ratio);
+
+    const rad = 5.5;
+    ctx.beginPath();
+    ctx.moveTo(rad, 0); ctx.lineTo(W - rad, 0); ctx.quadraticCurveTo(W, 0, W, rad);
+    ctx.lineTo(W, H - rad); ctx.quadraticCurveTo(W, H, W - rad, H);
+    ctx.lineTo(rad, H); ctx.quadraticCurveTo(0, H, 0, H - rad);
+    ctx.lineTo(0, rad); ctx.quadraticCurveTo(0, 0, rad, 0);
+    ctx.closePath();
+    ctx.fillStyle = light ? "rgba(255,255,255,0.97)" : "rgba(11,18,32,0.95)";
+    ctx.fill();
+    ctx.lineWidth = 1.2;
+    ctx.strokeStyle = light ? "rgba(15,23,42,0.20)" : "rgba(56,189,248,0.45)";
+    ctx.stroke();
+    ctx.save();
+    ctx.clip();
+    ctx.fillStyle = color;
+    ctx.fillRect(0, 0, stripe, H);
+    ctx.restore();
+
+    const x0 = stripe + padX;
+    const mainColor = light ? "#0F172A" : "#F8FAFC";
+    const subColor = light ? "#475569" : "#CBD5E1";
+    const folderColor = light ? "#334155" : "#94A3B8";
+    ctx.textBaseline = "middle";
+    ctx.textAlign = "left";
+    let y = padY;
+    let rIdx = 0;
+
+    if (folderText) {
+        ctx.font = fFolder;
+        ctx.fillStyle = folderColor;
+        ctx.fillText(folderText, x0, y + rows[rIdx] / 2);
+        y += rows[rIdx++];
+    }
+
+    ctx.font = fTitle;
+    ctx.fillStyle = color;
+    ctx.fillText(name, x0, y + rows[rIdx] / 2);
+    ctx.textAlign = "right";
+    ctx.fillStyle = mainColor;
+    ctx.fillText(`${pct}%`, x0 + innerW, y + rows[rIdx] / 2);
+    ctx.textAlign = "left";
+    y += rows[rIdx++];
+
+    const barH = 3.8;
+    const barY = y + (rows[rIdx] - barH) / 2;
+    ctx.fillStyle = light ? "rgba(15,23,42,0.12)" : "rgba(255,255,255,0.18)";
+    ctx.fillRect(x0, barY, innerW, barH);
+    ctx.fillStyle = color;
+    ctx.fillRect(x0, barY, Math.max(0, Math.min(1, pct / 100)) * innerW, barH);
+    y += rows[rIdx++];
+
+    ctx.font = fBody;
+    ctx.fillStyle = light ? "#0369A1" : "#38BDF8";
+    ctx.fillText(bcgLine, x0, y + rows[rIdx] / 2);
+    y += rows[rIdx++];
+
+    ctx.font = fBody;
+    ctx.fillStyle = light ? "#15803D" : "#4ADE80";
+    ctx.fillText(aviLine, x0, y + rows[rIdx] / 2);
+    y += rows[rIdx++];
+
+    if (connLine) {
+        ctx.font = fSmall;
+        ctx.fillStyle = subColor;
+        ctx.fillText(connLine, x0, y + rows[rIdx] / 2);
+        y += rows[rIdx++];
+    }
+    if (hintLine) {
+        ctx.font = fSmall;
+        ctx.fillStyle = light ? "#B45309" : "#FBBF24";
+        ctx.fillText(hintLine, x0, y + rows[rIdx] / 2);
     }
 
     map.addImage(key, ctx.getImageData(0, 0, canvas.width, canvas.height), { pixelRatio: ratio });
@@ -4289,11 +4423,88 @@ function drawRoutes() {
         }
 
         if (isPointItem) {
+            if (!state.expandedRayons) state.expandedRayons = new Set();
+
+            // PMO D2 Rayon Xülasəsi və 2x Kliklə Parçalanan Alt-Nöqtələr (TŞ nömrəsi)
+            if (r.isPmoRayon && r.pmoRayon) {
+                const pmoClusterKey = `${project.id}::pmo::${r.id}`;
+                const subPtsWithCoords = (r.pmoRayon.subPoints || []).filter(sp => Array.isArray(sp.coords) && sp.coords.length === 2);
+                const isExpandedPmo = state.expandedRayons.has(pmoClusterKey) && subPtsWithCoords.length > 0;
+                const rawProjBase = String(project.name || "").trim();
+                const compactProjName = rawProjBase.length > 32 ? `${rawProjBase.slice(0, 31).trim()}…` : rawProjBase;
+
+                if (isExpandedPmo) {
+                    // PARÇALANMIŞ REJİM: Hər alt-nöqtə öz koordinatında, "A" sütunundakı rəngi və "TŞ nömrəsi" adı ilə çıxır
+                    subPtsWithCoords.forEach(sp => {
+                        const [spLat, spLng] = sp.coords;
+                        const spColor = statusTone(sp.status);
+                        const spIcon = `pt-${shape.id}-${spColor.replace("#", "").toLowerCase()}`;
+                        const tsLabel = cleanGlText(sp.tsNo || sp.name || `#${sp.idx || ""}`);
+                        const isSelSub = Boolean(selected?.item === r && state.selected?.pmoSubId === sp.id);
+                        const spProps = {
+                            isRayonPoint: true,
+                            isPmoSubPoint: true,
+                            isIcrada: sp.status === "icrada",
+                            color: spColor,
+                            shapeIcon: spIcon,
+                            dim,
+                            sel: isSelSub,
+                            projectId: project.id,
+                            itemId: r.id,
+                            pmoSubId: sp.id,
+                            clusterKey: pmoClusterKey,
+                            shortLabel: tsLabel,
+                            label: tsLabel,
+                            tip: `<b>${esc(tsLabel)}</b>`
+                        };
+                        features.push({ type: "Feature", geometry: { type: "Point", coordinates: [spLng, spLat] }, properties: spProps });
+                        labelFeatures.push({ type: "Feature", geometry: { type: "Point", coordinates: [spLng, spLat] }, properties: spProps });
+                    });
+                    return;
+                }
+
+                // ÜMUMİ RAYON REJİMİ (D2): Hər rayon üzrə 1 nöqtə (Ümumi %, BCG, Avicom, Qoşulma tipləri)
+                const [lat, lng] = coords[0];
+                const stColor = statusTone(r.status);
+                const normKey = `pmo::${project.id}::${r.id}`;
+                pointSlots[normKey] = {
+                    rayonName: r.name,
+                    clusterKey: subPtsWithCoords.length > 0 ? pmoClusterKey : "",
+                    latSum: lat,
+                    lngSum: lng,
+                    entries: [{
+                        project,
+                        r,
+                        lat,
+                        lng,
+                        stColor,
+                        shape,
+                        shapeIcon,
+                        dim,
+                        sel: Boolean(selected?.item === r),
+                        rayonName: r.name,
+                        rawProjName: rawProjBase,
+                        compactProjName,
+                        ptType: "",
+                        antCount: Number(r.pmoRayon.totalPlan) || 0,
+                        antLabel: `${r.pmoRayon.totalPlan || 0} nöqtə`,
+                        execSummary: `BCG ${r.pmoRayon.bcgDone}/${r.pmoRayon.bcgPlan} · Avicom ${r.pmoRayon.avicomDone}/${r.pmoRayon.avicomPlan}`,
+                        verilenM: Number(r.pmoRayon.totalPlan) || 0,
+                        cekilenM: Number(r.pmoRayon.totalDone) || 0,
+                        pct: Number(r.pmoRayon.pct) || 0,
+                        pmoRayon: r.pmoRayon,
+                        clusterKey: subPtsWithCoords.length > 0 ? pmoClusterKey : ""
+                    }]
+                };
+                return;
+            }
+
             const distinctPtCoords = coords.filter((c, idx) => idx === 0 || c[0] !== coords[idx - 1][0] || c[1] !== coords[idx - 1][1]);
             const ptsToDraw = distinctPtCoords.length > 0 ? distinctPtCoords : [coords[0]];
             const stColor = statusTone(r.status);
             const ptType = extractPointType(r.props, r);
-            const rawRayonName = String(r.name || r.rayon || "").replace(/\s*\(?\bFaz[-\s]*[12]\b\)?/gi, "").replace(/\s*rayon(u)?(?![a-zəçşğıöü])/gi, "").trim();
+            const rawRayonProp = String(r.rayon || getPropCaseInsensitive(r.props, "Rayon", "rayon_adi", "rayonu", "sheher", "bolge") || "").replace(/\s*rayon(u)?(?![a-zəçşğıöü])/gi, "").trim();
+            const rawRayonName = String(r.name || rawRayonProp || "").replace(/\s*\(?\bFaz[-\s]*[12]\b\)?/gi, "").replace(/\s*rayon(u)?(?![a-zəçşğıöü])/gi, "").trim();
             const baseRayonName = rawRayonName || String(r.name || "").trim();
             const { planM: verilenM, doneM: cekilenM } = getPointMetersPair(r);
             const pct = calcPointPct(cekilenM, verilenM, r.status);
@@ -4304,12 +4515,84 @@ function drawRoutes() {
             const antLabel = formatPointAntLabel(antCount, ptType);
             const execDet = resolveItemExecDetails(r);
 
+            // Eyni layihədə eyni rayona aid bir neçə anten/nöqtə varsa (məs: Şamaxı — 6 anten):
+            const rayonGroupLabel = rawRayonProp || (ptsToDraw.length > 1 ? baseRayonName : "");
+            const rayonGroupNorm = rayonGroupLabel ? rayonGroupLabel.toLocaleLowerCase("az").replace(/\s+/g, " ").trim() : "";
+            const sameRayonCount = rayonGroupNorm
+                ? (project.items || []).filter(it => {
+                    const itR = String(it.rayon || getPropCaseInsensitive(it.props, "Rayon", "rayon_adi", "rayonu", "sheher", "bolge") || "").replace(/\s*rayon(u)?(?![a-zəçşğıöü])/gi, "").trim().toLocaleLowerCase("az").replace(/\s+/g, " ").trim();
+                    return itR === rayonGroupNorm;
+                }).length
+                : 0;
+            const isClusterableRayon = Boolean(rayonGroupNorm && (sameRayonCount > 1 || ptsToDraw.length > 1));
+            const clusterKey = isClusterableRayon ? `${project.id}::${rayonGroupNorm}` : "";
+            const isExpandedRayon = Boolean(clusterKey && state.expandedRayons.has(clusterKey));
+
+            if (isClusterableRayon && !isExpandedRayon) {
+                // ÜMUMİ RAYON REJİMİ: Həmin rayondakı bütün antenləri (məs: 6 anten) 1 ümumi nöqtədə cəmlə
+                const normKey = `cluster::${clusterKey}`;
+                if (!pointSlots[normKey]) {
+                    pointSlots[normKey] = {
+                        rayonName: rayonGroupLabel,
+                        clusterKey,
+                        latSum: 0,
+                        lngSum: 0,
+                        coordCount: 0,
+                        subItems: [],
+                        entries: []
+                    };
+                }
+                const slot = pointSlots[normKey];
+                ptsToDraw.forEach(([lat, lng]) => {
+                    slot.latSum += lat;
+                    slot.lngSum += lng;
+                    slot.coordCount += 1;
+                });
+                slot.subItems.push({ r, verilenM, cekilenM, antCount: Math.max(1, antCount), ptType, execSummary: execDet.cardSummary, coords: ptsToDraw });
+
+                const totalAnt = slot.subItems.reduce((s, x) => s + (ptsToDraw.length > 1 && slot.subItems.length === 1 ? Math.max(ptsToDraw.length, x.antCount) : x.antCount), 0);
+                const totalPlanM = slot.subItems.reduce((s, x) => s + x.verilenM, 0);
+                const totalDoneM = slot.subItems.reduce((s, x) => s + x.cekilenM, 0);
+                const allDone = slot.subItems.every(x => x.r.status === "bitmis" || x.r.status === "tehvil");
+                const anyIcrada = slot.subItems.some(x => x.r.status === "icrada" || x.r.status === "bitmis" || x.r.status === "tehvil" || x.cekilenM > 0);
+                const aggStatus = allDone ? "bitmis" : (anyIcrada ? "icrada" : "layihe");
+                const aggColor = statusTone(aggStatus);
+                const aggPct = calcPointPct(totalDoneM, totalPlanM, aggStatus);
+                const aggShapeIcon = `pt-${shape.id}-${aggColor.replace("#", "").toLowerCase()}`;
+
+                slot.entries = [{
+                    project,
+                    r,
+                    lat: slot.latSum / Math.max(1, slot.coordCount),
+                    lng: slot.lngSum / Math.max(1, slot.coordCount),
+                    stColor: aggColor,
+                    shape,
+                    shapeIcon: aggShapeIcon,
+                    dim,
+                    sel: Boolean(selected?.project === project && slot.subItems.some(x => x.r === selected?.item)),
+                    rayonName: `${rayonGroupLabel} (${slot.subItems.length > 1 ? slot.subItems.length : ptsToDraw.length} nöqtə)`,
+                    rawProjName,
+                    compactProjName,
+                    ptType,
+                    antCount: totalAnt,
+                    antLabel: formatPointAntLabel(totalAnt, ptType),
+                    execSummary: execDet.cardSummary,
+                    verilenM: totalPlanM,
+                    cekilenM: totalDoneM,
+                    pct: aggPct,
+                    cExtra,
+                    clusterKey
+                }];
+                return;
+            }
+
             ptsToDraw.forEach(([lat, lng], ptIdx) => {
                 const rayonName = ptsToDraw.length > 1 ? `${baseRayonName} #${ptIdx + 1}` : baseRayonName;
                 const normKey = `${project.id}:${r.id}:${ptIdx}`;
                 if (!pointSlots[normKey]) {
                     pointSlots[normKey] = {
                         rayonName,
+                        clusterKey,
                         latSum: 0,
                         lngSum: 0,
                         entries: []
@@ -4331,13 +4614,14 @@ function drawRoutes() {
                     rawProjName,
                     compactProjName,
                     ptType,
-                    antCount,
-                    antLabel,
+                    antCount: ptsToDraw.length > 1 ? 1 : antCount,
+                    antLabel: formatPointAntLabel(ptsToDraw.length > 1 ? 1 : antCount, ptType),
                     execSummary: execDet.cardSummary,
-                    verilenM,
-                    cekilenM,
+                    verilenM: ptsToDraw.length > 1 ? Math.round(verilenM / ptsToDraw.length) : verilenM,
+                    cekilenM: ptsToDraw.length > 1 ? Math.round(cekilenM / ptsToDraw.length) : cekilenM,
                     pct,
-                    cExtra
+                    cExtra,
+                    clusterKey
                 });
             });
             return;
@@ -4477,18 +4761,26 @@ function drawRoutes() {
                 pct: e.pct,
                 contractor: e.execSummary || ""
             })))
-            : ensureSummaryCardImage({
-                name: grp.rayonName,
-                color: first.stColor,
-                shapeSymbol: first.shape.symbol,
-                folderName: first.compactProjName,
-                antennas: first.antCount,
-                pointType: first.ptType,
-                totalM: first.verilenM,
-                doneM: first.cekilenM,
-                pct: first.pct,
-                contractor: first.execSummary || ""
-            });
+            : (first.pmoRayon
+                ? ensurePmoRayonCardImage({
+                    name: grp.rayonName,
+                    color: first.stColor,
+                    shapeSymbol: first.shape.symbol,
+                    folderName: first.compactProjName,
+                    pmoRayon: first.pmoRayon
+                })
+                : ensureSummaryCardImage({
+                    name: grp.rayonName,
+                    color: first.stColor,
+                    shapeSymbol: first.shape.symbol,
+                    folderName: first.compactProjName,
+                    antennas: first.antCount,
+                    pointType: first.ptType,
+                    totalM: first.verilenM,
+                    doneM: first.cekilenM,
+                    pct: first.pct,
+                    contractor: first.execSummary || ""
+                }));
 
         // 1) Uzaq miqyas (zoom < 10.2) üçün qovuşmuş kart + yan-yana fərqli ikonlar
         const hasIcrada = grp.entries.some(e => e.r.status === "icrada");
@@ -4506,6 +4798,7 @@ function drawRoutes() {
                 dim: grp.entries.every(e => e.dim),
                 projectId: first.project.id,
                 itemId: first.r.id,
+                clusterKey: grp.clusterKey || first.clusterKey || "",
                 tip: mergedTip,
                 cardAnchor: grpCorner.anchor,
                 cardOffset: grpCorner.offset,
@@ -4539,6 +4832,7 @@ function drawRoutes() {
                     sel: e.sel,
                     projectId: e.project.id,
                     itemId: e.r.id,
+                    clusterKey: grp.clusterKey || e.clusterKey || "",
                     tip: n > 1 ? mergedTip : singleTip
                 }
             });
@@ -4569,18 +4863,26 @@ function drawRoutes() {
                 }
             }
 
-            const singleCardImg = ensureSummaryCardImage({
-                name: e.rayonName,
-                color: e.stColor,
-                shapeSymbol: e.shape.symbol,
-                folderName: e.compactProjName,
-                antennas: e.antCount,
-                pointType: e.ptType,
-                totalM: e.verilenM,
-                doneM: e.cekilenM,
-                pct: e.pct,
-                contractor: e.execSummary || ""
-            });
+            const singleCardImg = e.pmoRayon
+                ? ensurePmoRayonCardImage({
+                    name: e.rayonName,
+                    color: e.stColor,
+                    shapeSymbol: e.shape.symbol,
+                    folderName: e.compactProjName,
+                    pmoRayon: e.pmoRayon
+                })
+                : ensureSummaryCardImage({
+                    name: e.rayonName,
+                    color: e.stColor,
+                    shapeSymbol: e.shape.symbol,
+                    folderName: e.compactProjName,
+                    antennas: e.antCount,
+                    pointType: e.ptType,
+                    totalM: e.verilenM,
+                    doneM: e.cekilenM,
+                    pct: e.pct,
+                    contractor: e.execSummary || ""
+                });
 
             const splitProps = {
                 isRayonPoint: true,
@@ -4593,6 +4895,7 @@ function drawRoutes() {
                 sel: e.sel,
                 projectId: e.project.id,
                 itemId: e.r.id,
+                clusterKey: grp.clusterKey || e.clusterKey || "",
                 tip: singleTip,
                 cardAnchor,
                 cardOffset,
@@ -4664,19 +4967,75 @@ function selectedEntry() {
     return item ? { project, item } : null;
 }
 
-function selectSegment(project, item, shouldFly = false) {
-    state.selected = { projectId: project.id, itemId: item.id };
+function selectSegment(project, item, shouldFly = false, pmoSubId = null) {
+    state.selected = { projectId: project.id, itemId: item.id, pmoSubId: pmoSubId || null };
     window.__activeProjectId = project.id;
     state.expandedIds.add(project.id);
     setSidebar(true);
     renderAll();
-    if (shouldFly) flyToCoords(item.coords);
+    if (shouldFly) {
+        if (pmoSubId && item?.pmoRayon?.subPoints) {
+            const sp = item.pmoRayon.subPoints.find(x => x.id === pmoSubId);
+            if (sp?.coords) { flyToCoords([sp.coords]); return; }
+        }
+        flyToCoords(item.coords);
+    }
 }
 
 function clearSelection() {
     state.selected = null;
     renderAll();
 }
+
+function toggleRayonClusterExpand(clusterKey, project, item) {
+    if (!clusterKey || !project) return false;
+    if (!state.expandedRayons) state.expandedRayons = new Set();
+    if (state.expandedRayons.has(clusterKey)) {
+        state.expandedRayons.delete(clusterKey);
+        if (state.selected?.pmoSubId) state.selected.pmoSubId = null;
+        renderAll();
+        toast("📍 Rayon nöqtələri ümumi status altında birləşdirildi");
+        return true;
+    }
+    state.expandedRayons.add(clusterKey);
+    renderAll();
+    if (item?.isPmoRayon && item?.pmoRayon?.subPoints) {
+        const subCoords = item.pmoRayon.subPoints.filter(sp => Array.isArray(sp.coords) && sp.coords.length === 2).map(sp => sp.coords);
+        if (subCoords.length > 0) {
+            flyToCoords(subCoords);
+            toast(`📍 ${item.name} rayonu üzrə ${subCoords.length} nöqtə öz koordinatlarına parçalandı!`);
+            return true;
+        }
+    }
+    const rayonNorm = clusterKey.split("::")[1] || "";
+    const clusterCoords = (project.items || [])
+        .filter(it => String(it.rayon || "").replace(/\s*rayon(u)?(?![a-zəçşğıöü])/gi, "").trim().toLocaleLowerCase("az") === rayonNorm)
+        .flatMap(it => it.coords || []);
+    flyToCoords(clusterCoords.length ? clusterCoords : (item?.coords || []));
+    toast("📍 Rayon üzrə alt-nöqtələr xəritədə öz koordinatlarına paylandı!");
+    return true;
+}
+window.toggleRayonClusterExpand = toggleRayonClusterExpand;
+
+const MAP_HIT_LAYERS = ["routes-summary-card", "routes-summary-card-merged", "routes-summary-name", "routes-point-halo-split", "routes-point-shape-split", "routes-point-halo", "routes-point-shape", "routes-point-label", "routes-point-label-near", "routes-point-name", "routes-ends", "routes-ends-label", "routes-other-points", "routes-other-line", "routes-fo-points", "routes-hit", "routes-other", "routes-poly-line", "routes-poly-fill"];
+
+function onMapDblClick(e) {
+    if (tools.isActive()) return;
+    const box = [[e.point.x - 16, e.point.y - 16], [e.point.x + 16, e.point.y + 16]];
+    const hit = map.queryRenderedFeatures(box, { layers: MAP_HIT_LAYERS })[0];
+    if (!hit) return;
+    const project = state.projects.find(p => p.id === hit.properties.projectId);
+    const item = project?.items.find(r => r.id === hit.properties.itemId);
+    const clusterKey = hit.properties?.clusterKey || (item?.isPmoRayon && item?.pmoRayon?.subPoints?.some(sp => sp.coords) ? `${project?.id}::pmo::${item?.id}` : "");
+    if (clusterKey && project) {
+        e.preventDefault();
+        lastMapPtClickTime = 0;
+        toggleRayonClusterExpand(clusterKey, project, item);
+    }
+}
+
+let lastMapPtClickTime = 0;
+let lastMapPtClickKey = "";
 
 function onMapClick(e) {
     $("coordClicked").value = `${e.lngLat.lat.toFixed(6)}, ${e.lngLat.lng.toFixed(6)}`;
@@ -4686,16 +5045,37 @@ function onMapClick(e) {
         setSidebar(false);
         setDrawer(false);
     }
-    const box = [[e.point.x - 5, e.point.y - 5], [e.point.x + 5, e.point.y + 5]];
-    const hit = map.queryRenderedFeatures(box, { layers: ["routes-summary-card", "routes-summary-card-merged", "routes-summary-name", "routes-point-halo-split", "routes-point-shape-split", "routes-point-halo", "routes-point-shape", "routes-point-label", "routes-point-label-near", "routes-point-name", "routes-ends", "routes-ends-label", "routes-other-points", "routes-other-line", "routes-fo-points", "routes-hit", "routes-other", "routes-poly-line", "routes-poly-fill"] })[0];
+    const box = [[e.point.x - 12, e.point.y - 12], [e.point.x + 12, e.point.y + 12]];
+    const hit = map.queryRenderedFeatures(box, { layers: MAP_HIT_LAYERS })[0];
     if (!hit) return;
+    const project = state.projects.find(p => p.id === hit.properties.projectId);
+    const item = project?.items.find(r => r.id === hit.properties.itemId);
+    const pmoSubId = hit.properties?.pmoSubId || null;
+    const clusterKey = hit.properties?.clusterKey || (item?.isPmoRayon && item?.pmoRayon?.subPoints?.some(sp => sp.coords) ? `${project?.id}::pmo::${item?.id}` : "");
+    const clickKey = clusterKey || `${hit.properties?.projectId}:${hit.properties?.itemId}`;
+    const now = Date.now();
+
+    // 2x Klik (ehtiyat detektor): Rayon üzrə qruplaşmış nöqtələri öz koordinatlarına parçala və ya birləşdir
+    if (now - lastMapPtClickTime < 550 && lastMapPtClickKey === clickKey && project) {
+        lastMapPtClickTime = 0;
+        if (clusterKey) {
+            toggleRayonClusterExpand(clusterKey, project, item);
+            return;
+        }
+        if (item?.coords) {
+            flyToCoords(item.coords);
+            return;
+        }
+    }
+    lastMapPtClickTime = now;
+    lastMapPtClickKey = clickKey;
+
     if (hit.properties?.isMultiRayon && map.getZoom() < 10.2) {
         const cLng = Number(hit.properties.centerLng) || e.lngLat.lng;
         const cLat = Number(hit.properties.centerLat) || e.lngLat.lat;
         map.flyTo({ center: [cLng, cLat], zoom: 10.6, duration: 650 });
     }
-    const project = state.projects.find(p => p.id === hit.properties.projectId);
-    if (project) selectSegment(project, project.items.find(r => r.id === hit.properties.itemId));
+    if (project && item) selectSegment(project, item, false, pmoSubId);
 }
 
 /* KOORDİNAT */
@@ -5048,14 +5428,37 @@ function renderProjects() {
             const totalPlanM = Math.round(sum.plan * 1000);
             const totalDoneM = Math.round(sum.done * 1000);
             const isAllLifGoturulen = !isNim && !isPoints && (p.status === "lif_goturulen" || (p.items.length > 0 && p.items.every(it => isLifGoturulen(it, p))));
-            const subTitle = isNim
+            let subTitle = isNim
                 ? `${p.items.length} svetofor kəsişməsi · Hazır: ${donePts}/${p.items.length}`
                 : (isPoints
                     ? `📡 ${totalAnt} antena - ${totalPlanM} / ${totalDoneM} m`
                     : (isAllLifGoturulen
                         ? `〰️ ${t("statuslif_goturulen")} (${p.items.length})`
                         : `〰️ ${formatKm(sum.plan)} / ${formatKm(sum.done)} km · Qalıb: ${formatKm(Math.max(0, sum.plan - sum.done))} km`));
-            const rightPct = isNim ? `${p.items.length ? Math.round(donePts / p.items.length * 100) : 0}%` : (isAllLifGoturulen ? "" : `${pct}%`);
+            let rightPct = isNim ? `${p.items.length ? Math.round(donePts / p.items.length * 100) : 0}%` : (isAllLifGoturulen ? "" : `${pct}%`);
+            let pmoExtraMetaHtml = "";
+            if (p.isPmo && p.pmoMeta) {
+                const pm = p.pmoMeta;
+                rightPct = `${pm.overallPct}%`;
+                const connParts = [];
+                if (Number(pm.conn?.fo) > 0) connParts.push(`🌐 FO: <b>${pm.conn.fo}</b>`);
+                if (Number(pm.conn?.g3) > 0) connParts.push(`📶 3G: <b>${pm.conn.g3}</b>`);
+                if (Number(pm.conn?.ant) > 0) connParts.push(`📡 Anten: <b>${pm.conn.ant}</b>`);
+                if (Number(pm.conn?.gpon) > 0) connParts.push(`GPON: <b>${pm.conn.gpon}</b>`);
+                const connHtml = connParts.length ? connParts.join(" · ") : "FO: 0";
+                const cableHtml = (pm.cablePlanM > 0 || pm.cableDoneM > 0)
+                    ? `<div style="font-size:10.5px;color:#cbd5e1;margin-top:2px">🔌 Kabel — Layihə: <b>${Math.round(pm.cablePlanM).toLocaleString("az-AZ")} m</b> · İcra olunan: <b style="color:#4ade80">${Math.round(pm.cableDoneM).toLocaleString("az-AZ")} m</b></div>`
+                    : "";
+                subTitle = `BCG: ${pm.bcgDone}/${pm.bcgPlan} (${pm.bcgPct}%) · Avicom: ${pm.avicomDone}/${pm.avicomPlan} (${pm.avicomPct}%)`;
+                pmoExtraMetaHtml = `
+                    <div style="font-size:10.5px;color:var(--ink-2);margin-top:2px;line-height:1.35">
+                        <span style="color:#38bdf8">BCG: <b>${pm.bcgDone}</b>/${pm.bcgPlan}</span> ·
+                        <span style="color:#4ade80">Avicom: <b>${pm.avicomDone}</b>/${pm.avicomPlan}</span>
+                    </div>
+                    <div style="font-size:10px;color:var(--ink-3);margin-top:1px">Qoşulma: ${connHtml}</div>
+                    ${cableHtml}
+                `;
+            }
 
             const pTone = statusTone(p.status);
             const fTone = FOLDER_FIBER_COLORS[folderKey] || "#38bdf8";
@@ -5065,7 +5468,7 @@ function renderProjects() {
                         <label class="check" title="${t("toggleVisibility")}"><input type="checkbox" data-action="toggle" ${visible ? "checked" : ""}></label>
                         <button class="project-main" data-action="expand" aria-expanded="${expanded}">
                             <strong title="${esc(cleanProjName)}">${shapeBadge}${esc(cleanProjName)}</strong>
-                            <small>${subTitle}</small>
+                            ${pmoExtraMetaHtml || `<small>${subTitle}</small>`}
                         </button>
                         ${rightPct ? `<span class="project-pct" style="color:${pTone}">${rightPct}</span>` : ""}
                         ${isAdmin() ? `<button class="icon-btn" data-action="edit" title="${t("editProject")}"><i class="fa-solid fa-pen"></i></button>` : ""}
@@ -5096,13 +5499,15 @@ function renderProjects() {
                             : "";
                         const { planM: rPlanM, doneM: rDoneM } = isPoints ? getPointMetersPair(r) : { planM: 0, doneM: 0 };
                         const segEnds = isLifSeg ? resolveLineEndNames(r, p) : null;
-                        const rightText = isNim
-                            ? t(`status${r.status}`)
-                            : (isPoints
-                                ? `${formatPointAntLabel(r.antennas, ptType)} - ${rPlanM} / ${rDoneM} m${cBrief}`
-                                : (isLifSeg
-                                     ? `📍 ${esc(segEnds.aName)} ➔ ${esc(segEnds.bName)}`
-                                     : `${formatKm(r.doneKm)} / ${formatKm(r.totalKm)} km${cBrief}`));
+                        const rightText = r.isPmoRayon && r.pmoRayon
+                            ? `${r.pmoRayon.pct}% · BCG ${r.pmoRayon.bcgDone}/${r.pmoRayon.bcgPlan} · Avi ${r.pmoRayon.avicomDone}/${r.pmoRayon.avicomPlan}`
+                            : (isNim
+                                ? t(`status${r.status}`)
+                                : (isPoints
+                                    ? `${formatPointAntLabel(r.antennas, ptType)} - ${rPlanM} / ${rDoneM} m${cBrief}`
+                                    : (isLifSeg
+                                         ? `📍 ${esc(segEnds.aName)} ➔ ${esc(segEnds.bName)}`
+                                         : `${formatKm(r.doneKm)} / ${formatKm(r.totalKm)} km${cBrief}`)));
                         const qKey = `${p.id}:${r.id}`;
                         const isQuickOpen = isPoints && isAdmin() && state.quickEditKey === qKey;
                         const qContractors = [...new Set(["BCG", ...Object.keys(syncAdminContractors()), ...(r.contractor ? [r.contractor] : [])])];
@@ -5467,6 +5872,7 @@ function renderContractors() {
 }
 
 function renderMaterials() {
+    if (!$("materialsHead") || !$("materialsBody")) return;
     $("materialsHead").innerHTML = `<tr><th>${t("thProject")}</th><th>${t("thMaterial")}</th><th>${t("thQuantity")}</th><th>${t("thState")}</th>${isAdmin() ? "<th></th>" : ""}</tr>`;
     $("materialsBody").innerHTML = state.materials.map(m => `
         <tr><td>${esc(m.project)}</td><td>${esc(m.material)}</td><td>${esc(m.quantity)}</td><td>${esc(materialStateLabel(m.state))}</td>
@@ -6311,7 +6717,7 @@ function bindEvents() {
     });
 
     $("notesBtn").addEventListener("click", () => $("notesModal").showModal());
-    $("materialsBtn").addEventListener("click", () => $("materialsModal").showModal());
+    $("materialsBtn")?.addEventListener("click", () => $("materialsModal")?.showModal());
     $("printBtn").addEventListener("click", () => openExportPrintModal());
 
     function updateStorageModalUI() {
@@ -6365,7 +6771,7 @@ function bindEvents() {
         const button = e.target.closest("[data-edit-contractor]");
         if (button) editContractor(button.dataset.editContractor);
     });
-    $("materialsBody").addEventListener("click", e => {
+    $("materialsBody")?.addEventListener("click", e => {
         const button = e.target.closest("[data-edit-material]");
         if (!button) return;
         if (!isAdmin()) {
@@ -7156,6 +7562,17 @@ document.addEventListener("DOMContentLoaded", init);
                 const proj = state.projects.find(p => p.id === projectId);
                 const item = proj?.items.find(r => r.id === itemId);
                 if (proj && item) editSegment(proj, item);
+                return;
+            }
+            const pmoSplitBtn = e.target.closest("[data-pmo-split]");
+            if (pmoSplitBtn) {
+                e.stopPropagation();
+                const [clusterKey, projectId, itemId] = pmoSplitBtn.dataset.pmoSplit.split("|");
+                const proj = state.projects.find(p => p.id === projectId);
+                const item = proj?.items.find(r => r.id === itemId);
+                if (clusterKey && proj && item) {
+                    toggleRayonClusterExpand(clusterKey, proj, item);
+                }
                 return;
             }
             const geomBtn = e.target.closest("[data-geom-edit]");
@@ -8281,6 +8698,144 @@ document.addEventListener("DOMContentLoaded", init);
             return;
         }
 
+        // 0) PMO GOOGLE SHEET LAYİHƏSİ (D1 / D2 / Nömrələnmiş Vərəqlər — Parçalanan Alt-Nöqtələr)
+        if (proj.isPmo && proj.pmoMeta) {
+            const pm = proj.pmoMeta;
+            const projShape = getProjectShape(proj);
+            const selSubId = state.selected?.pmoSubId || null;
+            const selItem = entry?.item || null;
+            const selSub = (selItem?.pmoRayon?.subPoints && selSubId)
+                ? selItem.pmoRayon.subPoints.find(sp => sp.id === selSubId)
+                : null;
+
+            // 1. Parçalanmış fərdi nöqtə seçilibsə (TŞ nömrəsi, Dirək, İş icraçıları, Qoşulma tipi)
+            if (selItem && selSub) {
+                const spTone = statusTone(selSub.status);
+                const spStatusText = selSub.status === "bitmis" ? "🟢 Tamamlanıb (100%)" : (selSub.status === "icrada" ? "🟡 İcrada" : "🔴 Başlanmayıb");
+                const clusterKey = `${proj.id}::pmo::${selItem.id}`;
+                const execParts = [];
+                if (selSub.bcgExec) execParts.push(`BCG: <b>${esc(selSub.bcgExec)}</b>`);
+                if (selSub.avicomExec) execParts.push(`Avicom: <b>${esc(selSub.avicomExec)}</b>`);
+                const execHtml = execParts.length ? execParts.join(" · ") : "—";
+
+                card.innerHTML = `
+                    <div class="info-card-head">
+                        <div>
+                            <small style="display:flex;align-items:center;gap:6px">
+                                <span style="color:${spTone};font-size:13px">${projShape.symbol}</span>
+                                <span>${esc(cleanProjName)} · ${esc(selItem.name)}</span>
+                            </small>
+                            <strong>${esc(selSub.tsNo || selSub.name || "Nöqtə")}</strong>
+                        </div>
+                        <div style="display:flex;align-items:center;gap:4px">
+                            <button class="icon-btn" data-card-act="close" title="${t("close")}"><i class="fa-solid fa-xmark"></i></button>
+                        </div>
+                    </div>
+                    <div class="info-card-body">
+                        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px">
+                            <span class="pill" style="--tone:${spTone}">${spStatusText}</span>
+                            ${selSub.pct ? `<b style="color:${spTone};font-size:12px">${selSub.pct}%</b>` : ""}
+                        </div>
+                        <dl class="info-kv" style="margin:0">
+                            <dt>Dirək</dt><dd><b>${esc(selSub.pole || "—")}</b></dd>
+                            <dt>İş icraçıları</dt><dd>${execHtml}</dd>
+                            <dt>Qoşulma tipi</dt><dd><b>${esc(selSub.connType || "—")}</b></dd>
+                        </dl>
+                        <div style="display:flex;gap:6px;padding-top:8px">
+                            <button class="btn btn-outline" style="flex:1;height:28px;font-size:11.5px" data-pmo-split="${esc(clusterKey)}|${esc(proj.id)}|${esc(selItem.id)}">
+                                <i class="fa-solid fa-compress"></i> Rayon üzrə birləşdir
+                            </button>
+                            <button class="btn btn-outline" style="height:28px;font-size:11.5px" data-card-act="zoom">
+                                <i class="fa-solid fa-crosshairs"></i>
+                            </button>
+                        </div>
+                    </div>
+                `;
+                return;
+            }
+
+            // 2. PMO Rayon Xülasəsi (D2) və ya Ümumi Layihə (D1)
+            const connBadgeHtml = cObj => {
+                const c = cObj || {};
+                const parts = [];
+                if (Number(c.fo) > 0) parts.push(`<span class="pill" style="--tone:#38bdf8">🌐 FO: ${c.fo}</span>`);
+                if (Number(c.g3) > 0) parts.push(`<span class="pill" style="--tone:#a855f7">📶 3G: ${c.g3}</span>`);
+                if (Number(c.ant) > 0) parts.push(`<span class="pill" style="--tone:#f59e0b">📡 Anten: ${c.ant}</span>`);
+                if (Number(c.gpon) > 0) parts.push(`<span class="pill" style="--tone:#22c55e">GPON: ${c.gpon}</span>`);
+                return parts.length ? parts.join(" ") : `<span class="muted">Qoşulma: 0</span>`;
+            };
+
+            const cableBlockHtml = (!entry && (pm.cablePlanM > 0 || pm.cableDoneM > 0)) ? `
+                <div class="info-grid" style="grid-template-columns:1fr 1fr;margin-bottom:6px">
+                    <div class="info-stat"><small>🔌 Kabel (Layihə)</small><b>${Math.round(pm.cablePlanM).toLocaleString("az-AZ")} m</b></div>
+                    <div class="info-stat"><small>✅ Kabel (İcra olunan)</small><b style="color:#4ade80">${Math.round(pm.cableDoneM).toLocaleString("az-AZ")} m</b></div>
+                </div>
+            ` : "";
+
+            card.innerHTML = `
+                <div class="info-card-head">
+                    <div>
+                        <small style="display:flex;align-items:center;gap:6px">
+                            <span style="color:${tone};font-size:13px">${projShape.symbol}</span>
+                            <span>PMO Canlı · Ümumi icra: ${pm.overallPct}%</span>
+                        </small>
+                        <strong>${esc(cleanProjName)}</strong>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:4px">
+                        ${entry ? `<button class="btn btn-outline" style="height:24px;padding:0 8px;font-size:11px;color:#fff;border-color:rgba(255,255,255,0.25)" data-card-act="showAll">Hamısı</button>` : ""}
+                        <button class="icon-btn" data-card-act="close" title="${t("close")}"><i class="fa-solid fa-xmark"></i></button>
+                    </div>
+                </div>
+                <div class="info-card-body">
+                    ${!entry ? `
+                    <div class="info-grid" style="grid-template-columns:1fr 1fr 1fr;margin-bottom:6px">
+                        <div class="info-stat"><small>Ümumi faiz</small><b style="color:${tone}">${pm.overallPct}%</b></div>
+                        <div class="info-stat"><small>BCG (İcra/Verilən)</small><b style="color:#38bdf8">${pm.bcgDone} / ${pm.bcgPlan}</b></div>
+                        <div class="info-stat"><small>Avicom (İcra/Verilən)</small><b style="color:#4ade80">${pm.avicomDone} / ${pm.avicomPlan}</b></div>
+                    </div>
+                    ${cableBlockHtml}
+                    <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px">${connBadgeHtml(pm.conn)}</div>
+                    ` : ""}
+                    <div class="info-sub-list">
+                        ${items.map(r => {
+                            const pr = r.pmoRayon || {};
+                            const rTone = statusTone(r.status);
+                            const subCnt = (pr.subPoints || []).filter(sp => sp.coords).length;
+                            const clusterKey = `${proj.id}::pmo::${r.id}`;
+                            const isExp = state.expandedRayons?.has(clusterKey);
+                            return `
+                                <div class="info-sub-item" data-pick-seg="${esc(proj.id)}:${esc(r.id)}" style="border-color:${entry?.item === r ? rTone : "var(--line)"}">
+                                    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+                                        <strong style="display:flex;align-items:center;gap:6px">
+                                            <span style="color:${rTone}">${projShape.symbol}</span>
+                                            ${esc(r.name)}
+                                        </strong>
+                                        <span class="pill" style="--tone:${rTone}">${pr.pct ?? 0}%</span>
+                                    </div>
+                                    <div class="progress" style="height:4px;margin:3px 0"><span style="width:${Math.min(100, pr.pct || 0)}%;background:${rTone}"></span></div>
+                                    <div style="display:flex;justify-content:space-between;gap:8px;font-size:11.5px;margin-top:2px">
+                                        <span style="color:#38bdf8">BCG: <b>${pr.bcgDone ?? 0}</b> / ${pr.bcgPlan ?? 0} (${pr.bcgPct ?? 0}%)</span>
+                                        <span style="color:#4ade80">Avicom: <b>${pr.avicomDone ?? 0}</b> / ${pr.avicomPlan ?? 0} (${pr.avicomPct ?? 0}%)</span>
+                                    </div>
+                                    <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:5px">${connBadgeHtml(pr.conn)}</div>
+                                    ${subCnt > 0 ? `
+                                    <div style="margin-top:6px">
+                                        <button type="button" class="btn btn-outline" style="width:100%;height:26px;font-size:11px;border-color:rgba(251,191,36,0.45);color:#fbbf24" data-pmo-split="${esc(clusterKey)}|${esc(proj.id)}|${esc(r.id)}">
+                                            <i class="fa-solid ${isExp ? "fa-compress" : "fa-expand"}"></i> ${isExp ? "Rayon üzrə birləşdir" : `Nöqtələri xəritədə parçala (${subCnt} nöqtə · 2x klik)`}
+                                        </button>
+                                    </div>` : ""}
+                                </div>
+                            `;
+                        }).join("")}
+                    </div>
+                    <div style="display:flex;gap:6px;padding-top:2px">
+                        <button class="btn btn-outline" style="flex:1;height:28px;font-size:12px" data-card-act="zoom"><i class="fa-solid fa-crosshairs"></i> ${t("zoomTo")}</button>
+                    </div>
+                </div>
+            `;
+            return;
+        }
+
         // A) NÖQTƏ / ANTENA LAYİHƏSİ
         if (isPoints) {
             const totalAnt = proj.items.reduce((s, i) => s + (i.antennas || 0), 0);
@@ -9396,6 +9951,7 @@ document.addEventListener("DOMContentLoaded", init);
 
     // Anbar & Material Reyestri: Ümumi Anbar Qalığı + Layihə üzrə Kabel Qalığı + Qaimələr Jurnalı
     window.renderMaterials = function () {
+        if (!$("materialsHead") || !$("materialsBody")) return;
         let changed = false;
         (state.materials || []).forEach(m => {
             if (m.project && LEGACY_PROJECT_RENAME_MAP[m.project]) {
@@ -9654,4 +10210,1503 @@ document.addEventListener("DOMContentLoaded", init);
         setTimeout(() => URL.revokeObjectURL(url), 4000);
         toast("✅ Anbar hesabatı Excel (CSV) olaraq yükləndi");
     };
+
+    /* === 📊 PMO EXCEL CANLI SİNXRONİZASİYA (D1 / D2 / NÖMRƏLƏNMİŞ VƏRƏQLƏR) + CANLI BİLDİRİŞLƏR === */
+    const DEFAULT_PMO_SHEET_URL = "https://docs.google.com/spreadsheets/d/1j01HnJA5axpTpWEf1ciADvzQp6D86z9a9mHOPBL5OpA/edit?usp=sharing";
+    const PMO_CONFIG_KEY = "bcg.pmo.config.v1";
+    const PMO_NOTIFS_KEY = "bcg.pmo.notifs.v1";
+    const PMO_KNOWN_KEY = "bcg.pmo.known.v1";
+    let xlsxLoadingPromise = null;
+    let pmoWorkbook = null;
+    let pmoLiveFileHandle = null;
+    let pmoLastFileModified = 0;
+    let pmoLastContentHash = "";
+    let pmoLiveTimer = null;
+    let pmoSourceType = ""; // "url" | "file"
+    let pmoSourceName = "";
+    let pmoNotifFilter = "all";
+
+    const AZ_RAYON_COORDS = {
+        "bakı": [40.4093, 49.8671], "abşeron": [40.4530, 49.7540], "sumqayıt": [40.5897, 49.6686],
+        "gəncə": [40.6828, 46.3606], "mingəçevir": [40.7640, 47.0595], "şirvan": [39.9378, 48.9290],
+        "naftalan": [40.5067, 46.8250], "ağcabədi": [40.0502, 47.4594], "ağdam": [39.9911, 46.9274],
+        "ağdaş": [40.6470, 47.4738], "ağdərə": [40.2150, 46.8120], "ağsu": [40.5703, 48.4009],
+        "astara": [38.4560, 48.8750], "babək": [39.1510, 45.4430], "balakən": [41.7263, 46.4048],
+        "beyləqan": [39.7756, 47.6186], "bərdə": [40.3758, 47.1262], "biləsuvar": [39.4583, 48.5450],
+        "cəbrayıl": [39.4000, 47.0260], "cəlilabad": [39.2096, 48.4919], "culfa": [38.9558, 45.6308],
+        "daşkəsən": [40.5202, 46.0779], "füzuli": [39.6003, 47.1431], "gədəbəy": [40.5700, 45.8123],
+        "goranboy": [40.6103, 46.7897], "göyçay": [40.6506, 47.7406], "göygöl": [40.5858, 46.3189],
+        "hacıqabul": [40.0394, 48.9356], "imişli": [39.8709, 48.0600], "ismayıllı": [40.7871, 48.1519],
+        "kəlbəcər": [40.1067, 46.0383], "kəngərli": [39.3872, 45.1636], "kürdəmir": [40.3425, 48.1564],
+        "laçın": [39.6383, 46.5469], "lerik": [38.7739, 48.4150], "lənkəran": [38.7543, 48.8506],
+        "masallı": [39.0353, 48.6654], "naxçıvan": [39.2089, 45.4122], "neftçala": [39.3768, 49.2470],
+        "oğuz": [41.0713, 47.4653], "ordubad": [38.9096, 46.0227], "qax": [41.4183, 46.9204],
+        "qazax": [41.0925, 45.3656], "qəbələ": [40.9814, 47.8458], "qobustan": [40.5336, 48.9282],
+        "quba": [41.3611, 48.5134], "qubadlı": [39.3444, 46.5819], "qusar": [41.4275, 48.4302],
+        "qarabağ": [39.8153, 46.7519], "saatlı": [39.9321, 48.3689], "sabirabad": [40.0087, 48.4770],
+        "salyan": [39.5962, 48.9848], "samux": [40.7649, 46.4087], "sədərək": [39.7142, 44.8864],
+        "siyəzən": [41.0761, 49.1139], "şabran": [41.2012, 48.9871], "şahbuz": [39.4072, 45.5739],
+        "şamaxı": [40.6314, 48.6414], "şəki": [41.1919, 47.1706], "şəmkir": [40.8297, 46.0178],
+        "şərur": [39.5528, 44.9799], "şuşa": [39.7601, 46.7499], "tərtər": [40.3420, 46.9316],
+        "tovuz": [40.9925, 45.6284], "ucar": [40.5180, 47.6500], "xaçmaz": [41.4643, 48.8056],
+        "xankəndi": [39.8153, 46.7519], "xızı": [40.9085, 49.0748], "xocalı": [39.9130, 46.7903],
+        "xocavənd": [39.7915, 47.1101], "yardımlı": [38.9077, 48.2405], "yevlax": [40.6183, 47.1501],
+        "zaqatala": [41.6316, 46.6448], "zəngilan": [39.0857, 46.6525], "zərdab": [40.2184, 47.7121],
+        "rpş": [40.4093, 49.8671]
+    };
+
+    function lookupAzRayonCoord(name, fallbackIdx = 0) {
+        const clean = String(name || "").replace(/\s*rayon(u)?\b/gi, "").replace(/\s*şəhər(i)?\b/gi, "").trim().toLocaleLowerCase("az");
+        if (AZ_RAYON_COORDS[clean]) return AZ_RAYON_COORDS[clean];
+        for (const [k, v] of Object.entries(AZ_RAYON_COORDS)) {
+            if (clean.includes(k) || k.includes(clean)) return v;
+        }
+        return [40.35 + ((fallbackIdx % 7) * 0.045), 47.55 + (Math.floor(fallbackIdx / 7) * 0.06)];
+    }
+
+    function loadPmoNotifs() {
+        const arr = readStore(PMO_NOTIFS_KEY, []);
+        return Array.isArray(arr) ? arr : [];
+    }
+
+    function savePmoNotifs(list) {
+        writeStore(PMO_NOTIFS_KEY, (list || []).slice(0, 150));
+    }
+
+    function renderPmoNotifsUI() {
+        const list = loadPmoNotifs();
+        const unreadCount = list.filter(n => n.unread).length;
+        const badge = $("pmoNotifCount");
+        if (badge) {
+            badge.hidden = unreadCount === 0;
+            badge.textContent = unreadCount > 99 ? "99+" : String(unreadCount);
+        }
+        const box = $("pmoNotifList");
+        if (!box) return;
+        const filtered = pmoNotifFilter === "all" ? list : list.filter(n => n.type === pmoNotifFilter);
+        if (filtered.length === 0) {
+            box.innerHTML = `<div class="empty">Hələ qeyd olunmuş bildiriş yoxdur. PMO cədvəlində nöqtə 100% (yaşıl 🟢) olduqda və ya yeni layihə əlavə edildikdə burada görünəcək.</div>`;
+            return;
+        }
+        box.innerHTML = filtered.map(n => {
+            const isNewProj = n.type === "new_project";
+            const tone = isNewProj ? "#38bdf8" : "#22c55e";
+            const icon = isNewProj ? "🆕" : "🟢";
+            return `
+                <div class="note" data-notif-jump="${esc(n.id)}" style="cursor:pointer;border-left:3px solid ${tone};background:${n.unread ? "rgba(34,197,94,0.08)" : "var(--surface-2)"};padding:10px 12px;border-radius:8px;display:flex;align-items:flex-start;justify-content:space-between;gap:10px">
+                    <div style="flex:1;min-width:0">
+                        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:3px">
+                            <span style="font-weight:700;font-size:12.5px;color:${tone}">${icon} ${esc(n.title)}</span>
+                            ${n.unread ? `<span class="pill" style="--tone:#22c55e;font-size:9.5px">Yeni</span>` : ""}
+                        </div>
+                        <div style="font-size:12px;color:var(--ink)">${esc(n.detail)}</div>
+                        <small style="color:var(--ink-3);font-size:10.5px">${esc(n.time || "")}</small>
+                    </div>
+                    <i class="fa-solid fa-location-arrow" style="color:var(--ink-3);font-size:11px;margin-top:4px" title="Xəritədə göstər"></i>
+                </div>
+            `;
+        }).join("");
+    }
+
+    function pushPmoNotif(entry, showToastNow = true) {
+        const list = loadPmoNotifs();
+        const now = new Date();
+        const pad = x => String(x).padStart(2, "0");
+        const timeStr = `${pad(now.getDate())}.${pad(now.getMonth() + 1)}.${now.getFullYear()} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+        const item = {
+            id: `ntf_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+            time: timeStr,
+            unread: showToastNow,
+            ...entry
+        };
+        list.unshift(item);
+        savePmoNotifs(list);
+        renderPmoNotifsUI();
+        if (showToastNow) {
+            toast(`${entry.type === "new_project" ? "🆕" : "✅"} ${entry.title}: ${entry.detail}`);
+        }
+    }
+
+    function loadPmoConfig() {
+        const saved = readStore(PMO_CONFIG_KEY, null);
+        return {
+            url: DEFAULT_PMO_SHEET_URL,
+            useDomainAuth: false,
+            pollInterval: 30,
+            sheetName: "",
+            headerRow: 1,
+            targetFolder: "project",
+            targetProject: "__auto__",
+            syncMode: "both",
+            unit: "auto",
+            map: {},
+            extraCols: [],
+            ...(saved || {}),
+            url: (saved && saved.url) ? saved.url : DEFAULT_PMO_SHEET_URL
+        };
+    }
+
+    function savePmoConfig(cfg) {
+        writeStore(PMO_CONFIG_KEY, cfg);
+    }
+
+    function normalizePmoUrl(rawUrl) {
+        const u = String(rawUrl || "").trim();
+        if (!u) return "";
+        const gsMatch = u.match(/docs\.google\.com\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
+        if (gsMatch) {
+            return `https://docs.google.com/spreadsheets/d/${gsMatch[1]}/export?format=xlsx`;
+        }
+        if (/sharepoint\.com|onedrive\.live\.com/i.test(u) && !/[?&]download=1/i.test(u)) {
+            return u + (u.includes("?") ? "&download=1" : "?download=1");
+        }
+        return u;
+    }
+
+    function normSheetId(raw) {
+        const s = String(raw ?? "").trim();
+        if (!s) return "";
+        if (/^\d+\.0+$/.test(s)) return s.replace(/\.0+$/, "");
+        if (/^\d+(?:\.\d+)*$/.test(s)) return s;
+        return "";
+    }
+
+    function parsePmoNum(val) {
+        if (val === null || val === undefined) return 0;
+        const s = String(val).trim();
+        if (!s || s === "-" || s === "—") return 0;
+        const n = Number(s.replace(/\s+/g, "").replace(",", "."));
+        return Number.isFinite(n) ? Math.round(n) : 0;
+    }
+
+    function parsePmoPct(val) {
+        if (val === null || val === undefined) return 0;
+        const s = String(val).trim();
+        if (!s || s === "-" || s === "—") return 0;
+        const pctM = s.match(/(\d+(?:[.,]\d+)?)\s*%/);
+        if (pctM) return Math.round(Number(pctM[1].replace(",", ".")));
+        const n = Number(s.replace(",", "."));
+        if (!Number.isFinite(n)) return 0;
+        if (n > 0 && n <= 1.55) return Math.round(n * 100);
+        return Math.round(n);
+    }
+
+    function parseCoordStr(raw) {
+        const s = String(raw ?? "").trim();
+        if (!s) return null;
+        const m = s.match(/(-?\d{1,2}[.,]\d+)\s*[,;\s/]+\s*(-?\d{1,3}[.,]\d+)/);
+        if (!m) return null;
+        const lat = Number(m[1].replace(",", "."));
+        const lng = Number(m[2].replace(",", "."));
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+        if (lat >= 38 && lat <= 42.5 && lng >= 44 && lng <= 51.5) {
+            return [Number(lat.toFixed(6)), Number(lng.toFixed(6))];
+        }
+        if (lng >= 38 && lng <= 42.5 && lat >= 44 && lat <= 51.5) {
+            return [Number(lng.toFixed(6)), Number(lat.toFixed(6))];
+        }
+        return null;
+    }
+
+    function cleanExecName(raw) {
+        const s = String(raw ?? "").trim();
+        if (!s || s === "-" || s === "—" || s === "0" || s === "1" || /^\d+(?:\.\d+)?$/.test(s)) return "";
+        return s;
+    }
+
+    function normalizeConnLabel(raw) {
+        const s = String(raw ?? "").trim();
+        if (!s || s === "-" || s === "0") return "";
+        if (s.includes("📶")) return "3G";
+        if (s.includes("📡")) return "Anten";
+        if (s.includes("🌐")) return "FO";
+        return s;
+    }
+
+    function isStructuredPmoWorkbook(wb) {
+        if (!wb || !Array.isArray(wb.SheetNames)) return false;
+        const hasD1 = wb.SheetNames.some(n => /^d\s*1$/i.test(n.trim()));
+        const hasD2 = wb.SheetNames.some(n => /^d\s*2$/i.test(n.trim()));
+        return hasD1 && hasD2;
+    }
+
+    function parseNumberedPmoSheet(wb, sheetId) {
+        const sheetName = wb.SheetNames.find(n => n.trim() === sheetId || normSheetId(n.trim()) === sheetId);
+        if (!sheetName || !wb.Sheets?.[sheetName]) {
+            return { cablePlanM: 0, cableDoneM: 0, points: [] };
+        }
+        const sh = wb.Sheets[sheetName];
+        const rows = XLSX.utils.sheet_to_json(sh, { header: "A", defval: "", raw: true });
+        if (!Array.isArray(rows) || rows.length === 0) {
+            return { cablePlanM: 0, cableDoneM: 0, points: [] };
+        }
+
+        // 1. Kabel məsafəsi (Row 3 başlıqlarından "FO kabelin çəkilməsi" və ya CT sütununu tap; Row 4 = Layihə, Row 5 = İcra olunan)
+        const r3 = rows.find(r => r.__rowNum__ === 2) || rows[2] || {};
+        const r4 = rows.find(r => r.__rowNum__ === 3) || rows[3] || {};
+        const r5 = rows.find(r => r.__rowNum__ === 4) || rows[4] || {};
+        let cableCol = "CT";
+        for (const [colKey, val] of Object.entries(r3)) {
+            if (colKey === "__rowNum__") continue;
+            if (/FO\s*kabelin\s*çəkilməsi/i.test(String(val || ""))) {
+                cableCol = colKey;
+                break;
+            }
+        }
+        const cablePlanM = parsePmoNum(r4[cableCol]);
+        const cableDoneM = parsePmoNum(r5[cableCol]);
+
+        // 2. Fərdi nöqtələr (Row 7-dən başlayaraq A sütununda 🟢/🟡/🔴 olan sətirlər)
+        const points = [];
+        for (const r of rows) {
+            const rn = r.__rowNum__ ?? 0;
+            if (rn < 6) continue;
+            const aStr = String(r.A ?? "").trim();
+            if (!aStr) continue;
+            let status = "";
+            if (aStr.includes("🟢") || /tamamlan|bitmi/i.test(aStr)) status = "bitmis";
+            else if (aStr.includes("🟡") || /icra/i.test(aStr)) status = "icrada";
+            else if (aStr.includes("🔴") || /başlan|layih/i.test(aStr)) status = "layihe";
+            else continue;
+
+            const coords = parseCoordStr(r.C);
+            const rawAddr = String(r.D ?? "").trim();
+            const rawPole = String(r.E ?? "").trim();
+            const rawTs = String(r.G ?? "").trim();
+            const rawRegion = String(r.H ?? "").trim();
+            const bcgExec = cleanExecName(r.K);
+            const avicomExec = cleanExecName(r.L);
+            const connType = normalizeConnLabel(r.P);
+            const pct = status === "bitmis" ? 100 : parsePmoPct(r.R);
+            const idxNum = parsePmoNum(r.B) || (points.length + 1);
+
+            // Xəritədə çıxacaq ad: "TŞ nömrəsi" (G sütunu; əgər boşdursa ünvandan qısa ad)
+            let tsNo = rawTs;
+            if (!tsNo || tsNo.toLowerCase() === rawRegion.toLowerCase()) {
+                tsNo = rawAddr
+                    ? (rawAddr.length > 36 ? `${rawAddr.slice(0, 35).trim()}…` : rawAddr)
+                    : `#${idxNum}`;
+            }
+
+            // Boş/şablon sətirləri keç
+            if (!coords && !rawAddr && !rawTs && !rawRegion) continue;
+
+            points.push({
+                id: `pmo_${sheetId}_r${rn + 1}`,
+                idx: idxNum,
+                tsNo,
+                name: tsNo,
+                address: rawAddr,
+                pole: rawPole,
+                rayon: rawRegion,
+                bcgExec,
+                avicomExec,
+                connType,
+                status,
+                statusEmoji: aStr,
+                pct,
+                coords
+            });
+        }
+        return { cablePlanM, cableDoneM, points };
+    }
+
+    function applyStructuredPmoWorkbook(wb, silent = false) {
+        const d1Name = wb.SheetNames.find(n => /^d\s*1$/i.test(n.trim()));
+        const d2Name = wb.SheetNames.find(n => /^d\s*2$/i.test(n.trim()));
+        if (!d1Name || !d2Name) return { updated: 0, added: 0 };
+
+        const d1Rows = XLSX.utils.sheet_to_json(wb.Sheets[d1Name], { header: "A", defval: "", raw: true });
+        const d2Rows = XLSX.utils.sheet_to_json(wb.Sheets[d2Name], { header: "A", defval: "", raw: true });
+
+        // 1. D1-dən layihələri oxu (sol panel — 🏢 BCG qovluğu üçün)
+        const projectsMap = new Map();
+        for (const r of d1Rows) {
+            const sid = normSheetId(r.A);
+            const name = String(r.B ?? "").trim();
+            if (!sid || !name) continue;
+            const overallPct = parsePmoPct(r.D);
+            const totalPlan = parsePmoNum(r.F);
+            const totalDone = parsePmoNum(r.G);
+            const bcgPlan = parsePmoNum(r.K);
+            const bcgDone = parsePmoNum(r.L);
+            const bcgPct = parsePmoPct(r.M);
+            const avicomPlan = totalPlan || parsePmoNum(r.F);
+            const avicomDone = parsePmoNum(r.O);
+            const avicomPct = parsePmoPct(r.Q);
+            const conn = {
+                fo: parsePmoNum(r.S),
+                g3: parsePmoNum(r.T),
+                ant: parsePmoNum(r.U),
+                gpon: parsePmoNum(r.V)
+            };
+            projectsMap.set(sid, {
+                sheetId: sid,
+                name,
+                overallPct,
+                totalPlan,
+                totalDone,
+                bcgPlan,
+                bcgDone,
+                bcgPct,
+                avicomPlan,
+                avicomDone,
+                avicomPct,
+                conn,
+                cablePlanM: 0,
+                cableDoneM: 0,
+                rayons: []
+            });
+        }
+
+        // 2. D2-dən hər layihənin rayon sətirlərini oxu (xəritə nöqtələri üçün)
+        for (const r of d2Rows) {
+            const sid = normSheetId(r.A);
+            if (!sid) continue;
+            const projTitle = String(r.B ?? "").trim();
+            const rayonName = String(r.C ?? "").trim();
+            if (projTitle && !rayonName) {
+                if (!projectsMap.has(sid)) {
+                    // D2-də olub D1-də olmayan nömrələnmiş layihə (məs: 15.1)
+                    const totalPlan = parsePmoNum(r.F);
+                    const totalDone = parsePmoNum(r.G);
+                    const overallPct = r.D ? parsePmoPct(r.D) : (totalPlan > 0 ? Math.round((totalDone / totalPlan) * 100) : 0);
+                    projectsMap.set(sid, {
+                        sheetId: sid,
+                        name: projTitle,
+                        overallPct,
+                        totalPlan,
+                        totalDone,
+                        bcgPlan: parsePmoNum(r.K),
+                        bcgDone: parsePmoNum(r.L),
+                        bcgPct: parsePmoPct(r.M),
+                        avicomPlan: totalPlan,
+                        avicomDone: parsePmoNum(r.O),
+                        avicomPct: parsePmoPct(r.Q),
+                        conn: { fo: parsePmoNum(r.S), g3: parsePmoNum(r.T), ant: parsePmoNum(r.U), gpon: parsePmoNum(r.V) },
+                        cablePlanM: 0,
+                        cableDoneM: 0,
+                        rayons: []
+                    });
+                }
+                continue;
+            }
+            if (!rayonName || !projectsMap.has(sid)) continue;
+            if (/^magistral\b/i.test(rayonName)) continue; // Magistral kabel ümumi layihə altında göstərilir
+
+            const totalPlan = parsePmoNum(r.F);
+            const totalDone = parsePmoNum(r.G);
+            const bcgPlan = parsePmoNum(r.K);
+            const bcgDone = parsePmoNum(r.L);
+            const bcgPct = parsePmoPct(r.M);
+            const avicomPlan = totalPlan || bcgPlan;
+            const avicomDone = parsePmoNum(r.O);
+            const avicomPct = parsePmoPct(r.Q);
+            const pct = r.D ? parsePmoPct(r.D) : (totalPlan > 0 ? Math.round((totalDone / totalPlan) * 100) : bcgPct);
+            const conn = {
+                fo: parsePmoNum(r.S),
+                g3: parsePmoNum(r.T),
+                ant: parsePmoNum(r.U),
+                gpon: parsePmoNum(r.V)
+            };
+            projectsMap.get(sid).rayons.push({
+                name: rayonName,
+                pct,
+                totalPlan,
+                totalDone,
+                bcgPlan,
+                bcgDone,
+                bcgPct,
+                avicomPlan,
+                avicomDone,
+                avicomPct,
+                conn,
+                subPoints: []
+            });
+        }
+
+        // 3. Hər layihənin nömrələnmiş vərəqindən alt-nöqtələri (koordinat, A rəngi, TŞ nömrəsi, Dirək, İcraçı, Qoşulma) və CT kabel məsafəsini oxu
+        const parsedProjects = [];
+        const currentPointStates = {};
+        const currentProjectIds = [];
+        let completedSnapshot = [];
+
+        for (const pData of projectsMap.values()) {
+            const detail = parseNumberedPmoSheet(wb, pData.sheetId);
+            pData.cablePlanM = detail.cablePlanM;
+            pData.cableDoneM = detail.cableDoneM;
+
+            // Alt-nöqtələri rayonlara uyğunlaşdır
+            const rayonByNorm = new Map();
+            pData.rayons.forEach(ry => {
+                rayonByNorm.set(normMatchName(ry.name), ry);
+            });
+
+            detail.points.forEach(sp => {
+                const ptKey = `${pData.sheetId}::${sp.id}`;
+                currentPointStates[ptKey] = sp.status;
+                if (sp.status === "bitmis") {
+                    completedSnapshot.push({
+                        key: ptKey,
+                        sheetId: pData.sheetId,
+                        projName: pData.name,
+                        rayon: sp.rayon || "Ümumi",
+                        tsNo: sp.tsNo,
+                        subId: sp.id
+                    });
+                }
+
+                const spRayNorm = normMatchName(sp.rayon);
+                let targetRy = spRayNorm ? rayonByNorm.get(spRayNorm) : null;
+                if (!targetRy && spRayNorm) {
+                    for (const [k, ry] of rayonByNorm.entries()) {
+                        if (k && (k.includes(spRayNorm) || spRayNorm.includes(k))) {
+                            targetRy = ry;
+                            break;
+                        }
+                    }
+                }
+                if (!targetRy && pData.rayons.length === 0 && sp.coords) {
+                    // D2-də rayon sətiri olmayan layihələr (məs: 18.1) üçün ünvandan rayon çıxar
+                    const addrRayon = (sp.address.match(/^([A-ZƏÖÜÇŞĞİ][a-zəöüçşğı]+)\s+rayon/i)?.[1] || pData.name).trim();
+                    const arNorm = normMatchName(addrRayon);
+                    if (!rayonByNorm.has(arNorm)) {
+                        const newRy = {
+                            name: addrRayon,
+                            pct: pData.overallPct,
+                            totalPlan: 0,
+                            totalDone: 0,
+                            bcgPlan: pData.bcgPlan,
+                            bcgDone: pData.bcgDone,
+                            bcgPct: pData.bcgPct,
+                            avicomPlan: pData.avicomPlan,
+                            avicomDone: pData.avicomDone,
+                            avicomPct: pData.avicomPct,
+                            conn: pData.conn,
+                            subPoints: []
+                        };
+                        pData.rayons.push(newRy);
+                        rayonByNorm.set(arNorm, newRy);
+                    }
+                    targetRy = rayonByNorm.get(arNorm);
+                }
+                if (targetRy) {
+                    targetRy.subPoints.push(sp);
+                }
+            });
+
+            // Hash yoxlaması və layihə obyektini yaratma
+            const projId = `pmo_sheet_${pData.sheetId.replace(/\./g, "_")}`;
+            currentProjectIds.push(projId);
+            const projStatus = pData.overallPct >= 100 ? "bitmis" : (pData.overallPct > 0 ? "icrada" : "layihe");
+
+            const items = pData.rayons.map((ry, rIdx) => {
+                const validSubCoords = ry.subPoints.filter(sp => Array.isArray(sp.coords) && sp.coords.length === 2).map(sp => sp.coords);
+                let centerCoord;
+                if (validSubCoords.length > 0) {
+                    const avgLat = validSubCoords.reduce((s, c) => s + c[0], 0) / validSubCoords.length;
+                    const avgLng = validSubCoords.reduce((s, c) => s + c[1], 0) / validSubCoords.length;
+                    centerCoord = [Number(avgLat.toFixed(6)), Number(avgLng.toFixed(6))];
+                } else {
+                    centerCoord = lookupAzRayonCoord(ry.name, rIdx);
+                }
+                const ryStatus = ry.pct >= 100 ? "bitmis" : (ry.pct > 0 ? "icrada" : "layihe");
+                return {
+                    id: `pmo_${pData.sheetId}_ry_${rIdx + 1}`,
+                    name: ry.name,
+                    rayon: ry.name,
+                    isPmoRayon: true,
+                    pmoRayon: {
+                        pct: ry.pct,
+                        totalPlan: ry.totalPlan || ry.subPoints.length,
+                        totalDone: ry.totalDone,
+                        bcgPlan: ry.bcgPlan,
+                        bcgDone: ry.bcgDone,
+                        bcgPct: ry.bcgPct,
+                        avicomPlan: ry.avicomPlan,
+                        avicomDone: ry.avicomDone,
+                        avicomPct: ry.avicomPct,
+                        conn: ry.conn,
+                        subPoints: ry.subPoints
+                    },
+                    status: ryStatus,
+                    totalKm: ry.totalPlan || 0,
+                    doneKm: ry.totalDone || 0,
+                    antennas: ry.totalPlan || ry.subPoints.length || 1,
+                    summary: true,
+                    coords: [centerCoord]
+                };
+            });
+
+            parsedProjects.push({
+                id: projId,
+                sheetId: pData.sheetId,
+                name: `${pData.sheetId}. ${pData.name}`,
+                category: "project",
+                type: "points",
+                status: projStatus,
+                isPmo: true,
+                pmoMeta: {
+                    sheetId: pData.sheetId,
+                    overallPct: pData.overallPct,
+                    totalPlan: pData.totalPlan,
+                    totalDone: pData.totalDone,
+                    bcgPlan: pData.bcgPlan,
+                    bcgDone: pData.bcgDone,
+                    bcgPct: pData.bcgPct,
+                    avicomPlan: pData.avicomPlan,
+                    avicomDone: pData.avicomDone,
+                    avicomPct: pData.avicomPct,
+                    conn: pData.conn,
+                    cablePlanM: pData.cablePlanM,
+                    cableDoneM: pData.cableDoneM
+                },
+                items
+            });
+        }
+
+        // Dəyişiklik olub-olmadığını yoxla
+        const newHash = JSON.stringify(parsedProjects.map(p => ({ id: p.id, m: p.pmoMeta, n: p.items.length, s: p.items.map(i => [i.id, i.pmoRayon?.pct, i.pmoRayon?.subPoints?.map(sp => sp.status)]) })));
+        if (silent && newHash === pmoLastContentHash) {
+            return { updated: 0, added: 0, unchanged: true };
+        }
+        pmoLastContentHash = newHash;
+
+        // 4. Bildirişləri yoxla: 100% (yaşıl 🟢) olan nöqtələr və yeni layihələr
+        const known = readStore(PMO_KNOWN_KEY, null);
+        const isFirstSync = !known || !known.seeded;
+        const prevProjects = new Set(Array.isArray(known?.projects) ? known.projects : []);
+        const prevPoints = (known && typeof known.points === "object") ? known.points : {};
+
+        if (isFirstSync) {
+            // İlk açılışda son bitmiş (100% 🟢) nöqtələrdən nümunə siyahı doldur (toast spamsız)
+            const initialNotifs = loadPmoNotifs();
+            if (initialNotifs.length === 0) {
+                const seedList = completedSnapshot.slice(0, 25).map(c => {
+                    const pObj = parsedProjects.find(p => p.sheetId === c.sheetId);
+                    const ryItem = pObj?.items.find(it => (it.pmoRayon?.subPoints || []).some(sp => sp.id === c.subId));
+                    return {
+                        id: `seed_${c.key}`,
+                        type: "completed",
+                        title: "Nöqtə tamamlandı (100% 🟢)",
+                        detail: `${c.tsNo} — ${c.rayon} (${c.projName})`,
+                        projectId: pObj?.id || "",
+                        itemId: ryItem?.id || "",
+                        pmoSubId: c.subId,
+                        time: "PMO Canlı",
+                        unread: false
+                    };
+                });
+                savePmoNotifs(seedList);
+                renderPmoNotifsUI();
+            }
+        } else {
+            // Yeni layihə əlavə olunubsa bildiriş çıxar
+            parsedProjects.forEach(p => {
+                if (!prevProjects.has(p.id)) {
+                    pushPmoNotif({
+                        type: "new_project",
+                        title: "Yeni layihə əlavə olundu",
+                        detail: p.name,
+                        projectId: p.id
+                    }, true);
+                }
+            });
+            // Hər hansı nöqtə 100% (yaşıl 🟢) olubsa bildiriş çıxar
+            completedSnapshot.forEach(c => {
+                if (prevPoints[c.key] !== "bitmis") {
+                    const pObj = parsedProjects.find(p => p.sheetId === c.sheetId);
+                    const ryItem = pObj?.items.find(it => (it.pmoRayon?.subPoints || []).some(sp => sp.id === c.subId));
+                    pushPmoNotif({
+                        type: "completed",
+                        title: "Nöqtə tamamlandı (100% 🟢)",
+                        detail: `${c.tsNo} — ${c.rayon} (${c.projName})`,
+                        projectId: pObj?.id || "",
+                        itemId: ryItem?.id || "",
+                        pmoSubId: c.subId
+                    }, true);
+                }
+            });
+        }
+        writeStore(PMO_KNOWN_KEY, { seeded: true, projects: currentProjectIds, points: currentPointStates });
+
+        // 5. state.projects içinə yaz (mövcud PMO layihələrini yenilə, yenilərini əlavə et)
+        let updatedCount = 0;
+        let addedCount = 0;
+        const hiddenSet = getHiddenProjectIds();
+        parsedProjects.forEach(np => {
+            const idx = state.projects.findIndex(p => p.id === np.id);
+            if (idx >= 0) {
+                state.projects[idx] = np;
+                updatedCount++;
+            } else {
+                state.projects.push(np);
+                if (!hiddenSet.has(np.id)) state.visibleIds.add(np.id);
+                addedCount++;
+            }
+        });
+
+        renderAll();
+        renderPmoNotifsUI();
+        return { updated: updatedCount, added: addedCount };
+    }
+
+    async function ensureXLSX() {
+        if (typeof XLSX !== "undefined") return window.XLSX;
+        if (xlsxLoadingPromise) return xlsxLoadingPromise;
+        xlsxLoadingPromise = new Promise((resolve, reject) => {
+            const s = document.createElement("script");
+            s.src = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+            s.async = true;
+            s.onload = () => resolve(window.XLSX);
+            s.onerror = () => {
+                xlsxLoadingPromise = null;
+                reject(new Error("XLSX kitabxanası yüklənə bilmədi"));
+            };
+            document.head.appendChild(s);
+        });
+        return xlsxLoadingPromise;
+    }
+
+    function parseCsvFallbackToWorkbook(text) {
+        const sep = text.includes("\t") && !text.includes(";") ? "\t" : (text.split(";").length > text.split(",").length ? ";" : ",");
+        const rows = text.split(/\r?\n/).filter(l => l.trim().length > 0).map(line => {
+            const out = [];
+            let cur = "", inQuotes = false;
+            for (let i = 0; i < line.length; i++) {
+                const ch = line[i];
+                if (ch === '"') {
+                    inQuotes = !inQuotes;
+                } else if (ch === sep && !inQuotes) {
+                    out.push(cur.trim());
+                    cur = "";
+                } else {
+                    cur += ch;
+                }
+            }
+            out.push(cur.trim());
+            return out;
+        });
+        return {
+            SheetNames: ["PMO_Data"],
+            Sheets: { PMO_Data: { _rawRows: rows } }
+        };
+    }
+
+    function getSheet2DRows(wb, sheetName) {
+        if (!wb || !sheetName || !wb.Sheets?.[sheetName]) return [];
+        const sh = wb.Sheets[sheetName];
+        if (Array.isArray(sh._rawRows)) return sh._rawRows;
+        if (typeof XLSX !== "undefined" && XLSX.utils) {
+            return XLSX.utils.sheet_to_json(sh, { header: 1, defval: "", raw: false });
+        }
+        return [];
+    }
+
+    function detectBestHeaderRow(rows2D) {
+        let bestRow = 1;
+        let maxNonEmptyText = 0;
+        const limit = Math.min(10, rows2D.length);
+        for (let r = 0; r < limit; r++) {
+            const row = rows2D[r] || [];
+            const score = row.filter(c => {
+                const s = String(c ?? "").trim();
+                return s.length > 0 && isNaN(Number(s));
+            }).length;
+            if (score > maxNonEmptyText) {
+                maxNonEmptyText = score;
+                bestRow = r + 1;
+            }
+        }
+        return bestRow;
+    }
+
+    function extractHeadersAndObjects(wb, sheetName, headerRowNum = 1) {
+        const rows2D = getSheet2DRows(wb, sheetName);
+        if (rows2D.length === 0) return { headers: [], records: [] };
+        const hIdx = Math.max(0, Math.min(rows2D.length - 1, (Number(headerRowNum) || 1) - 1));
+        const rawHeaders = rows2D[hIdx] || [];
+        const headers = [];
+        const colIndices = [];
+        rawHeaders.forEach((h, idx) => {
+            const clean = String(h ?? "").replace(/\s+/g, " ").trim();
+            const label = clean || `Sütun_${idx + 1}`;
+            if (clean || rows2D.slice(hIdx + 1, hIdx + 15).some(r => String(r?.[idx] ?? "").trim() !== "")) {
+                const uniqLabel = headers.includes(label) ? `${label} (${idx + 1})` : label;
+                headers.push(uniqLabel);
+                colIndices.push({ label: uniqLabel, idx });
+            }
+        });
+        const records = [];
+        for (let r = hIdx + 1; r < rows2D.length; r++) {
+            const row = rows2D[r];
+            if (!Array.isArray(row)) continue;
+            const obj = {};
+            let nonEmptyCount = 0;
+            colIndices.forEach(({ label, idx }) => {
+                const val = String(row[idx] ?? "").trim();
+                obj[label] = val;
+                if (val !== "") nonEmptyCount++;
+            });
+            if (nonEmptyCount > 0) records.push(obj);
+        }
+        return { headers, records };
+    }
+
+    function autoGuessColumn(headers, savedCol, pattern, excludePattern = null) {
+        if (savedCol && headers.includes(savedCol)) return savedCol;
+        for (const h of headers) {
+            const norm = normalizeKey(h);
+            if (excludePattern && (excludePattern.test(h) || excludePattern.test(norm))) continue;
+            if (pattern.test(h) || pattern.test(norm)) return h;
+        }
+        return "";
+    }
+
+    function populatePmoTargetProjects() {
+        const folder = $("pmoTargetFolder")?.value || "project";
+        const sel = $("pmoTargetProject");
+        if (!sel) return;
+        const cfg = loadPmoConfig();
+        const projs = (state.projects || []).filter(p => (p.category || "project") === folder);
+        sel.innerHTML = `<option value="__auto__">✨ Excel-dəki Layihə adına görə (və ya PMO Ümumi)</option>`
+            + projs.map(p => `<option value="${esc(p.id)}">📁 ${esc(p.name)}</option>`).join("");
+        if (cfg.targetProject && (cfg.targetProject === "__auto__" || projs.some(p => p.id === cfg.targetProject))) {
+            sel.value = cfg.targetProject;
+        }
+    }
+
+    function populatePmoMappingDropdowns(headers) {
+        const cfg = loadPmoConfig();
+        const savedMap = cfg.map || {};
+        const makeOpts = (selectedVal, allowEmpty = true) => {
+            const emptyOpt = allowEmpty ? `<option value="">— Seçilməyib —</option>` : "";
+            return emptyOpt + headers.map(h => `<option value="${esc(h)}" ${h === selectedVal ? "selected" : ""}>${esc(h)}</option>`).join("");
+        };
+
+        const guessed = {
+            name: autoGuessColumn(headers, savedMap.name, /(məntəqə|menteqe|obyekt|xətt|xett|nöqtə|noqte|kəsişmə|kesisme|ünvan|unvan|\bad\b|adı|adi|name|route|marşrut|marsrut|site|location|məkan)/i, /(layihə|layihe|project|icraçı|icraci|podrat|rayon)/i) || headers[0] || "",
+            rayon: autoGuessColumn(headers, savedMap.rayon, /(rayon|şəhər|seher|bölgə|bolge|region|district)/i),
+            project: autoGuessColumn(headers, savedMap.project, /(layihə|layihe|proyekt|project|pmo|paket|istiqamət|istiqamet)/i),
+            status: autoGuessColumn(headers, savedMap.status, /(status|vəziyyət|veziyyet|state|icra\s*vəziyyəti|mərhələ|merhele|faiz|%)/i),
+            plan: autoGuessColumn(headers, savedMap.plan, /(plan|nəzərdə|nezerde|verilən|verilen|ümumi|umumi|total|uzunluq|məsafə|mesafe|layihə\s*uzun)/i, /(faktiki|çəkilən|cekilen|icra|done|hazır)/i),
+            done: autoGuessColumn(headers, savedMap.done, /(faktiki|çəkilən|cekilen|icra\b|gorulen|görülən|done|completed|bitmiş\s*m)/i, /(plan|verilən|verilen|nəzərdə)/i),
+            contractor: autoGuessColumn(headers, savedMap.contractor, /(icraçı|icraci|podratçı|podratci|contractor|subcontractor|şirkət|sirket|briqada)/i),
+            lead: autoGuessColumn(headers, savedMap.lead, /(mühəndis|muhendis|briqadir|məsul|mesul|rəhbər|rehber|engineer|lead|kim\s*işləyib)/i),
+            workers: autoGuessColumn(headers, savedMap.workers, /(işçi|isci|nəfər|nefer|worker|heyət|heyet)/i),
+            antennas: autoGuessColumn(headers, savedMap.antennas, /(antena|antenna|bts|cihaz|sayı|sayi)/i, /(işçi|isci|lif|fiber)/i),
+            typeOrFo: autoGuessColumn(headers, savedMap.typeOrFo, /(lif|fiber|\bfo\b|kabel\s*növ|nöqtə\s*növ|noqte\s*nov|tip|type)/i),
+            lat: autoGuessColumn(headers, savedMap.lat, /(enlik|\blat\b|latitude|koordinat|coord|gps|x_coord)/i),
+            lng: autoGuessColumn(headers, savedMap.lng, /(uzunluq|\blng\b|\blon\b|longitude|y_coord)/i)
+        };
+
+        if ($("pmoMapName")) $("pmoMapName").innerHTML = makeOpts(guessed.name, false);
+        if ($("pmoMapRayon")) $("pmoMapRayon").innerHTML = makeOpts(guessed.rayon);
+        if ($("pmoMapProject")) $("pmoMapProject").innerHTML = makeOpts(guessed.project);
+        if ($("pmoMapStatus")) $("pmoMapStatus").innerHTML = makeOpts(guessed.status);
+        if ($("pmoMapPlan")) $("pmoMapPlan").innerHTML = makeOpts(guessed.plan);
+        if ($("pmoMapDone")) $("pmoMapDone").innerHTML = makeOpts(guessed.done);
+        if ($("pmoMapContractor")) $("pmoMapContractor").innerHTML = makeOpts(guessed.contractor);
+        if ($("pmoMapLead")) $("pmoMapLead").innerHTML = makeOpts(guessed.lead);
+        if ($("pmoMapWorkers")) $("pmoMapWorkers").innerHTML = makeOpts(guessed.workers);
+        if ($("pmoMapAntennas")) $("pmoMapAntennas").innerHTML = makeOpts(guessed.antennas);
+        if ($("pmoMapTypeOrFo")) $("pmoMapTypeOrFo").innerHTML = makeOpts(guessed.typeOrFo);
+        if ($("pmoMapLat")) $("pmoMapLat").innerHTML = makeOpts(guessed.lat);
+        if ($("pmoMapLng")) $("pmoMapLng").innerHTML = makeOpts(guessed.lng);
+
+        const extraBox = $("pmoExtraColsList");
+        if (extraBox) {
+            const savedExtras = new Set(Array.isArray(cfg.extraCols) ? cfg.extraCols : []);
+            extraBox.innerHTML = headers.map(h => `
+                <label style="display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:6px;background:var(--surface-2);border:1px solid var(--line);font-size:11px;cursor:pointer">
+                    <input type="checkbox" data-pmo-extra-col="${esc(h)}" ${savedExtras.has(h) ? "checked" : ""}>
+                    <span>${esc(h)}</span>
+                </label>
+            `).join("");
+        }
+    }
+
+    function getCurrentPmoMappingFromUI() {
+        return {
+            name: $("pmoMapName")?.value || "",
+            rayon: $("pmoMapRayon")?.value || "",
+            project: $("pmoMapProject")?.value || "",
+            status: $("pmoMapStatus")?.value || "",
+            plan: $("pmoMapPlan")?.value || "",
+            done: $("pmoMapDone")?.value || "",
+            contractor: $("pmoMapContractor")?.value || "",
+            lead: $("pmoMapLead")?.value || "",
+            workers: $("pmoMapWorkers")?.value || "",
+            antennas: $("pmoMapAntennas")?.value || "",
+            typeOrFo: $("pmoMapTypeOrFo")?.value || "",
+            lat: $("pmoMapLat")?.value || "",
+            lng: $("pmoMapLng")?.value || ""
+        };
+    }
+
+    function getSelectedPmoExtraCols() {
+        return [...document.querySelectorAll("[data-pmo-extra-col]:checked")].map(el => el.dataset.pmoExtraCol);
+    }
+
+    function normMatchName(str) {
+        return String(str || "")
+            .toLocaleLowerCase("az")
+            .replace(/\s*\(?\bFaz[-\s]*[12]\b\)?/gi, "")
+            .replace(/\s*rayon(u)?\b/gi, "")
+            .replace(/[^a-z0-9əıöüçşğ]/gi, "")
+            .trim();
+    }
+
+    function parsePmoCoords(row, latCol, lngCol) {
+        if (!latCol) return null;
+        const rawLat = String(row[latCol] ?? "").trim();
+        if (!rawLat) return null;
+        if (!lngCol || !String(row[lngCol] ?? "").trim()) {
+            // Birləşmiş koordinat: "40.4093, 49.8671"
+            const parts = rawLat.split(/[,;\s/]+/).map(s => Number(s.replace(",", "."))).filter(n => !isNaN(n));
+            if (parts.length >= 2 && Math.abs(parts[0]) <= 90 && Math.abs(parts[1]) <= 180) {
+                return [[Number(parts[0].toFixed(6)), Number(parts[1].toFixed(6))]];
+            }
+            return null;
+        }
+        const lat = Number(rawLat.replace(",", "."));
+        const lng = Number(String(row[lngCol] ?? "").trim().replace(",", "."));
+        if (!isNaN(lat) && !isNaN(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180 && (Math.abs(lat) > 0.1 || Math.abs(lng) > 0.1)) {
+            return [[Number(lat.toFixed(6)), Number(lng.toFixed(6))]];
+        }
+        return null;
+    }
+
+    function resolvePmoStatus(rawStatus, planVal, doneVal) {
+        const s = String(rawStatus ?? "").trim();
+        if (s) {
+            const pctMatch = s.match(/^(\d+(?:[.,]\d+)?)\s*%?$/);
+            if (pctMatch) {
+                const p = Number(pctMatch[1].replace(",", "."));
+                if (p >= 100) return "bitmis";
+                if (p > 0) return "icrada";
+                return "layihe";
+            }
+            return normalizeStatus(s);
+        }
+        if (planVal > 0 && doneVal >= planVal) return "bitmis";
+        if (doneVal > 0) return "icrada";
+        return "layihe";
+    }
+
+    function renderPmoPreview() {
+        if (!pmoWorkbook) return;
+        const sheetName = $("pmoSheetSelect")?.value || pmoWorkbook.SheetNames[0];
+        const headerRow = Number($("pmoHeaderRow")?.value) || 1;
+        const { headers, records } = extractHeadersAndObjects(pmoWorkbook, sheetName, headerRow);
+        const m = getCurrentPmoMappingFromUI();
+
+        let matchedCount = 0;
+        let newCount = 0;
+        const allMapItems = (state.projects || []).flatMap(p => (p.items || []).map(item => ({
+            proj: p,
+            item,
+            key: normMatchName(item.name),
+            idKey: normMatchName(item.id)
+        })));
+
+        records.forEach(r => {
+            const nameVal = String(r[m.name] ?? "").trim();
+            if (!nameVal) return;
+            const nk = normMatchName(nameVal);
+            const found = allMapItems.find(x => x.key === nk || x.idKey === nk || (nk.length >= 4 && (x.key.includes(nk) || nk.includes(x.key))));
+            if (found) matchedCount++;
+            else newCount++;
+        });
+
+        if ($("pmoPreviewStats")) {
+            $("pmoPreviewStats").innerHTML = `📊 Vərəqdə <b>${records.length}</b> sətir tapıldı · Xəritədə uyğun gələn mövcud obyekt: <b style="color:#38bdf8">${matchedCount}</b> · Yeni əlavə olunacaq sətir: <b style="color:#f59e0b">${newCount}</b>`;
+        }
+        if ($("pmoApplySyncBtn")) {
+            $("pmoApplySyncBtn").disabled = records.length === 0 || !m.name;
+        }
+
+        const previewEl = $("pmoPreviewTable");
+        if (previewEl) {
+            const sample = records.slice(0, 5);
+            const colsToShow = [m.name, m.project, m.status, m.plan, m.done, m.contractor].filter(Boolean);
+            const finalCols = colsToShow.length > 0 ? [...new Set(colsToShow)] : headers.slice(0, 6);
+            previewEl.innerHTML = `
+                <thead><tr>${finalCols.map(c => `<th>${esc(c)}</th>`).join("")}<th>Xəritə Uyğunluğu</th></tr></thead>
+                <tbody>${sample.map(r => {
+                    const nk = normMatchName(r[m.name]);
+                    const found = nk ? allMapItems.find(x => x.key === nk || x.idKey === nk || (nk.length >= 4 && (x.key.includes(nk) || nk.includes(x.key)))) : null;
+                    const badge = found
+                        ? `<span class="pill" style="--tone:#22c55e">✔ Mövcud (${esc(found.proj.name)})</span>`
+                        : `<span class="pill" style="--tone:#f59e0b">➕ Yeni sətir</span>`;
+                    return `<tr>${finalCols.map(c => `<td>${esc(r[c] ?? "—")}</td>`).join("")}<td>${badge}</td></tr>`;
+                }).join("")}</tbody>
+            `;
+        }
+    }
+
+    function loadWorkbookIntoModal(wb, sourceLabel) {
+        pmoWorkbook = wb;
+        const cfg = loadPmoConfig();
+        const sheetSel = $("pmoSheetSelect");
+        if (sheetSel) {
+            sheetSel.innerHTML = wb.SheetNames.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join("");
+            if (cfg.sheetName && wb.SheetNames.includes(cfg.sheetName)) {
+                sheetSel.value = cfg.sheetName;
+            }
+        }
+        const activeSheet = sheetSel?.value || wb.SheetNames[0];
+        const rows2D = getSheet2DRows(wb, activeSheet);
+        const bestHeader = cfg.headerRow || detectBestHeaderRow(rows2D);
+        if ($("pmoHeaderRow")) $("pmoHeaderRow").value = bestHeader;
+        if ($("pmoTargetFolder") && cfg.targetFolder) $("pmoTargetFolder").value = cfg.targetFolder;
+        if ($("pmoSyncMode") && cfg.syncMode) $("pmoSyncMode").value = cfg.syncMode;
+        if ($("pmoMapUnit") && cfg.unit) $("pmoMapUnit").value = cfg.unit;
+
+        populatePmoTargetProjects();
+        const { headers } = extractHeadersAndObjects(wb, activeSheet, bestHeader);
+        populatePmoMappingDropdowns(headers);
+        if ($("pmoMappingSection")) $("pmoMappingSection").hidden = false;
+        renderPmoPreview();
+
+        if ($("pmoStatusText")) {
+            $("pmoStatusText").innerHTML = `<i class="fa-solid fa-circle-check" style="color:#22c55e"></i> Qoşuldu: <b>${esc(sourceLabel)}</b> (${wb.SheetNames.length} vərəq, ${headers.length} sütun)`;
+        }
+    }
+
+    async function applyPmoDataToMap(wb, silent = false) {
+        if (!wb) return { updated: 0, added: 0 };
+        if (isStructuredPmoWorkbook(wb)) {
+            return applyStructuredPmoWorkbook(wb, silent);
+        }
+        const cfg = loadPmoConfig();
+        const sheetName = ($("pmoSheetSelect")?.value || cfg.sheetName || wb.SheetNames[0]);
+        const headerRow = Number($("pmoHeaderRow")?.value || cfg.headerRow || 1);
+        const targetFolder = $("pmoTargetFolder")?.value || cfg.targetFolder || "project";
+        const targetProjectVal = $("pmoTargetProject")?.value || cfg.targetProject || "__auto__";
+        const syncMode = $("pmoSyncMode")?.value || cfg.syncMode || "both";
+        const unitPref = $("pmoMapUnit")?.value || cfg.unit || "auto";
+        const m = $("pmoMapName")?.options?.length ? getCurrentPmoMappingFromUI() : (cfg.map || {});
+        const extraCols = $("pmoExtraColsList")?.children?.length ? getSelectedPmoExtraCols() : (cfg.extraCols || []);
+
+        const { records } = extractHeadersAndObjects(wb, sheetName, headerRow);
+        if (!m.name || records.length === 0) return { updated: 0, added: 0 };
+
+        const rawHash = JSON.stringify(records);
+        if (silent && rawHash === pmoLastContentHash) {
+            return { updated: 0, added: 0, unchanged: true };
+        }
+        pmoLastContentHash = rawHash;
+
+        let updatedCount = 0;
+        let addedCount = 0;
+        const touchedProjects = new Set();
+
+        records.forEach((row, idx) => {
+            const itemName = String(row[m.name] ?? "").trim();
+            if (!itemName) return;
+            const nk = normMatchName(itemName);
+            if (!nk) return;
+
+            const rawProjName = m.project ? String(row[m.project] ?? "").trim() : "";
+            const rawRayonVal = m.rayon ? String(row[m.rayon] ?? "").trim() : "";
+            const rawPlan = m.plan ? parseAttrNumber(row[m.plan], null) : null;
+            const rawDone = m.done ? parseAttrNumber(row[m.done], null) : null;
+            const rawCtr = m.contractor ? String(row[m.contractor] ?? "").trim() : "";
+            const rawLead = m.lead ? String(row[m.lead] ?? "").trim() : "";
+            const rawWrk = m.workers ? String(row[m.workers] ?? "").trim() : "";
+            const rawAnt = m.antennas ? parseInt(String(row[m.antennas] ?? "").replace(/[^\d]/g, ""), 10) : NaN;
+            const rawTypeFo = m.typeOrFo ? String(row[m.typeOrFo] ?? "").trim() : "";
+            const parsedCoords = parsePmoCoords(row, m.lat, m.lng);
+
+            // 1. Mövcud xəritə obyektlərində axtar
+            let matchedProj = null;
+            let matchedItem = null;
+            const searchPool = targetProjectVal !== "__auto__"
+                ? state.projects.filter(p => p.id === targetProjectVal)
+                : state.projects;
+
+            for (const p of searchPool) {
+                if (rawProjName && normMatchName(p.name) && !normMatchName(p.name).includes(normMatchName(rawProjName)) && !normMatchName(rawProjName).includes(normMatchName(p.name))) {
+                    continue;
+                }
+                const hit = (p.items || []).find(it => {
+                    const ik = normMatchName(it.name);
+                    const idK = normMatchName(it.id);
+                    return ik === nk || idK === nk || (nk.length >= 4 && (ik.includes(nk) || nk.includes(ik)));
+                });
+                if (hit) {
+                    matchedProj = p;
+                    matchedItem = hit;
+                    break;
+                }
+            }
+            if (!matchedItem && rawProjName) {
+                for (const p of searchPool) {
+                    const hit = (p.items || []).find(it => {
+                        const ik = normMatchName(it.name);
+                        return ik === nk || (nk.length >= 4 && (ik.includes(nk) || nk.includes(ik)));
+                    });
+                    if (hit) {
+                        matchedProj = p;
+                        matchedItem = hit;
+                        break;
+                    }
+                }
+            }
+
+            const buildCustomFields = existingCf => {
+                const cfMap = new Map();
+                (Array.isArray(existingCf) ? existingCf : []).forEach(x => {
+                    if (x?.label) cfMap.set(x.label, x.value);
+                });
+                extraCols.forEach(col => {
+                    const v = String(row[col] ?? "").trim();
+                    if (v) cfMap.set(col, v);
+                });
+                return [...cfMap.entries()].map(([label, value]) => ({ label, value }));
+            };
+
+            if (matchedItem && matchedProj && syncMode !== "import_all") {
+                const isPts = matchedProj.type === "points" || matchedProj.category === "nim" || isPointItemRecord(matchedItem);
+                if (rawPlan !== null) {
+                    if (isPts) {
+                        matchedItem.totalKm = unitPref === "km" ? Math.round(rawPlan * 1000) : (unitPref === "m" ? Math.round(rawPlan) : normalizePointMetersInput(rawPlan));
+                        matchedItem.unit = "m";
+                    } else {
+                        matchedItem.totalKm = unitPref === "m" ? Number((rawPlan / 1000).toFixed(3)) : rawPlan;
+                    }
+                }
+                if (rawDone !== null) {
+                    if (isPts) {
+                        matchedItem.doneKm = unitPref === "km" ? Math.round(rawDone * 1000) : (unitPref === "m" ? Math.round(rawDone) : normalizePointMetersInput(rawDone));
+                        matchedItem.unit = "m";
+                    } else {
+                        matchedItem.doneKm = unitPref === "m" ? Number((rawDone / 1000).toFixed(3)) : rawDone;
+                    }
+                }
+                if (m.status && String(row[m.status] ?? "").trim() !== "") {
+                    matchedItem.status = resolvePmoStatus(row[m.status], matchedItem.totalKm, matchedItem.doneKm);
+                }
+                if (rawRayonVal) matchedItem.rayon = rawRayonVal;
+                if (rawCtr) matchedItem.contractor = rawCtr;
+                if (rawLead) matchedItem.execLead = rawLead;
+                if (rawWrk) matchedItem.execWorkers = rawWrk;
+                if (!isNaN(rawAnt)) matchedItem.antennas = rawAnt;
+                if (rawTypeFo) {
+                    if (isPts) matchedItem.pointType = rawTypeFo;
+                    else matchedItem.fiberCount = normalizeFiberCount(rawTypeFo, rawTypeFo);
+                }
+                if (parsedCoords) matchedItem.coords = parsedCoords;
+                if (extraCols.length > 0) {
+                    matchedItem.customFields = buildCustomFields(matchedItem.customFields);
+                }
+                saveSegmentOverride(matchedProj.id, matchedItem);
+                touchedProjects.add(matchedProj);
+                updatedCount++;
+                return;
+            }
+
+            if (syncMode === "update_only") return;
+
+            // 2. Yeni sətirdirsə uyğun layihəni tap və ya yarat
+            let destProj = targetProjectVal !== "__auto__"
+                ? state.projects.find(p => p.id === targetProjectVal)
+                : null;
+            if (!destProj && rawProjName) {
+                destProj = state.projects.find(p => normMatchName(p.name) === normMatchName(rawProjName));
+            }
+            if (!destProj) {
+                const projTitle = rawProjName || `PMO — ${pmoSourceName || sheetName}`;
+                destProj = state.projects.find(p => normMatchName(p.name) === normMatchName(projTitle));
+                if (!destProj) {
+                    const newProjId = `proj_pmo_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+                    destProj = {
+                        id: newProjId,
+                        name: projTitle,
+                        category: targetFolder,
+                        type: "points",
+                        status: "icrada",
+                        imported: true,
+                        items: []
+                    };
+                    state.projects.push(destProj);
+                    state.visibleIds.add(destProj.id);
+                    state.activeFolders.add(targetFolder);
+                    saveProjectOverride(destProj);
+                }
+            }
+
+            const isDestPts = destProj.type === "points" || destProj.category === "nim";
+            const planNum = rawPlan !== null ? (isDestPts ? (unitPref === "km" ? Math.round(rawPlan * 1000) : Math.round(rawPlan)) : (unitPref === "m" ? Number((rawPlan / 1000).toFixed(3)) : rawPlan)) : 0;
+            const doneNum = rawDone !== null ? (isDestPts ? (unitPref === "km" ? Math.round(rawDone * 1000) : Math.round(rawDone)) : (unitPref === "m" ? Number((rawDone / 1000).toFixed(3)) : rawDone)) : 0;
+            const st = resolvePmoStatus(m.status ? row[m.status] : "", planNum, doneNum);
+            const fallbackCoord = [[40.4093 + (idx * 0.004), 49.8671 + (idx * 0.005)]];
+            const newItem = {
+                id: `PMO-${idx + 1}-${Date.now().toString().slice(-3)}`,
+                name: itemName,
+                rayon: rawRayonVal || undefined,
+                pointA: itemName,
+                pointB: "Şəbəkə",
+                status: st,
+                contractor: rawCtr || "",
+                execLead: rawLead || "",
+                execWorkers: rawWrk || "",
+                totalKm: planNum,
+                doneKm: doneNum,
+                unit: isDestPts ? "m" : undefined,
+                summary: isDestPts ? true : undefined,
+                antennas: !isNaN(rawAnt) ? rawAnt : (isDestPts ? 1 : 0),
+                pointType: isDestPts ? rawTypeFo : undefined,
+                fiberCount: !isDestPts ? normalizeFiberCount(rawTypeFo, "") : undefined,
+                customFields: buildCustomFields([]),
+                coords: parsedCoords || fallbackCoord
+            };
+            destProj.items.push(newItem);
+            saveSegmentOverride(destProj.id, newItem);
+            touchedProjects.add(destProj);
+            addedCount++;
+        });
+
+        if (updatedCount > 0 || addedCount > 0) {
+            saveImportedProjects();
+            renderAll();
+            if (isAdmin() && api.configured) {
+                for (const p of touchedProjects) {
+                    api.saveProject(p).catch(() => {});
+                }
+            }
+        }
+        return { updated: updatedCount, added: addedCount };
+    }
+
+    async function fetchPmoWorkbookFromUrl(rawUrl, useDomainAuth = false) {
+        await ensureXLSX().catch(() => null);
+        const finalUrl = normalizePmoUrl(rawUrl);
+        if (!finalUrl) throw new Error("URL boşdur");
+        const isGoogleSheet = /docs\.google\.com\/spreadsheets/i.test(finalUrl);
+        const sep = finalUrl.includes("?") ? "&" : "?";
+        const bustUrl = `${finalUrl}${sep}_t=${Date.now()}`;
+        let res = null;
+        const attempts = isGoogleSheet
+            ? [
+                () => fetch(bustUrl, { credentials: "omit", cache: "no-store" }),
+                () => fetch(`https://corsproxy.io/?${encodeURIComponent(finalUrl)}`, { credentials: "omit", cache: "no-store" })
+            ]
+            : [
+                () => fetch(bustUrl, { credentials: useDomainAuth ? "include" : "omit", cache: "no-store" }),
+                () => fetch(bustUrl, { credentials: "omit", cache: "no-store" })
+            ];
+        let lastErr = null;
+        for (const fn of attempts) {
+            try {
+                const r = await fn();
+                if (r && r.ok) { res = r; break; }
+                lastErr = new Error(`HTTP ${r?.status || 0}`);
+            } catch (e) {
+                lastErr = e;
+            }
+        }
+        if (!res) throw lastErr || new Error("Link oxunmadı");
+        const buf = await res.arrayBuffer();
+        if (typeof XLSX !== "undefined") {
+            return XLSX.read(buf, { type: "array" });
+        }
+        const text = new TextDecoder("utf-8").decode(buf);
+        return parseCsvFallbackToWorkbook(text);
+    }
+
+    async function readPmoWorkbookFromFile(file) {
+        await ensureXLSX().catch(() => null);
+        const buf = await file.arrayBuffer();
+        if (typeof XLSX !== "undefined") {
+            return XLSX.read(buf, { type: "array" });
+        }
+        const text = new TextDecoder("utf-8").decode(buf);
+        return parseCsvFallbackToWorkbook(text);
+    }
+
+    function updatePmoLiveIndicators(active, label = "") {
+        if ($("pmoLiveBadge")) $("pmoLiveBadge").hidden = !active;
+        if ($("pmoRefreshNowBtn")) $("pmoRefreshNowBtn").hidden = !active && !pmoWorkbook;
+        if ($("pmoStopLiveBtn")) $("pmoStopLiveBtn").hidden = !active;
+        if (active && $("pmoStatusText")) {
+            const nowStr = new Date().toLocaleTimeString("az-AZ");
+            $("pmoStatusText").innerHTML = `<span style="color:#22c55e;font-weight:700">🟢 Canlı Sinxronizasiya Aktivdir:</span> <b>${esc(label)}</b> · Son yoxlama: <span class="mono">${nowStr}</span>`;
+        }
+    }
+
+    function stopPmoLiveWatch(silent = false) {
+        if (pmoLiveTimer) {
+            clearInterval(pmoLiveTimer);
+            pmoLiveTimer = null;
+        }
+        updatePmoLiveIndicators(false);
+        if (!silent) toast("⏹️ PMO Excel canlı izləmə dayandırıldı");
+    }
+
+    function startPmoLiveWatch() {
+        if (pmoLiveTimer) clearInterval(pmoLiveTimer);
+        const cfg = loadPmoConfig();
+
+        if (pmoSourceType === "file" && pmoLiveFileHandle) {
+            updatePmoLiveIndicators(true, `Fayl: ${pmoSourceName}`);
+            pmoLiveTimer = setInterval(async () => {
+                try {
+                    const file = await pmoLiveFileHandle.getFile();
+                    if (file.lastModified !== pmoLastFileModified) {
+                        pmoLastFileModified = file.lastModified;
+                        const wb = await readPmoWorkbookFromFile(file);
+                        pmoWorkbook = wb;
+                        const res = await applyPmoDataToMap(wb, true);
+                        updatePmoLiveIndicators(true, `Fayl: ${pmoSourceName}`);
+                        if (!res.unchanged && (res.updated > 0 || res.added > 0)) {
+                            toast(`📊 PMO Excel faylında dəyişiklik aşkarlandı: ${res.updated} yeniləndi, ${res.added} əlavə olundu`);
+                        }
+                    }
+                } catch {}
+            }, 6000);
+            return;
+        }
+
+        if (cfg.url && Number(cfg.pollInterval) > 0) {
+            const sec = Math.max(10, Number(cfg.pollInterval) || 30);
+            updatePmoLiveIndicators(true, cfg.url);
+            pmoLiveTimer = setInterval(async () => {
+                try {
+                    const wb = await fetchPmoWorkbookFromUrl(cfg.url, cfg.useDomainAuth);
+                    pmoWorkbook = wb;
+                    const res = await applyPmoDataToMap(wb, true);
+                    updatePmoLiveIndicators(true, cfg.url);
+                    if (!res.unchanged && (res.updated > 0 || res.added > 0)) {
+                        toast(`📊 PMO Excel canlı yeniləndi: ${res.updated} obyekt yeniləndi`);
+                    }
+                } catch {}
+            }, sec * 1000);
+        }
+    }
+
+    function initPmoExcelIntegration() {
+        const modal = $("pmoExcelModal");
+        if (!modal) return;
+
+        $("pmoExcelBtn")?.addEventListener("click", () => {
+            if (!isAdmin()) return;
+            const cfg = loadPmoConfig();
+            if ($("pmoExcelUrl")) $("pmoExcelUrl").value = cfg.url || "";
+            if ($("pmoUseDomainAuth")) $("pmoUseDomainAuth").checked = cfg.useDomainAuth !== false;
+            if ($("pmoPollInterval")) $("pmoPollInterval").value = String(cfg.pollInterval ?? 30);
+            if ($("pmoTargetFolder")) $("pmoTargetFolder").value = cfg.targetFolder || [...state.activeFolders][0] || "project";
+            populatePmoTargetProjects();
+            modal.showModal();
+        });
+
+        $("pmoTargetFolder")?.addEventListener("change", populatePmoTargetProjects);
+
+        $("pmoFetchUrlBtn")?.addEventListener("click", async () => {
+            const rawUrl = $("pmoExcelUrl")?.value.trim();
+            if (!rawUrl) {
+                toast("⚠️ Daxili domen və ya Excel linkini daxil edin", true);
+                return;
+            }
+            const btn = $("pmoFetchUrlBtn");
+            const oldHtml = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Oxunur...`;
+            try {
+                const useAuth = $("pmoUseDomainAuth")?.checked !== false;
+                const wb = await fetchPmoWorkbookFromUrl(rawUrl, useAuth);
+                pmoSourceType = "url";
+                pmoSourceName = rawUrl.split("/").pop().split("?")[0] || "PMO_Link";
+                loadWorkbookIntoModal(wb, rawUrl);
+                toast("✅ PMO Excel linki uğurla oxundu!");
+            } catch (err) {
+                toast(`❌ Link oxunmadı (${err.message}). Faylı birbaşa seçə və ya şəbəkə icazəsini yoxlaya bilərsiniz.`, true);
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = oldHtml;
+            }
+        });
+
+        $("pmoPickLiveFileBtn")?.addEventListener("click", async () => {
+            if (window.showOpenFilePicker) {
+                try {
+                    const [handle] = await window.showOpenFilePicker({
+                        types: [{
+                            description: "PMO Excel Faylları",
+                            accept: {
+                                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"],
+                                "application/vnd.ms-excel": [".xls"],
+                                "text/csv": [".csv", ".tsv"]
+                            }
+                        }],
+                        multiple: false
+                    });
+                    if (handle) {
+                        pmoLiveFileHandle = handle;
+                        const file = await handle.getFile();
+                        pmoLastFileModified = file.lastModified;
+                        pmoSourceType = "file";
+                        pmoSourceName = file.name.replace(/\.[^/.]+$/, "");
+                        const wb = await readPmoWorkbookFromFile(file);
+                        loadWorkbookIntoModal(wb, `${file.name} (Canlı fayl izləmə hazır)`);
+                        toast(`✅ "${file.name}" seçildi — sütunları yoxlayıb təsdiqləyin`);
+                        return;
+                    }
+                } catch (err) {
+                    if (err?.name === "AbortError") return;
+                }
+            }
+            $("pmoFileInput")?.click();
+        });
+
+        $("pmoFileInput")?.addEventListener("change", async e => {
+            const file = e.target.files?.[0];
+            if (!file) return;
+            try {
+                pmoLiveFileHandle = null;
+                pmoSourceType = "file";
+                pmoSourceName = file.name.replace(/\.[^/.]+$/, "");
+                const wb = await readPmoWorkbookFromFile(file);
+                loadWorkbookIntoModal(wb, file.name);
+                toast(`✅ "${file.name}" oxundu`);
+            } catch {
+                toast("❌ Excel faylı oxuna bilmədi", true);
+            }
+            e.target.value = "";
+        });
+
+        ["pmoSheetSelect", "pmoHeaderRow"].forEach(id => {
+            $(id)?.addEventListener("change", () => {
+                if (!pmoWorkbook) return;
+                const sheetName = $("pmoSheetSelect").value;
+                const headerRow = Number($("pmoHeaderRow").value) || 1;
+                const { headers } = extractHeadersAndObjects(pmoWorkbook, sheetName, headerRow);
+                populatePmoMappingDropdowns(headers);
+                renderPmoPreview();
+            });
+        });
+
+        ["pmoMapName", "pmoMapProject", "pmoMapStatus", "pmoMapPlan", "pmoMapDone", "pmoMapUnit", "pmoMapContractor", "pmoMapLead", "pmoMapWorkers", "pmoMapAntennas", "pmoMapTypeOrFo", "pmoMapLat", "pmoMapLng", "pmoSyncMode", "pmoTargetProject"].forEach(id => {
+            $(id)?.addEventListener("change", renderPmoPreview);
+        });
+        $("pmoExtraColsList")?.addEventListener("change", renderPmoPreview);
+
+        $("pmoApplySyncBtn")?.addEventListener("click", async () => {
+            if (!pmoWorkbook) return;
+            const cfg = {
+                url: $("pmoExcelUrl")?.value.trim() || "",
+                useDomainAuth: $("pmoUseDomainAuth")?.checked !== false,
+                pollInterval: Number($("pmoPollInterval")?.value ?? 30),
+                sheetName: $("pmoSheetSelect")?.value || "",
+                headerRow: Number($("pmoHeaderRow")?.value) || 1,
+                targetFolder: $("pmoTargetFolder")?.value || "project",
+                targetProject: $("pmoTargetProject")?.value || "__auto__",
+                syncMode: $("pmoSyncMode")?.value || "both",
+                unit: $("pmoMapUnit")?.value || "auto",
+                map: getCurrentPmoMappingFromUI(),
+                extraCols: getSelectedPmoExtraCols()
+            };
+            savePmoConfig(cfg);
+            pmoLastContentHash = "";
+            const res = await applyPmoDataToMap(pmoWorkbook, false);
+            startPmoLiveWatch();
+            modal.close();
+            toast(`✅ PMO Excel tətbiq edildi: ${res.updated} obyekt yeniləndi, ${res.added} yeni obyekt əlavə olundu!`);
+        });
+
+        $("pmoRefreshNowBtn")?.addEventListener("click", async () => {
+            try {
+                const cfg = loadPmoConfig();
+                if (pmoSourceType === "file" && pmoLiveFileHandle) {
+                    const file = await pmoLiveFileHandle.getFile();
+                    pmoWorkbook = await readPmoWorkbookFromFile(file);
+                } else if (cfg.url) {
+                    pmoWorkbook = await fetchPmoWorkbookFromUrl(cfg.url, cfg.useDomainAuth);
+                }
+                pmoLastContentHash = "";
+                const res = await applyPmoDataToMap(pmoWorkbook, false);
+                updatePmoLiveIndicators(Boolean(pmoLiveTimer), pmoSourceName || cfg.url);
+                toast(`🔄 PMO Excel yeniləndi (${res.updated} yeniləndi, ${res.added} əlavə olundu)`);
+            } catch {
+                toast("⚠️ Yeniləmə zamanı mənbəyə qoşulmaq mümkün olmadı", true);
+            }
+        });
+
+        $("pmoStopLiveBtn")?.addEventListener("click", () => stopPmoLiveWatch(false));
+
+        // 🔔 Canlı Bildirişlər Pəncərəsi (Material Reyestri əvəzinə: 100% / Yaşıl nöqtələr və yeni layihələr)
+        $("pmoNotifBtn")?.addEventListener("click", () => {
+            renderPmoNotifsUI();
+            $("pmoNotifModal")?.showModal();
+        });
+        $("pmoNotifFilterTabs")?.addEventListener("click", e => {
+            const btn = e.target.closest("[data-notif-filter]");
+            if (!btn) return;
+            pmoNotifFilter = btn.dataset.notifFilter || "all";
+            $("pmoNotifFilterTabs").querySelectorAll("[data-notif-filter]").forEach(b => b.classList.toggle("active", b === btn));
+            renderPmoNotifsUI();
+        });
+        $("pmoNotifMarkReadBtn")?.addEventListener("click", () => {
+            const list = loadPmoNotifs().map(n => ({ ...n, unread: false }));
+            savePmoNotifs(list);
+            renderPmoNotifsUI();
+            toast("✅ Bütün bildirişlər oxunmuş kimi işarələndi");
+        });
+        $("pmoNotifList")?.addEventListener("click", e => {
+            const row = e.target.closest("[data-notif-jump]");
+            if (!row) return;
+            const list = loadPmoNotifs();
+            const n = list.find(x => x.id === row.dataset.notifJump);
+            if (!n) return;
+            n.unread = false;
+            savePmoNotifs(list);
+            renderPmoNotifsUI();
+            $("pmoNotifModal")?.close();
+
+            if (n.projectId) {
+                const proj = state.projects.find(p => p.id === n.projectId);
+                if (proj) {
+                    state.activeFolders.add(proj.category || "project");
+                    state.visibleIds.add(proj.id);
+                    state.expandedIds.add(proj.id);
+                    const item = n.itemId ? proj.items.find(it => it.id === n.itemId) : null;
+                    if (item && n.pmoSubId) {
+                        if (!state.expandedRayons) state.expandedRayons = new Set();
+                        state.expandedRayons.add(`${proj.id}::pmo::${item.id}`);
+                        selectSegment(proj, item, true, n.pmoSubId);
+                    } else if (item) {
+                        selectSegment(proj, item, true);
+                    } else {
+                        window.__activeProjectId = proj.id;
+                        renderAll();
+                        flyToCoords(proj.items.flatMap(it => it.coords || []));
+                    }
+                }
+            }
+        });
+        renderPmoNotifsUI();
+
+        // Canlı PMO Google Sheets linkinə sayt açılan kimi avtomatik qoşul və hər 30 saniyədən bir yenilə
+        setTimeout(async () => {
+            const cfg = loadPmoConfig();
+            const targetUrl = cfg.url || DEFAULT_PMO_SHEET_URL;
+            if (targetUrl) {
+                try {
+                    pmoSourceType = "url";
+                    pmoSourceName = "PMO Google Sheets";
+                    pmoWorkbook = await fetchPmoWorkbookFromUrl(targetUrl, cfg.useDomainAuth);
+                    const res = await applyPmoDataToMap(pmoWorkbook, false);
+                    startPmoLiveWatch();
+                    if (res && (res.added > 0 || res.updated > 0)) {
+                        toast(`📊 PMO Google Sheets canlı qoşuldu (${res.added + res.updated} layihə sinxronlaşdırıldı)`);
+                    }
+                } catch (err) {
+                    console.warn("PMO auto-sync error:", err);
+                }
+            }
+        }, 2000);
+    }
+
+    document.addEventListener("DOMContentLoaded", initPmoExcelIntegration);
 })();

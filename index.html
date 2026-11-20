@@ -20,7 +20,7 @@
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap">
     <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" integrity="sha384-MinO0mNliZ3vwppuPOUnGa+iq619pfMhLVUXfC4LHwSCvF9H+6P/KO4Q7qBOYV5V" crossorigin="anonymous">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" integrity="sha384-iw3OoTErCYJJB9mCa8LNS2hbsQ7M3C0EpIsO/H5+EGAkPGc6rk+V8i04oW/K5xq0" crossorigin="anonymous">
-    <link rel="stylesheet" href="css/styles.css?v=20261118l">
+    <link rel="stylesheet" href="css/styles.css?v=20261120a">
 </head>
 <body>
 
@@ -86,8 +86,15 @@
                 <i class="fa-regular fa-note-sticky"></i> <span data-i18n="notes"></span>
                 <span class="count" id="notesCount" hidden></span>
             </button>
-            <button class="bar-item" id="materialsBtn"><i class="fa-solid fa-boxes-stacked"></i> <span data-i18n="materials"></span><span class="count" id="materialsAlertCount" hidden style="background:#ef4444;color:#fff"></span></button>
+            <button class="bar-item" id="pmoNotifBtn" title="Tamamlanan nöqtələr (100% / Yaşıl) və yeni layihə bildirişləri">
+                <i class="fa-solid fa-bell" style="color:#22c55e"></i> <span>Bildirişlər</span>
+                <span class="count" id="pmoNotifCount" hidden style="background:#22c55e;color:#fff"></span>
+            </button>
             <a class="bar-item" id="usersBtn" href="admin.html" target="_blank" rel="noopener" style="text-decoration:none;color:inherit" hidden><i class="fa-solid fa-user-shield"></i> <span><i class="fa-solid fa-shield-halved"></i> Admin Paneli <i class="fa-solid fa-arrow-up-right-from-square" style="font-size:10px"></i></span></a>
+            <button class="bar-item" id="pmoExcelBtn" title="PMO Excel faylından və ya daxili domen linkindən canlı sinxronizasiya" style="border-color:rgba(34,197,94,0.45);color:#4ade80" hidden>
+                <i class="fa-solid fa-file-excel"></i> <span>PMO Excel</span>
+                <span id="pmoLiveBadge" hidden style="width:8px;height:8px;border-radius:50%;background:#22c55e;box-shadow:0 0 8px #22c55e;display:inline-block"></span>
+            </button>
             <button class="bar-item" id="importBtn"><i class="fa-solid fa-arrow-up-from-bracket"></i> <span data-i18n="import"></span></button>
             <input type="file" id="importFile" accept=".kmz,.kml,.geojson,.json" multiple hidden>
             <button class="bar-item" id="printBtn"><i class="fa-solid fa-print"></i> <span data-i18n="print"></span></button>
@@ -370,21 +377,26 @@
 
     <div class="measure-tip" id="measureTip" hidden></div>
 
-    <!-- MATERİAL REYESTRİ -->
-    <dialog class="modal" id="materialsModal">
+    <!-- CANLI BİLDİRİŞLƏR (100% TAMAMLANAN NÖQTƏLƏR & YENİ LAYİHƏLƏR) -->
+    <dialog class="modal" id="pmoNotifModal" style="width:min(680px,95vw)">
         <div class="modal-head">
             <div>
-                <h2 data-i18n="materials"></h2>
-                <p class="muted" data-i18n="materialsHint"></p>
+                <h2><i class="fa-solid fa-bell" style="color:#22c55e"></i> Canlı Bildirişlər — Tamamlanan Nöqtələr və Layihələr</h2>
+                <p class="muted">PMO cədvəlində 100% (yaşıl 🟢) olan nöqtələr və yeni əlavə olunan layihələr burada avtomatik qeyd olunur</p>
             </div>
             <button class="icon-btn" data-close data-i18n-title="close"><i class="fa-solid fa-xmark"></i></button>
         </div>
-        <div class="table-wrap">
-            <table>
-                <thead id="materialsHead"></thead>
-                <tbody id="materialsBody"></tbody>
-            </table>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 16px;border-bottom:1px solid var(--line);flex-wrap:wrap">
+            <div style="display:flex;gap:6px;flex-wrap:wrap" id="pmoNotifFilterTabs">
+                <button type="button" class="chip active" data-notif-filter="all">Hamısı</button>
+                <button type="button" class="chip" data-notif-filter="completed">🟢 Bitən nöqtələr (100%)</button>
+                <button type="button" class="chip" data-notif-filter="new_project">🆕 Yeni layihələr</button>
+            </div>
+            <div style="display:flex;gap:6px">
+                <button type="button" class="btn btn-outline" id="pmoNotifMarkReadBtn" style="height:28px;font-size:11.5px;padding:0 10px"><i class="fa-solid fa-check-double"></i> Oxunmuş et</button>
+            </div>
         </div>
+        <div id="pmoNotifList" style="padding:12px 16px;max-height:60vh;overflow-y:auto;display:flex;flex-direction:column;gap:8px"></div>
     </dialog>
 
     <!-- QEYDLƏR -->
@@ -598,6 +610,187 @@
         </form>
     </dialog>
 
+    <!-- 📊 PMO EXCEL CANLI SİNXRONİZASİYA VƏ SÜTUN UYĞUNLAŞDIRMA PƏNCƏRƏSİ -->
+    <dialog class="modal wide" id="pmoExcelModal" style="width:min(880px, 96vw)">
+        <div class="modal-head">
+            <div>
+                <h2><i class="fa-solid fa-file-excel" style="color:#22c55e"></i> PMO Excel — Canlı Sinxronizasiya və Sütun Uyğunlaşdırma</h2>
+                <p class="muted">Daxili domendəki PMO Excel faylının sütunlarını xəritə ilə uyğunlaşdırın — Excel-də edilən hər dəyişiklik canlı olaraq xəritədə əks olunsun</p>
+            </div>
+            <button class="icon-btn" data-close aria-label="Bağla"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        <div class="edit-form" style="padding:14px 18px;display:flex;flex-direction:column;gap:14px;max-height:80vh;overflow-y:auto">
+            <!-- 1. MƏNBƏ SEÇİMİ: DAXİLİ DOMEN LİNKİ VƏ YA CANLI FAYL İZLƏMƏ -->
+            <div style="display:grid;grid-template-columns:1.35fr 1fr;gap:12px;padding:12px;border-radius:10px;background:rgba(15,23,42,0.55);border:1px solid var(--line)">
+                <div style="display:flex;flex-direction:column;gap:8px">
+                    <strong style="font-size:12.5px;color:#38bdf8"><i class="fa-solid fa-network-wired"></i> 1. Daxili Domen / Şəbəkə Excel Linki (Canlı URL)</strong>
+                    <div style="display:flex;gap:6px">
+                        <input class="input" type="url" id="pmoExcelUrl" placeholder="Məs: http://pmo.domen.local/layihe.xlsx və ya SharePoint / CSV linki" style="flex:1">
+                        <button class="btn btn-primary" type="button" id="pmoFetchUrlBtn" style="white-space:nowrap"><i class="fa-solid fa-cloud-arrow-down"></i> Linkdən Oxu</button>
+                    </div>
+                    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:11.5px;color:var(--ink-2)">
+                        <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                            <input type="checkbox" id="pmoUseDomainAuth" checked>
+                            <span>🔐 Daxili domen girişi (Windows SSO / Cookie) ilə qoşul</span>
+                        </label>
+                        <label style="display:flex;align-items:center;gap:6px">
+                            <span>Avto-yenilənmə:</span>
+                            <select class="input" id="pmoPollInterval" style="height:26px;padding:0 6px;font-size:11.5px">
+                                <option value="15">⚡ Hər 15 san (Canlı)</option>
+                                <option value="30" selected>⚡ Hər 30 san (Canlı)</option>
+                                <option value="60">🔄 Hər 1 dəqiqə</option>
+                                <option value="300">🔄 Hər 5 dəqiqə</option>
+                                <option value="0">⏸️ Yalnız əl ilə</option>
+                            </select>
+                        </label>
+                    </div>
+                </div>
+                <div style="display:flex;flex-direction:column;gap:8px;border-left:1px solid var(--line);padding-left:12px">
+                    <strong style="font-size:12.5px;color:#4ade80"><i class="fa-solid fa-folder-open"></i> 2. Şəbəkə Qovluğu / Kompüterdən Excel Seç</strong>
+                    <div style="display:flex;gap:6px;flex-wrap:wrap">
+                        <button class="btn btn-outline" type="button" id="pmoPickLiveFileBtn" style="flex:1;border-color:rgba(34,197,94,0.45);color:#4ade80">
+                            <i class="fa-solid fa-bolt"></i> Excel Seç & Canlı İzlə (.xlsx / .csv)
+                        </button>
+                        <input type="file" id="pmoFileInput" accept=".xlsx,.xls,.csv,.tsv" hidden>
+                    </div>
+                    <small style="color:var(--ink-3);font-size:11px;line-height:1.35">
+                        Şirkət şəbəkə diskindəki (<code>\\domen\pmo\...</code>) və ya kompüterdəki Excel faylını seçdikdə, fayl yaddaşa verilən kimi (Ctrl+S) xəritə avtomatik yenilənir.
+                    </small>
+                </div>
+            </div>
+
+            <!-- Cari Qoşulma Statusu -->
+            <div id="pmoSourceStatus" class="mat-summary" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+                <span id="pmoStatusText"><i class="fa-solid fa-circle-info" style="color:#38bdf8"></i> Hələ PMO Excel faylı və ya linki seçilməyib. Yuxarıdan link daxil edin və ya Excel faylını seçin.</span>
+                <div style="display:flex;gap:6px">
+                    <button class="btn btn-outline" type="button" id="pmoRefreshNowBtn" style="height:26px;padding:0 10px;font-size:11.5px" hidden><i class="fa-solid fa-rotate"></i> İndi Yenilə</button>
+                    <button class="btn btn-outline" type="button" id="pmoStopLiveBtn" style="height:26px;padding:0 10px;font-size:11.5px;color:#f87171;border-color:rgba(239,68,68,0.35)" hidden><i class="fa-solid fa-stop"></i> Dayandır</button>
+                </div>
+            </div>
+
+            <!-- 2. VƏRƏQ VƏ SÜTUN UYĞUNLAŞDIRMA (MAPPING) -->
+            <div id="pmoMappingSection" style="display:flex;flex-direction:column;gap:12px" hidden>
+                <div style="display:grid;grid-template-columns:repeat(4, 1fr);gap:10px;padding:10px 12px;border-radius:8px;background:var(--surface-2);border:1px solid var(--line)">
+                    <label style="display:flex;flex-direction:column;gap:4px;font-size:11.5px">
+                        <span>📄 Excel Vərəqi (Sheet):</span>
+                        <select class="input" id="pmoSheetSelect"></select>
+                    </label>
+                    <label style="display:flex;flex-direction:column;gap:4px;font-size:11.5px">
+                        <span>🔢 Başlıq sətri (Header Row):</span>
+                        <input class="input" type="number" min="1" max="30" id="pmoHeaderRow" value="1">
+                    </label>
+                    <label style="display:flex;flex-direction:column;gap:4px;font-size:11.5px">
+                        <span>📂 Hədəf Qovluq:</span>
+                        <select class="input" id="pmoTargetFolder">
+                            <option value="project">🏢 BCG</option>
+                            <option value="nim">🚦 NİİM</option>
+                            <option value="azconnect">🌐 Azərconnect</option>
+                            <option value="other">🗂️ Digər</option>
+                        </select>
+                    </label>
+                    <label style="display:flex;flex-direction:column;gap:4px;font-size:11.5px">
+                        <span>📁 Hədəf Layihə:</span>
+                        <select class="input" id="pmoTargetProject"></select>
+                    </label>
+                </div>
+
+                <div style="padding:12px;border-radius:10px;background:rgba(15,23,42,0.45);border:1px solid var(--line)">
+                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+                        <strong style="font-size:12.5px;color:var(--ink)"><i class="fa-solid fa-table-columns" style="color:#f59e0b"></i> Sütun Uyğunlaşdırma (PMO Excel-dəki hansı sütun xəritədə nədir?)</strong>
+                        <select class="input" id="pmoSyncMode" style="height:28px;font-size:11.5px;max-width:340px">
+                            <option value="both">🔄 Mövcudları yenilə + Yeni sətirləri əlavə et</option>
+                            <option value="update_only">🎯 Yalnız xəritədəki mövcud nöqtə/xətləri yenilə</option>
+                            <option value="import_all">➕ Bütün sətirləri layihəyə əlavə et / yenilə</option>
+                        </select>
+                    </div>
+                    <div class="edit-fields" style="display:grid;grid-template-columns:repeat(3, 1fr);gap:10px">
+                        <label>
+                            <span style="color:#38bdf8;font-weight:700">🎯 Məntəqə / Xətt / Anten adı sütunu *</span>
+                            <select class="input" id="pmoMapName"></select>
+                        </label>
+                        <label>
+                            <span style="color:#f59e0b;font-weight:600">🗺️ Rayon sütunu (məs: Şamaxı — qrup üçün)</span>
+                            <select class="input" id="pmoMapRayon"></select>
+                        </label>
+                        <label>
+                            <span>📁 Layihə adı sütunu (varsa)</span>
+                            <select class="input" id="pmoMapProject"></select>
+                        </label>
+                        <label>
+                            <span>🚦 Status / İcra vəziyyəti sütunu</span>
+                            <select class="input" id="pmoMapStatus"></select>
+                        </label>
+                        <label>
+                            <span>📏 1. Plan / Verilən məsafə sütunu</span>
+                            <select class="input" id="pmoMapPlan"></select>
+                        </label>
+                        <label>
+                            <span>✅ 2. Faktiki / Çəkilən məsafə sütunu</span>
+                            <select class="input" id="pmoMapDone"></select>
+                        </label>
+                        <label>
+                            <span>📐 Məsafə vahidi (Excel-də necə yazılıb?)</span>
+                            <select class="input" id="pmoMapUnit">
+                                <option value="auto">✨ Avtomatik tanı (m / km)</option>
+                                <option value="m">Metr (m)</option>
+                                <option value="km">Kilometr (km)</option>
+                            </select>
+                        </label>
+                        <label>
+                            <span>👷 İş İcraçısı / Podratçı sütunu</span>
+                            <select class="input" id="pmoMapContractor"></select>
+                        </label>
+                        <label>
+                            <span>👨‍🔧 Mühəndis / Briqadir sütunu</span>
+                            <select class="input" id="pmoMapLead"></select>
+                        </label>
+                        <label>
+                            <span>👥 İşçi sayı sütunu</span>
+                            <select class="input" id="pmoMapWorkers"></select>
+                        </label>
+                        <label>
+                            <span>📡 Antena sayı sütunu</span>
+                            <select class="input" id="pmoMapAntennas"></select>
+                        </label>
+                        <label>
+                            <span>🔌 Nöqtə növü / FO lif sayı sütunu</span>
+                            <select class="input" id="pmoMapTypeOrFo"></select>
+                        </label>
+                        <label>
+                            <span>📍 Koordinat (Enlik/Lat və ya "Lat, Lng")</span>
+                            <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px">
+                                <select class="input" id="pmoMapLat" title="Enlik (Lat) və ya Birləşmiş Koordinat"></select>
+                                <select class="input" id="pmoMapLng" title="Uzunluq (Lng) — tək sütundursa boş buraxın"></select>
+                            </div>
+                        </label>
+                    </div>
+
+                    <!-- Əlavə PMO Sütunları (Sərbəst başlıqlar kimi status pəncərəsində göstəriləcək) -->
+                    <div style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--line)">
+                        <span style="font-size:11.5px;color:var(--ink-2);display:block;margin-bottom:6px">
+                            <i class="fa-solid fa-list-check" style="color:#38bdf8"></i> <b>Status pəncərəsində əlavə göstəriləcək PMO sütunları</b> (işarələdiyiniz sütunlar öz başlığı ilə nöqtənin/xəttin üzərində çıxacaq):
+                        </span>
+                        <div id="pmoExtraColsList" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+                    </div>
+                </div>
+
+                <!-- 3. ÖNBAXIŞ CƏDVƏLİ -->
+                <div style="padding:10px 12px;border-radius:8px;background:var(--surface-2);border:1px solid var(--line)">
+                    <div id="pmoPreviewStats" style="font-size:12px;font-weight:600;margin-bottom:8px;color:#4ade80"></div>
+                    <div class="table-wrap" style="max-height:175px;overflow:auto">
+                        <table class="data-table" id="pmoPreviewTable" style="font-size:11.5px"></table>
+                    </div>
+                </div>
+            </div>
+
+            <div class="edit-actions">
+                <span id="pmoFormHint" style="font-size:11.5px;color:var(--ink-3)">💡 Sütun uyğunlaşdırması yaddaşda saxlanılır — növbəti dəfə seçməyə ehtiyac qalmır.</span>
+                <button class="btn btn-outline" type="button" data-close>Bağla</button>
+                <button class="btn btn-primary" type="button" id="pmoApplySyncBtn" disabled><i class="fa-solid fa-bolt"></i> Tətbiq et & Canlı Sinxronizasiyanı Başlat</button>
+            </div>
+        </div>
+    </dialog>
+
     <div class="link-error" id="linkError" hidden>
         <img src="favicon.svg" alt="BCG">
         <h1 data-i18n="linkInvalid"></h1>
@@ -608,10 +801,10 @@
 
     <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js" integrity="sha384-SYKAG6cglRMN0RVvhNeBY0r3FYKNOJtznwA0v7B5Vp9tr31xAHsZC0DqkQ/pZDmj" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js" integrity="sha384-0w2KAL2YHP6wKOkUDzkCDGgVvfmHnj02DHeQ6XcHOgTfFsGyonKOpShMH1x6nk9o" crossorigin="anonymous"></script>
-    <script src="js/config.js?v=20261118l"></script>
-    <script src="js/api.js?v=20261118l"></script>
-    <script src="js/i18n.js?v=20261118l"></script>
-    <script src="js/app.js?v=20261118l"></script>
-    <script src="js/tools.js?v=20261118l"></script>
+    <script src="js/config.js?v=20261120a"></script>
+    <script src="js/api.js?v=20261120a"></script>
+    <script src="js/i18n.js?v=20261120a"></script>
+    <script src="js/app.js?v=20261120a"></script>
+    <script src="js/tools.js?v=20261120a"></script>
 </body>
 </html>
