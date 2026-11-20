@@ -196,11 +196,13 @@ const api = (() => {
         }
     }
 
+    const LEGACY_DEMO_PROJECT_IDS = new Set(["proj_magistral", "proj_gpon_north", "proj_gpon_west", "proj_karabakh"]);
+
     function filterOutDeleted(projList = []) {
         const delProjs = getDeletedProjectsSet();
         const delSegs = getDeletedSegmentsSet();
         return (Array.isArray(projList) ? projList : [])
-            .filter(p => p && !delProjs.has(p.id))
+            .filter(p => p && !delProjs.has(p.id) && !LEGACY_DEMO_PROJECT_IDS.has(p.id) && !(p.category === "project" && !p.isPmo && !String(p.id).startsWith("pmo_")))
             .map(p => ({
                 ...p,
                 items: (p.items || []).filter(r => r && !delSegs.has(`${p.id}:${r.id}`))
@@ -495,44 +497,10 @@ const api = (() => {
     }
 
     function fallbackSeedProjects() {
-        return [
-            {
-                id: "proj_magistral", name: "1. BCG — Bakı-Quba-Qusar Magistralı", status: "icrada", category: "project", type: "lines",
-                startDate: "2026-03-01", endDate: "2026-12-15", imported: false,
-                items: [
-                    { id: "MAG-01", name: "Bakı - Sumqayıt Magistralı", pointA: "Bakı HQ", pointB: "Sumqayıt ATS", startDate: "2026-03-01", endDate: "2026-06-30", contractor: "", totalKm: 45, doneKm: 45, status: "bitmis", closures: 15, manholes: 10, antennas: 0, coords: [[40.4093, 49.8671], [40.45, 49.8], [40.5897, 49.6686]] },
-                    { id: "MAG-02", name: "Sumqayıt - Quba Magistralı", pointA: "Sumqayıt ATS", pointB: "Quba Node", startDate: "2026-04-10", endDate: "2026-09-15", contractor: "", totalKm: 120, doneKm: 85, status: "icrada", closures: 30, manholes: 20, antennas: 0, coords: [[40.5897, 49.6686], [41.1, 49.06], [41.3611, 48.5134]] }
-                ]
-            },
-            {
-                id: "proj_gpon_north", name: "2. BCG — Bakı-Şamaxı-Yevlax Magistralı", status: "icrada", category: "project", type: "lines",
-                startDate: "2026-04-01", endDate: "2026-11-30", imported: false,
-                items: [
-                    { id: "NOR-01", name: "Quba Şəhər İçi GPON", pointA: "Quba ATS", pointB: "Zərdabi Qəsəbəsi", startDate: "2026-04-01", endDate: "2026-07-30", contractor: "", totalKm: 35, doneKm: 35, status: "bitmis", closures: 8, manholes: 5, antennas: 0, coords: [[41.3611, 48.5134], [41.39, 48.48]] }
-                ]
-            },
-            {
-                id: "proj_gpon_west", name: "3. BCG — Gəncə-Qazax Magistralı", status: "icrada", category: "project", type: "lines",
-                startDate: "2026-05-01", endDate: "2026-12-20", imported: false,
-                items: [
-                    { id: "WES-01", name: "Gəncə Şəhər İçi GPON", pointA: "Gəncə ATS-1", pointB: "Gəncə Mərkəz", startDate: "2026-05-01", endDate: "2026-08-30", contractor: "", totalKm: 65, doneKm: 65, status: "bitmis", closures: 16, manholes: 10, antennas: 0, coords: [[40.6828, 46.3606], [40.72, 46.33]] }
-                ]
-            },
-            {
-                id: "proj_absheron", name: "4. Azconnect — Bakı-Sumqayıt Magistralı", status: "bitmis", category: "azconnect", type: "lines",
-                startDate: "2025-10-01", endDate: "2026-03-30", imported: false,
-                items: [
-                    { id: "ABS-01", name: "Xırdalan Şəhər İçi", pointA: "Xırdalan ATS", pointB: "Masazır Qəsəbəsi", startDate: "2025-10-01", endDate: "2025-12-15", contractor: "", totalKm: 35, doneKm: 35, status: "bitmis", closures: 9, manholes: 6, antennas: 0, coords: [[40.4481, 49.755], [40.49, 49.7]] }
-                ]
-            },
-            {
-                id: "proj_karabakh", name: "5. BCG — Cənub və Qərb Antena Layihələri", status: "tehvil", category: "project", type: "lines",
-                startDate: "2025-05-01", endDate: "2026-02-28", imported: false,
-                items: [
-                    { id: "KAR-01", name: "Şuşa - Xankəndi Magistralı", pointA: "Şuşa Sub-station", pointB: "Xankəndi Hub", startDate: "2025-05-01", endDate: "2025-09-30", contractor: "", totalKm: 35, doneKm: 35, status: "tehvil", closures: 9, manholes: 6, antennas: 0, coords: [[39.7539, 46.7469], [39.8231, 46.7561]] }
-                ]
-            }
-        ];
+        if (typeof window !== "undefined" && Array.isArray(window.PMO_SEED_PROJECTS) && window.PMO_SEED_PROJECTS.length > 0) {
+            return JSON.parse(JSON.stringify(window.PMO_SEED_PROJECTS));
+        }
+        return [];
     }
 
     return {
