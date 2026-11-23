@@ -106,7 +106,7 @@ for (const p of seedData) {
             const nextR = (i + 1 < rows.length) ? rows[i + 1] : {};
             const ptIdExact = `pmo_${p.sheetId}_r${r.__rowNum__}`;
             const ptIdPlus = `pmo_${p.sheetId}_r${r.__rowNum__ + 1}`;
-            const cVal = parseFloat(nextR.CY) || parseFloat(nextR[cableCol]) || parseFloat(nextR.CT) || parseFloat(r.CY) || parseFloat(r[cableCol]) || 0;
+            const cVal = parseFloat(nextR[cableCol]) || parseFloat(r[cableCol]) || 0;
             const bcg = (r.K && r.K !== '-' && r.K !== '0') ? r.K : ((nextR.K && nextR.K !== '-' && nextR.K !== '0') ? nextR.K : '');
             const avi = (r.L && r.L !== '-' && r.L !== '0') ? r.L : ((nextR.L && nextR.L !== '-' && nextR.L !== '0') ? nextR.L : '');
             

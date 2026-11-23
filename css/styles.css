@@ -1767,5 +1767,408 @@ body.shared .user, body.shared #logoutBtn, body.shared .bar-sep, body.shared .ta
     align-items: center;
 }
 
+/* === 🌀 Fiber Optik Qövs Çarxı (Yarım-Dairə Layihə Roliki) === */
+.roller-mode-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 22px;
+    padding: 0 7px;
+    border-radius: 999px;
+    font-size: 10.5px;
+    font-weight: 700;
+    color: var(--ink-2);
+    background: color-mix(in srgb, var(--line) 45%, transparent);
+    border: 1px solid var(--line-strong);
+    transition: all 0.2s ease;
+    cursor: pointer;
+}
+.roller-mode-btn:hover {
+    color: var(--ink);
+    border-color: var(--brand);
+    background: color-mix(in srgb, var(--brand) 14%, transparent);
+}
+.roller-mode-btn.active {
+    color: #38bdf8;
+    border-color: rgba(56, 189, 248, 0.55);
+    background: rgba(56, 189, 248, 0.14);
+    box-shadow: 0 0 10px rgba(56, 189, 248, 0.22);
+}
+.roller-mode-btn.active i {
+    animation: rollerDiscSpin 7s linear infinite;
+}
+@keyframes rollerDiscSpin {
+    to { transform: rotate(360deg); }
+}
+
+.project-list-stage {
+    flex: 1;
+    min-height: 0;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+.project-list-stage .project-list {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    outline: none;
+    position: relative;
+    z-index: 2;
+}
+
+/* Qövs Çarxı aktiv olduqda sol tərəfdə kompakt parlaq Fiber Optik yarım-dairə qövsü */
+.roller-arc-svg {
+    display: none;
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 46px;
+    height: 100%;
+    pointer-events: none;
+    z-index: 1;
+    transition: opacity 0.25s ease;
+}
+.project-list-stage.roller-on .roller-arc-svg {
+    display: block;
+}
+.project-list-stage.roller-on.has-expanded .roller-arc-svg {
+    opacity: 0.28;
+}
+.roller-arc-pulse {
+    animation: rollerArcFlow 2.6s linear infinite;
+    filter: drop-shadow(0 0 4px rgba(56, 189, 248, 0.9));
+}
+@keyframes rollerArcFlow {
+    from { stroke-dashoffset: 80; }
+    to   { stroke-dashoffset: -80; }
+}
+.roller-apex-ring {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: rollerApexPulse 2.2s ease-in-out infinite;
+}
+@keyframes rollerApexPulse {
+    0%, 100% { opacity: 0.9; transform: scale(1); }
+    50%      { opacity: 0.4; transform: scale(1.32); }
+}
+
+/* Ön fokus zonasında incə fiber işıq zolağı */
+.roller-apex-beam {
+    display: none;
+    position: absolute;
+    left: 18px;
+    right: 18px;
+    top: 50%;
+    height: 76px;
+    transform: translateY(-50%);
+    border-radius: 12px;
+    background: linear-gradient(90deg, color-mix(in srgb, var(--brand) 14%, transparent) 0%, color-mix(in srgb, var(--brand) 4%, transparent) 55%, transparent 100%);
+    pointer-events: none;
+    z-index: 1;
+    transition: opacity 0.25s ease;
+}
+.project-list-stage.roller-on .roller-apex-beam {
+    display: block;
+}
+.project-list-stage.roller-on.has-expanded .roller-apex-beam {
+    opacity: 0;
+}
+
+.project-list-stage.roller-on .project-list {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    padding-right: 14px;
+    overflow-x: hidden;
+}
+.project-list-stage.roller-on .project-list::-webkit-scrollbar {
+    display: none;
+}
+.project-list-stage.roller-on::before,
+.project-list-stage.roller-on::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 16px;
+    height: 22px;
+    pointer-events: none;
+    z-index: 6;
+    transition: opacity 0.25s ease;
+}
+.project-list-stage.roller-on::before {
+    top: 0;
+    background: linear-gradient(180deg, color-mix(in srgb, var(--panel) 72%, transparent) 0%, transparent 100%);
+}
+.project-list-stage.roller-on::after {
+    bottom: 0;
+    background: linear-gradient(0deg, color-mix(in srgb, var(--panel) 72%, transparent) 0%, transparent 100%);
+}
+.project-list-stage.roller-on.has-expanded::before,
+.project-list-stage.roller-on.has-expanded::after {
+    opacity: 0.2;
+    height: 16px;
+}
+
+/* Qövs Çarxında düz şaquli borunu gizlət (əvəzində kompakt qövs işləyir) və kartların sol nöqtəsi qövs üzərində sürüşsün */
+#listView.has-active-fibers .project-list-stage.roller-on .fiber-bus-wrap {
+    padding-left: 25px;
+    padding-right: 6px;
+    padding-top: var(--drum-pad, 105px);
+    padding-bottom: var(--drum-pad, 115px);
+}
+#listView.has-active-fibers .project-list-stage.roller-on .fiber-bus-wrap::before,
+#listView.has-active-fibers .project-list-stage.roller-on .fiber-bus-wrap::after {
+    display: none;
+}
+.project-list-stage.roller-on .fiber-bus-wrap {
+    padding-left: 25px;
+    padding-right: 6px;
+    padding-top: var(--drum-pad, 105px);
+    padding-bottom: var(--drum-pad, 115px);
+}
+.project-list-stage.roller-on .project {
+    position: relative;
+    transform-origin: left center;
+    will-change: transform, opacity;
+    margin: 5px 4px 5px 6px;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+}
+.project-list-stage.roller-on .project .project-main strong,
+.project-list-stage.roller-on .project .project-main span[title] {
+    color: var(--ink) !important;
+    font-weight: 700;
+}
+.project-list-stage.roller-on .project.hidden-on-map .project-main {
+    opacity: 0.72;
+}
+.project-list-stage.roller-on .project.roller-front {
+    z-index: 4;
+    background: color-mix(in srgb, var(--proj-tone, var(--brand)) 11%, var(--panel));
+    border-color: color-mix(in srgb, var(--proj-tone, var(--brand)) 72%, var(--line));
+    box-shadow:
+        0 8px 22px rgba(0, 0, 0, 0.34),
+        0 0 0 1px color-mix(in srgb, var(--proj-tone, var(--brand)) 42%, transparent),
+        -4px 0 18px color-mix(in srgb, var(--proj-tone, var(--brand)) 30%, transparent);
+}
+.project-list-stage.roller-on .project.roller-front .project-main strong,
+.project-list-stage.roller-on .project.roller-front .project-main span[title] {
+    font-weight: 800;
+}
+.project-list-stage.roller-on .project.roller-front.fiber-linked::after {
+    width: 8px;
+    height: 8px;
+    left: -13.5px;
+    top: 17.5px;
+    box-shadow: 0 0 10px var(--proj-tone, #38bdf8), 0 0 4px #ffffff;
+}
+.project-list-stage.roller-on .project:not(.roller-front):not(.expanded) {
+    z-index: 2;
+}
+.project-list-stage.roller-on .project:not(.roller-front):not(.expanded):hover {
+    border-color: color-mix(in srgb, var(--proj-tone, var(--brand)) 50%, var(--line));
+}
+.project-list-stage.roller-on .project.expanded {
+    z-index: 5;
+    transform: translate3d(-14px, 0, 0) !important;
+    width: calc(100% + 14px);
+    opacity: 1 !important;
+    filter: none !important;
+}
+.project-list-stage.roller-on .project.expanded .segments {
+    max-height: 230px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+}
+.project-list-stage.roller-on .folder-group-head {
+    position: relative;
+    z-index: 3;
+    margin-left: -20px;
+}
+
+/* Sağ kənardakı Fiber Qövs İndikatoru (bütün layihələri 1 baxışda göstərir) */
+.roller-rail {
+    position: absolute;
+    right: 3px;
+    top: 12px;
+    bottom: 36px;
+    width: 14px;
+    z-index: 8;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    padding: 4px 0;
+}
+.roller-tick {
+    width: 5px;
+    height: 6px;
+    min-height: 4px;
+    max-height: 12px;
+    flex: 0 1 auto;
+    border-radius: 99px;
+    background: color-mix(in srgb, var(--tick-tone, #64748b) 55%, var(--line-strong));
+    opacity: 0.55;
+    cursor: pointer;
+    transition: all 0.18s ease;
+    position: relative;
+}
+.roller-tick:hover {
+    width: 8px;
+    opacity: 1;
+    background: var(--tick-tone, #38bdf8);
+    box-shadow: 0 0 6px var(--tick-tone, #38bdf8);
+}
+.roller-tick.active {
+    width: 6px;
+    height: 18px;
+    max-height: 20px;
+    opacity: 1;
+    background: var(--tick-tone, #38bdf8);
+    box-shadow: 0 0 8px var(--tick-tone, #38bdf8);
+}
+.roller-tick.hidden-proj {
+    opacity: 0.24;
+}
+
+.roller-rail-tip {
+    position: absolute;
+    right: 22px;
+    z-index: 12;
+    max-width: 225px;
+    padding: 4px 9px;
+    border-radius: 7px;
+    background: color-mix(in srgb, var(--bar) 94%, transparent);
+    color: #f1f5f9;
+    border: 1px solid rgba(56, 189, 248, 0.4);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.42);
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    pointer-events: none;
+    transform: translateY(-50%);
+}
+
+/* Aşağı sağda yığcam qövs sayğacı və ▲ / ▼ düymələri */
+.roller-hud {
+    position: absolute;
+    right: 18px;
+    bottom: 6px;
+    z-index: 9;
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 2px 5px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--panel) 88%, transparent);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid color-mix(in srgb, var(--brand) 32%, var(--line));
+    box-shadow: 0 3px 12px rgba(0, 0, 0, 0.28);
+    font-size: 10.5px;
+    font-weight: 700;
+    color: var(--ink-2);
+}
+.roller-nav-btn {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    color: var(--ink-2);
+    font-size: 9.5px;
+    transition: background 0.15s, color 0.15s;
+}
+.roller-nav-btn:hover {
+    background: color-mix(in srgb, var(--brand) 20%, transparent);
+    color: var(--brand);
+}
+.roller-counter {
+    padding: 0 4px;
+    font-variant-numeric: tabular-nums;
+    color: var(--ink);
+    min-width: 34px;
+    text-align: center;
+}
+
+@media (max-width: 860px) {
+    .roller-mode-btn,
+    .roller-arc-svg,
+    .roller-apex-beam,
+    .roller-rail,
+    .roller-rail-tip,
+    .roller-hud {
+        display: none !important;
+    }
+    .project-list-stage {
+        flex: none;
+        overflow: visible;
+    }
+    .project-list-stage.roller-on::before,
+    .project-list-stage.roller-on::after {
+        display: none;
+    }
+    #listView.has-active-fibers .project-list-stage.roller-on .fiber-bus-wrap,
+    .project-list-stage.roller-on .fiber-bus-wrap {
+        padding-left: 14px !important;
+        padding-right: 0 !important;
+        padding-top: 0 !important;
+        padding-bottom: 8px !important;
+    }
+    .project-list-stage.roller-on .project {
+        transform: none !important;
+        opacity: 1 !important;
+        filter: none !important;
+        width: auto !important;
+    }
+}
+
+/* === 🔴 Yuxarı Panel Bildirişlər — Qırmızı Sayğac & İndikator === */
+.notif-bell-btn {
+    position: relative;
+}
+.notif-bell-btn i {
+    color: #22c55e;
+    transition: color 0.2s ease;
+}
+.notif-bell-btn.has-unread {
+    border-color: rgba(239, 68, 68, 0.55) !important;
+    background: rgba(239, 68, 68, 0.12);
+}
+.notif-bell-btn.has-unread i {
+    color: #ef4444;
+    animation: notifBellRing 2.4s ease-in-out infinite;
+}
+.notif-red-badge {
+    min-width: 19px;
+    height: 19px;
+    padding: 0 5px;
+    border-radius: 999px;
+    background: #ef4444 !important;
+    color: #ffffff !important;
+    font-size: 10.5px;
+    font-weight: 800;
+    line-height: 19px;
+    text-align: center;
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+    animation: notifRedPulse 1.8s ease-out infinite;
+}
+@keyframes notifRedPulse {
+    0%   { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.75); }
+    70%  { box-shadow: 0 0 0 7px rgba(239, 68, 68, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+}
+@keyframes notifBellRing {
+    0%, 75%, 100% { transform: rotate(0deg); }
+    80% { transform: rotate(14deg); }
+    85% { transform: rotate(-12deg); }
+    90% { transform: rotate(8deg); }
+    95% { transform: rotate(-6deg); }
+}
+
+
 
 

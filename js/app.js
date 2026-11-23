@@ -64,6 +64,27 @@ function cleanProjectName(name, sheetId) {
     return s;
 }
 
+function getProjectIconHtml(project, tone = "#38bdf8") {
+    const name = String(project?.name || "").toLocaleLowerCase("az");
+    const cat = project?.category || "project";
+    let icon = "fa-diagram-project";
+    if (cat === "nim") icon = "fa-traffic-light";
+    else if (cat === "azconnect") icon = "fa-tower-cell";
+    else if (cat === "other") icon = "fa-layer-group";
+    else if (/radar/i.test(name)) icon = "fa-satellite-dish";
+    else if (/239|region/i.test(name)) icon = "fa-map-location-dot";
+    else if (/avtobus/i.test(name)) icon = "fa-bus";
+    else if (/kamera|smart/i.test(name)) icon = "fa-video";
+    else if (/magistral|yol/i.test(name)) icon = "fa-road";
+    else if (/təmir|bərpa/i.test(name)) icon = "fa-screwdriver-wrench";
+    else if (/inventar/i.test(name)) icon = "fa-clipboard-check";
+    else if (/dəyişim|deyisim/i.test(name)) icon = "fa-arrows-rotate";
+    else if (/sağlamlaşdırma/i.test(name)) icon = "fa-heart-pulse";
+    else if (/gəncə|naxçıvan/i.test(name)) icon = "fa-city";
+    else if (/layihəsiz/i.test(name)) icon = "fa-location-crosshairs";
+    return `<i class="fa-solid ${icon}" style="color:${tone};margin-right:5px;font-size:12px;flex-shrink:0"></i>`;
+}
+
 const formatDate = iso => iso ? iso.split("-").reverse().join(".") : "—";
 const formatKm = km => {
     const n = Number(km) || 0;
@@ -2725,6 +2746,75 @@ function getItemShape(project, item) {
     return baseShape;
 }
 
+/* Bütün PMO layihələrində (Muğanlı, Gəncə 2027, 239 Region, Dəyişim 2026, Layihəsiz 15.1, Naxçıvan və s.)
+   nöqtə və alt-nöqtələrin növünə görə fərqli xəritə ikonu, nişan və şərti işarə qaytarır */
+function resolvePmoPointVisual(project, r, sp) {
+    const baseShape = getProjectShape(project);
+    if (!project) {
+        return { key: "base", label: "", iconPrefix: `pt-${baseShape.id}`, shapeObj: baseShape, pillColor: "", pillText: "", legendType: "shape" };
+    }
+    const sheetId = String(project.sheetId || project.pmoMeta?.sheetId || "");
+    const groupName = String(r?.name || r?.rayon || sp?.rayon || "").trim();
+    const tsStr = String(sp?.tsNo || "").trim();
+    const addrStr = String(sp?.address || "").trim();
+    const ptText = `${groupName} ${tsStr} ${addrStr} ${sp?.name || ""}`.trim();
+
+    // 1. RPŞ / Polis obyektləri
+    if (/\brp[şs]\b|\bşp[şs]\b|\brpi\b|polis/i.test(ptText)) {
+        return { key: "rps", label: "RPŞ (Polis)", iconPrefix: "pt-rps", shapeObj: null, pillColor: "#38bdf8", pillText: "🛡️ RPŞ (Polis)", legendType: "rps" };
+    }
+    // 2. Cərimə meydançası / Dayanacaq
+    if (/c[əe]rim[əe]\s*meydan|\bdayanacaq\b/i.test(ptText)) {
+        return { key: "cerime", label: "Cərimə meydançası", iconPrefix: "pt-cerime", shapeObj: null, pillColor: "#f59e0b", pillText: "🅿️ Cərimə meydançası", legendType: "cerime" };
+    }
+    // 3. Üztanıma kamerası
+    if (/[üu]ztan[ıi]ma/i.test(ptText)) {
+        return { key: "face", label: "Üztanıma kamerası", iconPrefix: "pt-face", shapeObj: null, pillColor: "#ec4899", pillText: "👤 Üztanıma kamerası", legendType: "face" };
+    }
+    // 4. Smart kamera / PTZ kamera
+    if ((/smart\s*kamera|\bptz\b/i.test(ptText)) && sheetId !== "16") {
+        const lbl = /\bptz\b/i.test(groupName) ? "PTZ kamera" : "Smart kamera";
+        return { key: "cam", label: lbl, iconPrefix: "pt-cam", shapeObj: null, pillColor: "#06b6d4", pillText: `📷 ${lbl}`, legendType: "cam" };
+    }
+    // 5. Radar nöqtəsi (qarışıq layihələrdə və ya radar qrupunda)
+    if ((sp?.ptKind === "radar" || /\bradar\b|ekin/i.test(ptText)) && sheetId !== "11") {
+        return { key: "radar", label: "Radar", iconPrefix: "pt-radar", shapeObj: null, pillColor: "#38bdf8", pillText: "📡 Radar", legendType: "radar" };
+    }
+    // 6. Yeraltı piyada keçidi
+    if (/yeralt[ıi]|piyada\s*ke[çc]id/i.test(ptText)) {
+        const sh = POINT_SHAPES.find(s => s.id === "diamond") || baseShape;
+        return { key: "underpass", label: "Yeraltı piyada keçidi", iconPrefix: `pt-${sh.id}`, shapeObj: sh, pillColor: "#fbbf24", pillText: "🚶 Yeraltı keçid", legendType: "shape" };
+    }
+    // 7. Ticarət Mərkəzi / Otel / Hava Limanı / Xəstəxana (TŞ kodu olmayan strateji obyektlər)
+    const hasExplicitTsCode = /\b\d*t[şs][-\s]?\d+\b|\bat[şs][-\s]?\d+\b|\bgt[şs][-\s]?\d+\b/i.test(tsStr);
+    if (!hasExplicitTsCode && /ticar[əe]t\s*m[əe]rk[əe]z|univermaq|\bmall\b|\botel(inin)?\b|\bhotel\b|hava\s*liman|x[əe]st[əe]xana/i.test(ptText)) {
+        const sh = POINT_SHAPES.find(s => s.id === "star") || baseShape;
+        const lbl = /ticar[əe]t|univermaq|\bmall\b/i.test(ptText) ? "Ticarət Mərkəzi" : (/otel|hotel/i.test(ptText) ? "Otel / Obyekt" : "Strateji Obyekt");
+        return { key: `obj_${lbl}`, label: lbl, iconPrefix: `pt-${sh.id}`, shapeObj: sh, pillColor: "#f43f5e", pillText: `🏢 ${lbl}`, legendType: "shape" };
+    }
+    // 8. Mövcud nöqtələr (Gəncə 2027 və s.)
+    if (/m[öo]vcud\s*n[öo]qt/i.test(groupName)) {
+        const sh = POINT_SHAPES.find(s => s.id === "hexagon") || baseShape;
+        return { key: "existing", label: "Mövcud nöqtələr", iconPrefix: `pt-${sh.id}`, shapeObj: sh, pillColor: "#94a3b8", pillText: "📍 Mövcud nöqtə", legendType: "shape" };
+    }
+    // 9. TŞ nöqtəsi (qarışıq layihələrdə: Muğanlı 12, Dəyişim 14, Gəncə 17, Layihəsiz 15.1, Naxçıvan 18, 239 Region 10)
+    const isMixedSheet = ["10", "12", "14", "15.1", "17", "18"].includes(sheetId) || /mu[ğg]anl[ıi]|d[əe]yi[şs]im|g[əe]nc[əe]|layih[əe]siz|nax[çc][ıi]van/i.test(String(project.name || ""));
+    if (isMixedSheet && (sp?.ptKind === "ts" || hasExplicitTsCode || /\bt[şs]\b/i.test(groupName))) {
+        return { key: "ts", label: "TŞ nöqtəsi", iconPrefix: "pt-ts", shapeObj: null, pillColor: "#a855f7", pillText: "📹 TŞ nöqtəsi", legendType: "ts" };
+    }
+    // 10. Təmir - Bərpa (Vərəq 15.3) RM-ləri üçün fərqli həndəsi fiqur
+    if (r && !r.isMagistral && Array.isArray(project.items) && project.items.length > 1) {
+        const nonMagItems = project.items.filter(it => !it.isMagistral);
+        if (sheetId === "15.3") {
+            const cIdx = Math.max(0, nonMagItems.findIndex(it => it.id === r.id || it.name === r.name));
+            const baseIdx = Math.max(0, POINT_SHAPES.indexOf(baseShape));
+            const sh = POINT_SHAPES[(baseIdx + cIdx) % POINT_SHAPES.length] || baseShape;
+            return { key: `cat_${groupName}`, label: groupName, iconPrefix: `pt-${sh.id}`, shapeObj: sh, pillColor: "#38bdf8", pillText: `🔹 ${groupName}`, legendType: "shape" };
+        }
+    }
+    return { key: "base", label: cleanProjectName(project.name, sheetId), iconPrefix: `pt-${baseShape.id}`, shapeObj: baseShape, pillColor: "", pillText: "", legendType: "base" };
+}
+
 let pointShapesRegistered = false;
 
 function registerPointShapeImages() {
@@ -2802,6 +2892,278 @@ function registerPointShapeImages() {
 
             map.addImage(id, ctx.getImageData(0, 0, size, size), { pixelRatio: 2 });
         });
+    });
+
+    // 🛡️ RPŞ (Polis) nöqtələri üçün xüsusi Polis Qalxanı + Ulduz ikonu
+    colors.forEach(color => {
+        const id = `pt-rps-${color.replace("#", "").toLowerCase()}`;
+        if (map.hasImage(id)) map.removeImage(id);
+        const canvas = document.createElement("canvas");
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext("2d");
+
+        ctx.save();
+        // Polis qalxanı forması
+        ctx.beginPath();
+        ctx.moveTo(half, 6);
+        ctx.lineTo(size - 9, 12);
+        ctx.quadraticCurveTo(size - 8, 28, half, size - 6);
+        ctx.quadraticCurveTo(8, 28, 9, 12);
+        ctx.closePath();
+
+        ctx.shadowColor = "rgba(0, 0, 0, 0.65)";
+        ctx.shadowBlur = 4;
+        ctx.fillStyle = color;
+        ctx.fill();
+
+        ctx.shadowBlur = 0;
+        ctx.lineWidth = 2.4;
+        ctx.strokeStyle = "#ffffff";
+        ctx.stroke();
+
+        // Daxildə tünd göy polis zolağı + ağ ulduz
+        ctx.beginPath();
+        ctx.arc(half, half - 1, 7.5, 0, Math.PI * 2);
+        ctx.fillStyle = "rgba(15, 23, 42, 0.78)";
+        ctx.fill();
+
+        ctx.beginPath();
+        const spikes = 5, outerR = 5.4, innerR = 2.4, cy = half - 1;
+        for (let i = 0; i < spikes * 2; i++) {
+            const rad = (i % 2 === 0) ? outerR : innerR;
+            const ang = (i * Math.PI) / spikes - Math.PI / 2;
+            const sx = half + Math.cos(ang) * rad;
+            const sy = cy + Math.sin(ang) * rad;
+            if (i === 0) ctx.moveTo(sx, sy);
+            else ctx.lineTo(sx, sy);
+        }
+        ctx.closePath();
+        ctx.fillStyle = "#FACC15";
+        ctx.fill();
+        ctx.restore();
+
+        map.addImage(id, ctx.getImageData(0, 0, size, size), { pixelRatio: 2 });
+    });
+
+    // 📡 Radar nöqtələri üçün xüsusi Radar dalğası ikonu (Muğanlı və s.)
+    colors.forEach(color => {
+        const id = `pt-radar-${color.replace("#", "").toLowerCase()}`;
+        if (map.hasImage(id)) map.removeImage(id);
+        const canvas = document.createElement("canvas");
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext("2d");
+
+        ctx.save();
+        // Altıguşəli / dairəvi radar lövhəsi
+        ctx.beginPath();
+        ctx.arc(half, half, 15, 0, Math.PI * 2);
+        ctx.shadowColor = "rgba(0,0,0,0.65)";
+        ctx.shadowBlur = 4;
+        ctx.fillStyle = color;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.lineWidth = 2.4;
+        ctx.strokeStyle = "#ffffff";
+        ctx.stroke();
+
+        // Daxildə tünd dairə + ağ radar dalğaları
+        ctx.beginPath();
+        ctx.arc(half, half, 10, 0, Math.PI * 2);
+        ctx.fillStyle = "rgba(15, 23, 42, 0.80)";
+        ctx.fill();
+
+        ctx.strokeStyle = "#38BDF8";
+        ctx.lineWidth = 1.8;
+        ctx.beginPath();
+        ctx.arc(half - 2, half + 2, 5.2, -Math.PI * 0.65, 0.15);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(half - 2, half + 2, 8.6, -Math.PI * 0.65, 0.15);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(half - 2, half + 2, 2.2, 0, Math.PI * 2);
+        ctx.fillStyle = "#FACC15";
+        ctx.fill();
+        ctx.restore();
+
+        map.addImage(id, ctx.getImageData(0, 0, size, size), { pixelRatio: 2 });
+    });
+
+    // 📹 TŞ (Təhlükəsiz Şəhər) nöqtələri üçün xüsusi TŞ nişanı ikonu
+    colors.forEach(color => {
+        const id = `pt-ts-${color.replace("#", "").toLowerCase()}`;
+        if (map.hasImage(id)) map.removeImage(id);
+        const canvas = document.createElement("canvas");
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext("2d");
+
+        ctx.save();
+        const pad = 8;
+        const w = size - pad * 2;
+        const rad = 7;
+        ctx.beginPath();
+        ctx.moveTo(pad + rad, pad);
+        ctx.lineTo(pad + w - rad, pad);
+        ctx.quadraticCurveTo(pad + w, pad, pad + w, pad + rad);
+        ctx.lineTo(pad + w, pad + w - rad);
+        ctx.quadraticCurveTo(pad + w, pad + w, pad + w - rad, pad + w);
+        ctx.lineTo(pad + rad, pad + w);
+        ctx.quadraticCurveTo(pad, pad + w, pad, pad + w - rad);
+        ctx.lineTo(pad, pad + rad);
+        ctx.quadraticCurveTo(pad, pad, pad + rad, pad);
+        ctx.closePath();
+
+        ctx.shadowColor = "rgba(0,0,0,0.65)";
+        ctx.shadowBlur = 4;
+        ctx.fillStyle = color;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.lineWidth = 2.4;
+        ctx.strokeStyle = "#ffffff";
+        ctx.stroke();
+
+        ctx.fillStyle = "#0F172A";
+        ctx.fillRect(pad + 3, half - 7, w - 6, 14);
+
+        ctx.fillStyle = "#FFFFFF";
+        ctx.font = "900 10.5px sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("TŞ", half, half + 0.5);
+        ctx.restore();
+
+        map.addImage(id, ctx.getImageData(0, 0, size, size), { pixelRatio: 2 });
+    });
+
+    // 🅿️ Cərimə meydançası / Dayanacaq nöqtələri üçün xüsusi "P" nişanı ikonu
+    colors.forEach(color => {
+        const id = `pt-cerime-${color.replace("#", "").toLowerCase()}`;
+        if (map.hasImage(id)) map.removeImage(id);
+        const canvas = document.createElement("canvas");
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext("2d");
+
+        ctx.save();
+        const pad = 8;
+        const w = size - pad * 2;
+        const rad = 8;
+        ctx.beginPath();
+        ctx.moveTo(pad + rad, pad);
+        ctx.lineTo(pad + w - rad, pad);
+        ctx.quadraticCurveTo(pad + w, pad, pad + w, pad + rad);
+        ctx.lineTo(pad + w, pad + w - rad);
+        ctx.quadraticCurveTo(pad + w, pad + w, pad + w - rad, pad + w);
+        ctx.lineTo(pad + rad, pad + w);
+        ctx.quadraticCurveTo(pad, pad + w, pad, pad + w - rad);
+        ctx.lineTo(pad, pad + rad);
+        ctx.quadraticCurveTo(pad, pad, pad + rad, pad);
+        ctx.closePath();
+
+        ctx.shadowColor = "rgba(0,0,0,0.65)";
+        ctx.shadowBlur = 4;
+        ctx.fillStyle = color;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.lineWidth = 2.4;
+        ctx.strokeStyle = "#ffffff";
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(half, half, 9.5, 0, Math.PI * 2);
+        ctx.fillStyle = "#0F172A";
+        ctx.fill();
+
+        ctx.fillStyle = "#FACC15";
+        ctx.font = "900 13px sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("P", half, half + 0.8);
+        ctx.restore();
+
+        map.addImage(id, ctx.getImageData(0, 0, size, size), { pixelRatio: 2 });
+    });
+
+    // 📷 Smart kamera / PTZ nöqtələri üçün xüsusi Kamera ikonu
+    colors.forEach(color => {
+        const id = `pt-cam-${color.replace("#", "").toLowerCase()}`;
+        if (map.hasImage(id)) map.removeImage(id);
+        const canvas = document.createElement("canvas");
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext("2d");
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(half, half, 15, 0, Math.PI * 2);
+        ctx.shadowColor = "rgba(0,0,0,0.65)";
+        ctx.shadowBlur = 4;
+        ctx.fillStyle = color;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.lineWidth = 2.4;
+        ctx.strokeStyle = "#ffffff";
+        ctx.stroke();
+
+        // Kamera gövdəsi və linza
+        ctx.fillStyle = "#0F172A";
+        ctx.fillRect(half - 8, half - 5.5, 16, 11.5);
+        ctx.fillRect(half - 3.5, half - 8, 7, 3);
+        ctx.beginPath();
+        ctx.arc(half, half + 0.3, 4.2, 0, Math.PI * 2);
+        ctx.strokeStyle = "#38BDF8";
+        ctx.lineWidth = 1.8;
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(half, half + 0.3, 1.6, 0, Math.PI * 2);
+        ctx.fillStyle = "#ffffff";
+        ctx.fill();
+        ctx.restore();
+
+        map.addImage(id, ctx.getImageData(0, 0, size, size), { pixelRatio: 2 });
+    });
+
+    // 👤 Üztanıma kamerası nöqtələri üçün xüsusi Viewfinder / Face ID ikonu
+    colors.forEach(color => {
+        const id = `pt-face-${color.replace("#", "").toLowerCase()}`;
+        if (map.hasImage(id)) map.removeImage(id);
+        const canvas = document.createElement("canvas");
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext("2d");
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(half, half, 15, 0, Math.PI * 2);
+        ctx.shadowColor = "rgba(0,0,0,0.65)";
+        ctx.shadowBlur = 4;
+        ctx.fillStyle = color;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.lineWidth = 2.4;
+        ctx.strokeStyle = "#ffffff";
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(half, half, 10.5, 0, Math.PI * 2);
+        ctx.fillStyle = "rgba(15, 23, 42, 0.85)";
+        ctx.fill();
+
+        // Baş və çiyin silueti
+        ctx.fillStyle = "#F472B6";
+        ctx.beginPath();
+        ctx.arc(half, half - 2.6, 3.3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(half, half + 6.5, 5.8, Math.PI * 1.15, Math.PI * 1.85);
+        ctx.fill();
+        ctx.restore();
+
+        map.addImage(id, ctx.getImageData(0, 0, size, size), { pixelRatio: 2 });
     });
 
     // 🚦 NİİM Svetofor Kəsişmələri üçün 3D effektli, günlüklü (kozeroklu) 3 lampalı svetofor ikonları
@@ -3243,7 +3605,7 @@ function mapStyle() {
                     "icon-opacity": ["case", ["get", "dim"], 0.28, 1]
                 } },
             /* Nöqtə adları brauzer şrifti ilə: sabit 10 km ölçüsü (0.80), üst-üstə düşmür */
-            { id: "routes-point-name", type: "symbol", source: "route-labels", minzoom: 6, maxzoom: 9.6, filter: ["has", "nameImg"],
+            { id: "routes-point-name", type: "symbol", source: "route-labels", minzoom: 4.5, maxzoom: 9.6, filter: ["has", "nameImg"],
                 layout: {
                     "icon-image": ["get", "nameImg"],
                     "icon-anchor": "top",
@@ -3257,10 +3619,10 @@ function mapStyle() {
             { id: "routes-point-label", type: "symbol", source: "route-labels", minzoom: 9.6, maxzoom: 11, filter: ["has", "labelImg"],
                 layout: {
                     "icon-image": ["get", "labelImg"],
-                    "icon-anchor": "top",
-                    "icon-offset": [0, 12],
+                    "icon-anchor": ["coalesce", ["get", "lblAnchor"], "top"],
+                    "icon-offset": ["coalesce", ["get", "lblOffset"], ["literal", [0, 12]]],
                     "icon-size": 0.80,
-                    "icon-padding": 6,
+                    "icon-padding": 3,
                     "icon-allow-overlap": false,
                     "icon-ignore-placement": false
                 },
@@ -3268,38 +3630,38 @@ function mapStyle() {
             { id: "routes-point-label-near", type: "symbol", source: "route-labels", minzoom: 11, filter: ["has", "labelImg"],
                 layout: {
                     "icon-image": ["get", "labelImg"],
-                    "icon-anchor": "top",
-                    "icon-offset": [0, 12],
+                    "icon-anchor": ["coalesce", ["get", "lblAnchor"], "top"],
+                    "icon-offset": ["coalesce", ["get", "lblOffset"], ["literal", [0, 12]]],
                     "icon-size": 0.80,
-                    "icon-padding": 6,
-                    "icon-allow-overlap": false,
+                    "icon-padding": 2,
+                    "icon-allow-overlap": true,
                     "icon-ignore-placement": false
                 },
                 paint: { "icon-opacity": ["case", ["get", "dim"], 0.28, 1] } },
             /* Rayon xülasəsi:
-               1) Uzaqdan (zoom < 7.2): rayon adı
-               2) Orta miqyasda / uzaqlaşanda (7.2 <= zoom < 10.2): eyni rayondakı layihələr bir pəncərədə qovuşur (hər birinin öz məlumatı ilə)
-               3) Yaxınlaşanda (zoom >= 10.2): pəncərələr ayrılır */
-            { id: "routes-summary-name", type: "symbol", source: "route-labels", minzoom: 3.5, maxzoom: 5.0, filter: ["has", "summaryNameImg"],
+               1) Ümumi Azərbaycan görünüşü (zoom < 8.0): heç bir status pəncərəsi yoxdur, yalnız nöqtələr və rayon adları görünür
+               2) Yaxınlaşanda (8.0 <= zoom < 10.2): eyni rayondakı layihələr bir pəncərədə açılır
+               3) Daha yaxın miqyasda (zoom >= 10.2): ayrı-ayrı rayon pəncərələri açılır */
+            { id: "routes-summary-name", type: "symbol", source: "route-labels", minzoom: 3.5, maxzoom: 8.0, filter: ["has", "summaryNameImg"],
                 layout: {
                     "icon-image": ["get", "summaryNameImg"],
                     "icon-anchor": ["get", "nameAnchor"],
                     "icon-offset": ["get", "nameOffset"],
-                    "icon-size": isPhone() ? 0.92 : 0.80,
-                    "icon-padding": 4,
-                    "icon-allow-overlap": true,
-                    "icon-ignore-placement": true
+                    "icon-size": ["interpolate", ["linear"], ["zoom"], 5.0, 0.72, 7.0, 0.82, 8.0, (isPhone() ? 0.90 : 0.85)],
+                    "icon-padding": 3,
+                    "icon-allow-overlap": false,
+                    "icon-ignore-placement": false
                 },
                 paint: { "icon-opacity": ["case", ["get", "dim"], 0.28, 1] } },
-            { id: "routes-summary-card-merged", type: "symbol", source: "route-labels", minzoom: 5.0, maxzoom: 10.2, filter: ["has", "mergedCardImg"],
+            { id: "routes-summary-card-merged", type: "symbol", source: "route-labels", minzoom: 8.0, maxzoom: 10.2, filter: ["has", "mergedCardImg"],
                 layout: {
                     "icon-image": ["get", "mergedCardImg"],
                     "icon-anchor": ["get", "cardAnchor"],
                     "icon-offset": ["get", "cardOffset"],
-                    "icon-size": ["interpolate", ["linear"], ["zoom"], 5.0, 0.42, 6.5, 0.52, 8.0, 0.65, 10.2, (isPhone() ? 0.92 : 0.78)],
-                    "icon-padding": 8,
-                    "icon-allow-overlap": false,
-                    "icon-ignore-placement": false
+                    "icon-size": ["interpolate", ["linear"], ["zoom"], 8.0, 0.58, 9.2, 0.68, 10.2, (isPhone() ? 0.88 : 0.76)],
+                    "icon-padding": 2,
+                    "icon-allow-overlap": true,
+                    "icon-ignore-placement": true
                 },
                 paint: { "icon-opacity": ["case", ["get", "dim"], 0.28, 1] } },
             { id: "routes-summary-card", type: "symbol", source: "route-labels", minzoom: 10.2, filter: ["has", "summaryCardImg"],
@@ -3307,10 +3669,10 @@ function mapStyle() {
                     "icon-image": ["get", "summaryCardImg"],
                     "icon-anchor": ["get", "cardAnchor"],
                     "icon-offset": ["get", "cardOffset"],
-                    "icon-size": isPhone() ? 0.96 : 0.82,
-                    "icon-padding": 6,
-                    "icon-allow-overlap": false,
-                    "icon-ignore-placement": false
+                    "icon-size": isPhone() ? 0.90 : 0.78,
+                    "icon-padding": 2,
+                    "icon-allow-overlap": true,
+                    "icon-ignore-placement": true
                 },
                 paint: { "icon-opacity": ["case", ["get", "dim"], 0.28, 1] } },
             ...tools.layers()
@@ -3670,20 +4032,45 @@ function ensurePmoRayonCardImage({ name, color, shapeSymbol, folderName, pmoRayo
     const light = isLightBaseMap();
     const sym = shapeSymbol || "●";
     const pct = Math.max(0, Math.min(100, Math.round(Number(pmoRayon.pct) || 0)));
-    const bcgLine = `BCG: ${pmoRayon.bcgDone}/${pmoRayon.bcgPlan} (${pmoRayon.bcgPct}%)`;
-    const aviLine = `Avicom: ${pmoRayon.avicomDone}/${pmoRayon.avicomPlan} (${pmoRayon.avicomPct}%)`;
+    const tm = pmoRayon.temirMeta;
+    const isTemirCard = Boolean(tm?.isTemirRm || /t[əe]mir[\s\-]*b[əe]rpa/i.test(String(folderName || "")));
+    let seedTm = null;
+    if (isTemirCard && (!tm || tm.regLead === "—" || !tm.rayonBreakdown?.length) && Array.isArray(window.PMO_SEED_PROJECTS)) {
+        const seedP = window.PMO_SEED_PROJECTS.find(p => p.sheetId === "15.3");
+        const normCardRm = s => String(s || "").toLocaleLowerCase("az").replace(/[^a-z0-9əıöüçşğ]/gi, "");
+        const rk = normCardRm(name);
+        const seedIt = seedP?.items?.find(it => normCardRm(it.name) === rk);
+        seedTm = seedIt?.pmoRayon?.temirMeta || null;
+        if ((!pmoRayon.subPoints || pmoRayon.subPoints.length === 0) && Array.isArray(seedIt?.pmoRayon?.subPoints)) {
+            pmoRayon.subPoints = seedIt.pmoRayon.subPoints;
+        }
+    }
+    const temirTotal = tm?.totalCount || pmoRayon.totalPlan || seedTm?.totalCount || 0;
+    const temirDone = tm?.doneCount ?? pmoRayon.totalDone ?? seedTm?.doneCount ?? 0;
+    const temirLead = (tm?.regLead && tm.regLead !== "—") ? tm.regLead : (seedTm?.regLead || "—");
+    const temirRayonCnt = (Array.isArray(tm?.rayonBreakdown) && tm.rayonBreakdown.length > 0)
+        ? tm.rayonBreakdown.length
+        : (Array.isArray(seedTm?.rayonBreakdown) ? seedTm.rayonBreakdown.length : (Array.isArray(pmoRayon.subPoints) ? pmoRayon.subPoints.length : 0));
+    const bcgLine = isTemirCard
+        ? `Nöqtə sayı: ${temirDone} / ${temirTotal}`
+        : `BCG: ${pmoRayon.bcgDone}/${pmoRayon.bcgPlan} (${pmoRayon.bcgPct}%)`;
+    const aviLine = isTemirCard
+        ? `Rəhbər: ${temirLead}`
+        : `Avicom: ${pmoRayon.avicomDone}/${pmoRayon.avicomPlan} (${pmoRayon.avicomPct}%)`;
     const c = pmoRayon.conn || {};
     const connParts = [];
     if (Number(c.fo) > 0) connParts.push(`FO:${c.fo}`);
     if (Number(c.g3) > 0) connParts.push(`3G:${c.g3}`);
     if (Number(c.ant) > 0) connParts.push(`Ant:${c.ant}`);
     if (Number(c.gpon) > 0) connParts.push(`GPON:${c.gpon}`);
-    const connLine = connParts.length ? `Qoşulma: ${connParts.join(" · ")}` : "";
+    const connLine = isTemirCard
+        ? (temirRayonCnt > 0 ? `Rayonlar: ${temirRayonCnt} rayon` : "")
+        : (connParts.length ? `Qoşulma: ${connParts.join(" · ")}` : "");
     const subCnt = Array.isArray(pmoRayon.subPoints) ? pmoRayon.subPoints.filter(sp => sp.coords).length : 0;
-    const hintLine = subCnt > 0 ? `2x klik: ${subCnt} nöqtəni parçala` : "";
+    const hintLine = subCnt > 0 ? (isTemirCard ? `2x klik: ${subCnt} rayona payla` : `2x klik: ${subCnt} nöqtəni parçala`) : "";
     const folderText = folderName ? `${sym} ${String(folderName).trim()}` : "";
 
-    const key = `pmorayon_v1:${light ? "l" : "d"}:${color}:${name}:${folderText}:${pct}:${bcgLine}:${aviLine}:${connLine}:${hintLine}`;
+    const key = `pmorayon_v2:${light ? "l" : "d"}:${color}:${name}:${folderText}:${pct}:${bcgLine}:${aviLine}:${connLine}:${hintLine}`;
     if (map.hasImage(key)) return key;
 
     const ratio = 2;
@@ -3840,8 +4227,12 @@ function ensureMergedSummaryCardImage(rayonName, entries) {
         const planM = e.planM ?? e.totalM ?? 0;
         const antLabel = formatPointAntLabel(e.antennas, e.pointType);
         const projLine = `${e.shapeSymbol || "●"} ${titleStr}`;
-        const bodyLine = `${antLabel} - ${planM} / ${e.doneM} m`;
-        const cLine = e.contractor ? `👷 ${e.contractor}` : "";
+        const bodyLine = (e.isPmo && e.pmoRayon)
+            ? `BCG: ${e.pmoRayon.bcgDone ?? 0}/${e.pmoRayon.bcgPlan ?? 0} · Avi: ${e.pmoRayon.avicomDone ?? 0}/${e.pmoRayon.avicomPlan ?? 0}`
+            : `${antLabel} - ${planM} / ${e.doneM} m`;
+        const cLine = (e.isPmo && e.pmoRayon)
+            ? `Nöqtə: ${e.pmoRayon.totalDone ?? 0}/${e.pmoRayon.totalPlan ?? 0}`
+            : (e.contractor ? `👷 ${e.contractor}` : "");
         m.font = fProj; const pw = m.measureText(projLine).width;
         m.font = fBody; const bw = m.measureText(bodyLine).width;
         m.font = fSmall; const cw = cLine ? m.measureText(cLine).width : 0;
@@ -4243,6 +4634,17 @@ function drawRoutes() {
     const placedEndPoints = [];
     const placedEndLabels = [];
     const placedFoPoints = [];
+    const placedSubPoints = [];
+    const SUB_LABEL_SLOTS = [
+        { anchor: "top", offset: [0, 12] },
+        { anchor: "bottom", offset: [0, -12] },
+        { anchor: "left", offset: [13, 0] },
+        { anchor: "right", offset: [-13, 0] },
+        { anchor: "top-left", offset: [10, 10] },
+        { anchor: "bottom-right", offset: [-10, -10] },
+        { anchor: "top-right", offset: [-10, 10] },
+        { anchor: "bottom-left", offset: [10, -10] }
+    ];
     const polygonCenterGroups = {};
 
     function pushLineEndpoint(coordinates, labelText, color, dim, project, r, tipHtml) {
@@ -4304,7 +4706,7 @@ function drawRoutes() {
 
     visibleEntries().forEach(({ project, item: r }) => {
         const rawCoords = Array.isArray(r.coords) ? r.coords : [];
-        const coords = rawCoords
+        let coords = rawCoords
             .map(c => Array.isArray(c) && c.length >= 2 ? [Number(c[0]), Number(c[1])] : null)
             .filter(c => c && !isNaN(c[0]) && !isNaN(c[1]));
         if (coords.length === 0) return;
@@ -4323,7 +4725,10 @@ function drawRoutes() {
         const isSingleCoord = coords.length === 1 || (coords.length === 2 && coords[0][0] === coords[1][0] && coords[0][1] === coords[1][1]);
         const isPointItem = !isPolyItem && !r.isMagistral && (project.type === "points" || isSingleCoord || (r.antennas || 0) > 0);
         const shape = isPointItem ? getItemShape(project, r) : getProjectShape(project);
-        const shapeIcon = `pt-${shape.id}-${statusTone(r.status).replace("#", "").toLowerCase()}`;
+        const isRpsItem = /rp[şs]/i.test(String(r.name || r.rayon || ""));
+        const shapeIcon = isRpsItem
+            ? `pt-rps-${statusTone(r.status).replace("#", "").toLowerCase()}`
+            : `pt-${shape.id}-${statusTone(r.status).replace("#", "").toLowerCase()}`;
         const dim = Boolean(state.focusMode && activeProjId && project.id !== activeProjId);
 
         // 1) POLİQON (məs: Xəzər dənizi — içi dolu və ya Rayon sərhədləri — içi boş sərhəd xətti)
@@ -4509,6 +4914,14 @@ function drawRoutes() {
 
             // PMO D2 Rayon Xülasəsi və 2x Kliklə Parçalanan Alt-Nöqtələr (TŞ nömrəsi)
             if (r.isPmoRayon && r.pmoRayon) {
+                const isTemirProj = String(project.sheetId || project.pmoMeta?.sheetId || "") === "15.3" || /t[əe]mir[\s\-]*b[əe]rpa/i.test(String(project.name || ""));
+                if (isTemirProj && typeof window.findRmPolygonCentroid === "function") {
+                    const rmCent = window.findRmPolygonCentroid(r.name);
+                    if (Array.isArray(rmCent) && rmCent.length === 2) {
+                        r.coords = [rmCent];
+                        coords = [rmCent];
+                    }
+                }
                 const pmoClusterKey = `${project.id}::pmo::${r.id}`;
                 const subPtsWithCoords = (r.pmoRayon.subPoints || []).filter(sp => Array.isArray(sp.coords) && sp.coords.length === 2);
                 const isExpandedPmo = state.expandedRayons.has(pmoClusterKey) && subPtsWithCoords.length > 0;
@@ -4516,16 +4929,49 @@ function drawRoutes() {
                 const compactProjName = rawProjBase.length > 32 ? `${rawProjBase.slice(0, 31).trim()}…` : rawProjBase;
 
                 if (isExpandedPmo) {
-                    // PARÇALANMIŞ REJİM: Hər alt-nöqtə öz koordinatında, "A" sütunundakı rəngi və "TŞ nömrəsi" adı ilə çıxır
-                    subPtsWithCoords.forEach(sp => {
-                        const [spLat, spLng] = sp.coords;
+                    // PARÇALANMIŞ REJİM: Hər alt-nöqtə öz koordinatında, "A" sütunundakı rəngi və növünə uyğun ikonu ilə çıxır
+                    const isMuganliProj = String(project.sheetId || project.pmoMeta?.sheetId || "") === "12" || /mu[ğg]anl[ıi]/i.test(String(project.name || ""));
+                    subPtsWithCoords.forEach((sp, spIdx) => {
+                        let [spLat, spLng] = sp.coords;
+                        if (spLat >= 43.5 && spLng <= 42.5) {
+                            [spLat, spLng] = [spLng, spLat];
+                        }
+                        // Yaxın alt-nöqtələr (məs: Gəncə 2027-də eyni kəsişmədə olan nöqtələr) üst-üstə düşməsin deyə bir az arala və yazı istiqamətini növbələ
+                        let nearCount = 0;
+                        for (let k = 0; k < placedSubPoints.length; k++) {
+                            if (Math.hypot(placedSubPoints[k].lat - spLat, placedSubPoints[k].lng - spLng) < 0.0014) {
+                                nearCount++;
+                            }
+                        }
+                        if (nearCount > 0) {
+                            const angle = nearCount * 2.399963;
+                            const rad = 0.0011 * Math.sqrt(nearCount);
+                            spLat = Number((spLat + Math.sin(angle) * rad * 0.82).toFixed(6));
+                            spLng = Number((spLng + Math.cos(angle) * rad).toFixed(6));
+                        }
+                        placedSubPoints.push({ lat: spLat, lng: spLng });
+                        const lblSlot = SUB_LABEL_SLOTS[(nearCount > 0 ? nearCount : spIdx) % SUB_LABEL_SLOTS.length];
+
                         const spColor = statusTone(sp.status);
-                        const spIcon = `pt-${shape.id}-${spColor.replace("#", "").toLowerCase()}`;
-                        const tsLabel = cleanGlText(sp.tsNo || sp.name || `#${sp.idx || ""}`);
+                        const colorHex = spColor.replace("#", "").toLowerCase();
+                        const vis = resolvePmoPointVisual(project, r, sp);
+                        const spIcon = `${vis.iconPrefix}-${colorHex}`;
+                        const tsEqualRayon = sp.tsNo && (sp.tsNo.toLowerCase() === String(sp.rayon || "").toLowerCase() || sp.tsNo.toLowerCase() === String(r.name || "").toLowerCase());
+                        const rawSubLabel = ((isMuganliProj || tsEqualRayon) && sp.address)
+                            ? sp.address
+                            : (sp.tsNo || sp.address || sp.name || `#${sp.idx || ""}`);
+                        const tsLabel = cleanGlText(rawSubLabel);
                         const isSelSub = Boolean(selected?.item === r && state.selected?.pmoSubId === sp.id);
                         const execSummary = [sp.bcgExec, sp.avicomExec].filter(Boolean).join(" / ");
-                        const cableDoneText = (sp.cableDoneM > 0) ? `${Number(sp.cableDoneM).toLocaleString("az-AZ")} m` : "0 m";
-                        const spTip = `<b>${esc(tsLabel)}</b><small>${sp.address ? `${esc(sp.address)}<br>` : ""}${sp.pole ? `Dirək: <b>${esc(sp.pole)}</b><br>` : ""}${execSummary ? `İcraçı: <b>${esc(execSummary)}</b><br>` : ""}Çəkilən kabel: <b style="color:#4ade80">${esc(cableDoneText)}</b>${sp.connType ? `<br>Qoşulma: <b>${esc(sp.connType)}</b>` : ""}</small>`;
+                        const isSeedUnstarted = sp.cablePlanM === undefined && sp.status === "layihe";
+                        const planMVal = isSeedUnstarted ? (Number(sp.cableDoneM) || 0) : (Number(sp.cablePlanM) || 0);
+                        const doneMVal = isSeedUnstarted ? 0 : (Number(sp.cableDoneM) || 0);
+                        const cablePlanText = (planMVal > 0) ? `${planMVal.toLocaleString("az-AZ")} m` : "-";
+                        const cableDoneText = (doneMVal > 0) ? `${doneMVal.toLocaleString("az-AZ")} m` : "-";
+                        const showTipAddr = sp.address && cleanGlText(sp.address) !== tsLabel;
+                        const spTip = sp.isTemirRayon
+                            ? `<b>${esc(sp.rayon || tsLabel)}</b><small>Region (RM): <b>${esc(r.name)}</b>${sp.regLead ? `<br>Regional rəhbər: <b style="color:#38bdf8">${esc(sp.regLead)}</b>` : ""}<br>Nöqtə sayı: <b style="color:#4ade80">${sp.totalCount || 1} nöqtə</b>${sp.doneCount !== undefined ? ` (Bərpa edilib: ${sp.doneCount})` : ""}</small>`
+                            : `<b>${esc(tsLabel)}</b><small>${vis.pillText ? `${esc(vis.pillText)}<br>` : ""}${showTipAddr ? `${esc(sp.address)}<br>` : ""}${sp.pole ? `Dirək: <b>${esc(sp.pole)}</b><br>` : ""}${execSummary ? `İcraçı: <b>${esc(execSummary)}</b><br>` : ""}Layihə kabeli: <b>${esc(cablePlanText)}</b><br>Faktiki çəkilən: <b style="color:#4ade80">${esc(cableDoneText)}</b>${sp.connType ? `<br>Qoşulma: <b>${esc(sp.connType)}</b>` : ""}</small>`;
                         const spProps = {
                             isRayonPoint: true,
                             isPmoSubPoint: true,
@@ -4540,6 +4986,8 @@ function drawRoutes() {
                             clusterKey: pmoClusterKey,
                             shortLabel: tsLabel,
                             label: tsLabel,
+                            lblAnchor: lblSlot.anchor,
+                            lblOffset: lblSlot.offset,
                             tip: spTip
                         };
                         features.push({ type: "Feature", geometry: { type: "Point", coordinates: [spLng, spLat] }, properties: spProps });
@@ -4548,39 +4996,61 @@ function drawRoutes() {
                     return;
                 }
 
-                // ÜMUMİ RAYON REJİMİ (D2): Hər rayon üzrə 1 nöqtə (Ümumi %, BCG, Avicom, Qoşulma tipləri)
+                // ÜMUMİ RAYON REJİMİ (D2): Eyni rayonda 2-3 layihə və ya eyni şəhərdə bir neçə kateqoriya (məs: Gəncə 2027) aktiv olduqda bir qrupda birləşir
                 const [lat, lng] = coords[0];
                 const stColor = statusTone(r.status);
-                const normKey = `pmo::${project.id}::${r.id}`;
-                pointSlots[normKey] = {
+                const rColorHex = stColor.replace("#", "").toLowerCase();
+                const rVis = resolvePmoPointVisual(project, r, null);
+                const rShape = rVis.shapeObj || shape;
+                const rShapeIcon = `${rVis.iconPrefix}-${rColorHex}`;
+                const pSheetId = String(project.sheetId || project.pmoMeta?.sheetId || "");
+                const isGenceProj = pSheetId === "17" || /^g[əe]nc[əe]\b/i.test(rawProjBase);
+                const cleanRayKey = isGenceProj
+                    ? "gəncə"
+                    : String(r.name || r.rayon || "")
+                        .replace(/\s*rayon(u)?\b/gi, "")
+                        .replace(/\s*şəhər(i)?\b/gi, "")
+                        .trim()
+                        .toLocaleLowerCase("az");
+                const slotDisplayName = isGenceProj ? "Gəncə" : r.name;
+                const normKey = cleanRayKey || `pmo::${project.id}::${r.id}`;
+                if (!pointSlots[normKey]) {
+                    pointSlots[normKey] = {
+                        rayonName: slotDisplayName,
+                        clusterKey: subPtsWithCoords.length > 0 ? pmoClusterKey : "",
+                        latSum: 0,
+                        lngSum: 0,
+                        entries: []
+                    };
+                }
+                if (!pointSlots[normKey].clusterKey && subPtsWithCoords.length > 0) {
+                    pointSlots[normKey].clusterKey = pmoClusterKey;
+                }
+                pointSlots[normKey].latSum += lat;
+                pointSlots[normKey].lngSum += lng;
+                pointSlots[normKey].entries.push({
+                    project,
+                    r,
+                    lat,
+                    lng,
+                    stColor,
+                    shape: rShape,
+                    shapeIcon: rShapeIcon,
+                    dim,
+                    sel: Boolean(selected?.item === r),
                     rayonName: r.name,
-                    clusterKey: subPtsWithCoords.length > 0 ? pmoClusterKey : "",
-                    latSum: lat,
-                    lngSum: lng,
-                    entries: [{
-                        project,
-                        r,
-                        lat,
-                        lng,
-                        stColor,
-                        shape,
-                        shapeIcon,
-                        dim,
-                        sel: Boolean(selected?.item === r),
-                        rayonName: r.name,
-                        rawProjName: rawProjBase,
-                        compactProjName,
-                        ptType: "",
-                        antCount: Number(r.pmoRayon.totalPlan) || 0,
-                        antLabel: `${r.pmoRayon.totalPlan || 0} nöqtə`,
-                        execSummary: `BCG ${r.pmoRayon.bcgDone}/${r.pmoRayon.bcgPlan} · Avicom ${r.pmoRayon.avicomDone}/${r.pmoRayon.avicomPlan}`,
-                        verilenM: Number(r.pmoRayon.totalPlan) || 0,
-                        cekilenM: Number(r.pmoRayon.totalDone) || 0,
-                        pct: Number(r.pmoRayon.pct) || 0,
-                        pmoRayon: r.pmoRayon,
-                        clusterKey: subPtsWithCoords.length > 0 ? pmoClusterKey : ""
-                    }]
-                };
+                    rawProjName: rawProjBase,
+                    compactProjName,
+                    ptType: "",
+                    antCount: Number(r.pmoRayon.totalPlan) || 0,
+                    antLabel: `${r.pmoRayon.totalPlan || 0} nöqtə`,
+                    execSummary: `BCG ${r.pmoRayon.bcgDone}/${r.pmoRayon.bcgPlan} · Avicom ${r.pmoRayon.avicomDone}/${r.pmoRayon.avicomPlan}`,
+                    verilenM: Number(r.pmoRayon.totalPlan) || 0,
+                    cekilenM: Number(r.pmoRayon.totalDone) || 0,
+                    pct: Number(r.pmoRayon.pct) || 0,
+                    pmoRayon: r.pmoRayon,
+                    clusterKey: subPtsWithCoords.length > 0 ? pmoClusterKey : ""
+                });
                 return;
             }
 
@@ -4639,7 +5109,7 @@ function drawRoutes() {
                 const totalPlanM = slot.subItems.reduce((s, x) => s + x.verilenM, 0);
                 const totalDoneM = slot.subItems.reduce((s, x) => s + x.cekilenM, 0);
                 const allDone = slot.subItems.every(x => x.r.status === "bitmis" || x.r.status === "tehvil");
-                const anyIcrada = slot.subItems.some(x => x.r.status === "icrada" || x.r.status === "bitmis" || x.r.status === "tehvil" || x.cekilenM > 0);
+                const anyIcrada = slot.subItems.some(x => x.r.status === "icrada" || x.r.status === "bitmis" || x.r.status === "tehvil");
                 const aggStatus = allDone ? "bitmis" : (anyIcrada ? "icrada" : "layihe");
                 const aggColor = statusTone(aggStatus);
                 const aggPct = calcPointPct(totalDoneM, totalPlanM, aggStatus);
@@ -4824,30 +5294,66 @@ function drawRoutes() {
         groupList[i].cornerIdx = chosen;
     }
 
+    const SPLIT_RING_LAYOUTS = [
+        // idx 0: Yuxarı sol
+        { dLng: -0.028, dLat: 0.018, anchor: "bottom-right", offset: [-10, -8] },
+        // idx 1: Yuxarı sağ
+        { dLng: 0.028, dLat: 0.018, anchor: "bottom-left", offset: [10, -8] },
+        // idx 2: Aşağı sol
+        { dLng: -0.028, dLat: -0.018, anchor: "top-right", offset: [-10, 8] },
+        // idx 3: Aşağı sağ
+        { dLng: 0.028, dLat: -0.018, anchor: "top-left", offset: [10, 8] },
+        // idx 4: Orta sol (kənara)
+        { dLng: -0.044, dLat: 0.000, anchor: "right", offset: [-12, 0] },
+        // idx 5: Orta sağ (kənara)
+        { dLng: 0.044, dLat: 0.000, anchor: "left", offset: [12, 0] },
+        // idx 6: Tam yuxarı
+        { dLng: 0.000, dLat: 0.030, anchor: "bottom", offset: [0, -10] },
+        // idx 7: Tam aşağı
+        { dLng: 0.000, dLat: -0.030, anchor: "top", offset: [0, 10] }
+    ];
+
     groupList.forEach(grp => {
         const n = grp.entries.length;
         const { centerLat, centerLng } = grp;
         const first = grp.entries[0];
         const grpCorner = CORNER_SLOTS[grp.cornerIdx] || CORNER_SLOTS[0];
+        const distinctProjIds = new Set(grp.entries.map(e => e.project.id));
+        const allSameProject = distinctProjIds.size === 1;
 
         const mergedTip = n > 1
-            ? `<b>📍 ${esc(grp.rayonName)}</b><br>` + grp.entries.map(e =>
-                `<small><span style="color:${e.stColor}">${e.shape.symbol}</span> <b>${esc(e.rawProjName)}:</b> 📡 ${esc(e.antLabel)} - ${e.verilenM} / ${e.cekilenM} m (${e.pct}%)${e.execSummary ? ` · 👷 ${esc(e.execSummary)}` : ""}</small>`
-            ).join("<br>")
+            ? `<b>📍 ${esc(grp.rayonName)}</b><br>` + grp.entries.map(e => {
+                const rowTitle = (e.rayonName && e.rayonName.toLocaleLowerCase("az") !== grp.rayonName.toLocaleLowerCase("az"))
+                    ? (allSameProject ? e.rayonName : `${e.rawProjName} · ${e.rayonName}`)
+                    : e.rawProjName;
+                return `<small><span style="color:${e.stColor}">${e.shape.symbol}</span> <b>${esc(rowTitle)}:</b> 📡 ${esc(e.antLabel)} - ${e.verilenM} / ${e.cekilenM} m (${e.pct}%)${e.execSummary ? ` · 👷 ${esc(e.execSummary)}` : ""}</small>`;
+            }).join("<br>")
             : `<b style="color:${first.stColor}">${first.shape.symbol} ${esc(grp.rayonName)}</b><small>${first.rawProjName ? `<span style="opacity:0.9">${esc(first.rawProjName)}</span><br>` : ""}📡 ${esc(first.antLabel)} - ${first.verilenM} / ${first.cekilenM} m (${first.pct}%)${first.execSummary ? `<br>👷 İcraçı: <b>${esc(first.execSummary)}</b>` : ""}</small>`;
 
+        const mergedHeaderTitle = (n > 1 && allSameProject)
+            ? `${first.compactProjName} (${grp.rayonName})`
+            : grp.rayonName;
+
         const mergedCardImg = n > 1
-            ? ensureMergedSummaryCardImage(grp.rayonName, grp.entries.map(e => ({
-                color: e.stColor,
-                shapeSymbol: e.shape.symbol,
-                folderName: e.compactProjName,
-                antennas: e.antCount,
-                pointType: e.ptType,
-                totalM: e.verilenM,
-                doneM: e.cekilenM,
-                pct: e.pct,
-                contractor: e.execSummary || ""
-            })))
+            ? ensureMergedSummaryCardImage(mergedHeaderTitle, grp.entries.map(e => {
+                const subNameDiff = e.rayonName && e.rayonName.toLocaleLowerCase("az") !== grp.rayonName.toLocaleLowerCase("az");
+                const entryFolderTitle = subNameDiff
+                    ? (allSameProject ? e.rayonName : `${e.compactProjName} · ${e.rayonName}`)
+                    : e.compactProjName;
+                return {
+                    color: e.stColor,
+                    shapeSymbol: e.shape.symbol,
+                    folderName: entryFolderTitle,
+                    antennas: e.antCount,
+                    pointType: e.ptType,
+                    totalM: e.verilenM,
+                    doneM: e.cekilenM,
+                    pct: e.pct,
+                    contractor: e.execSummary || "",
+                    isPmo: Boolean(e.pmoRayon),
+                    pmoRayon: e.pmoRayon || null
+                };
+            }))
             : (first.pmoRayon
                 ? ensurePmoRayonCardImage({
                     name: grp.rayonName,
@@ -4899,8 +5405,9 @@ function drawRoutes() {
         grp.entries.forEach((e, idx) => {
             const singleTip = `<b style="color:${e.stColor}">${e.shape.symbol} ${esc(e.rayonName)}</b><small>${e.rawProjName ? `<span style="opacity:0.9">${esc(e.rawProjName)}</span><br>` : ""}📡 ${esc(e.antLabel)} - ${e.verilenM} / ${e.cekilenM} m (${e.pct}%)${e.execSummary ? `<br>👷 İcraçı: <b>${esc(e.execSummary)}</b>` : ""}</small>`;
 
-            // Zoom < 10.2: ikonlar yan-yana kiçik ara ilə görünür ki hər layihənin fərqli ikonu seçilsin
-            const mergedLng = n === 1 ? e.lng : centerLng + (idx - (n - 1) / 2) * 0.0085;
+            // Zoom < 10.2: eyni rayonda 2+ layihə və ya kateqoriya olduqda ikonlar yan-yana düzülür ki üst-üstə düşməsin
+            const stepLng = n > 4 ? 0.015 : 0.022;
+            const mergedLng = n === 1 ? e.lng : centerLng + (idx - (n - 1) / 2) * stepLng;
             const mergedLat = n === 1 ? e.lat : centerLat;
             features.push({
                 type: "Feature",
@@ -4919,35 +5426,24 @@ function drawRoutes() {
                     sel: e.sel,
                     projectId: e.project.id,
                     itemId: e.r.id,
-                    clusterKey: grp.clusterKey || e.clusterKey || "",
+                    clusterKey: e.clusterKey || grp.clusterKey || "",
                     tip: n > 1 ? mergedTip : singleTip
                 }
             });
 
-            // 2) Yaxın miqyas (zoom >= 10.2) üçün ayrılmış nöqtələr və künclərə açılan fərdi kartlar
+            // 2) Yaxın miqyas (zoom >= 10.2) üçün geniş aralı ayrılmış nöqtələr və kənara açılan fərdi kartlar
             let splitLng = e.lng;
             let splitLat = e.lat;
             let cardAnchor = grpCorner.anchor;
             let cardOffset = grpCorner.offset;
 
             if (n >= 2) {
-                const slot = CORNER_SLOTS[idx % CORNER_SLOTS.length];
-                cardAnchor = slot.anchor;
-                cardOffset = slot.offset;
-                if (idx === 0) {
-                    splitLng = centerLng - 0.008;
-                    splitLat = centerLat + 0.006;
-                } else if (idx === 1) {
-                    splitLng = centerLng + 0.008;
-                    splitLat = centerLat - 0.006;
-                } else if (idx === 2) {
-                    splitLng = centerLng - 0.008;
-                    splitLat = centerLat - 0.006;
-                } else {
-                    const angle = (idx * 60) * (Math.PI / 180);
-                    splitLng = centerLng + Math.cos(angle) * 0.012;
-                    splitLat = centerLat + Math.sin(angle) * 0.009;
-                }
+                const ringSlot = SPLIT_RING_LAYOUTS[idx % SPLIT_RING_LAYOUTS.length];
+                const ringTier = Math.floor(idx / SPLIT_RING_LAYOUTS.length) + 1;
+                cardAnchor = ringSlot.anchor;
+                cardOffset = ringSlot.offset;
+                splitLng = centerLng + ringSlot.dLng * ringTier;
+                splitLat = centerLat + ringSlot.dLat * ringTier;
             }
 
             const singleCardImg = e.pmoRayon
@@ -5087,10 +5583,15 @@ function toggleRayonClusterExpand(clusterKey, project, item) {
     state.expandedRayons.add(clusterKey);
     renderAll();
     if (item?.isPmoRayon && item?.pmoRayon?.subPoints) {
-        const subCoords = item.pmoRayon.subPoints.filter(sp => Array.isArray(sp.coords) && sp.coords.length === 2).map(sp => sp.coords);
+        const subCoords = item.pmoRayon.subPoints
+            .filter(sp => Array.isArray(sp.coords) && sp.coords.length === 2)
+            .map(sp => (sp.coords[0] >= 43.5 && sp.coords[1] <= 42.5) ? [sp.coords[1], sp.coords[0]] : sp.coords);
         if (subCoords.length > 0) {
             flyToCoords(subCoords);
-            toast(`📍 ${item.name} rayonu üzrə ${subCoords.length} nöqtə öz koordinatlarına parçalandı!`);
+            const isTemir = Boolean(item.pmoRayon.temirMeta?.isTemirRm || String(project.sheetId || "") === "15.3");
+            toast(isTemir
+                ? `📍 ${item.name} üzrə ${subCoords.length} rayon xəritədə paylandı!`
+                : `📍 ${item.name} rayonu üzrə ${subCoords.length} nöqtə öz koordinatlarına parçalandı!`);
             return true;
         }
     }
@@ -5278,6 +5779,24 @@ function renderLegend() {
         state.visibleIds.has(p.id) &&
         isPointProject(p)
     );
+    const legendRpsSvg = color => `<svg viewBox="0 0 20 20" width="14" height="14" style="display:block"><path d="M10 1.5L17 4.2V9.8C17 14 14 17 10 18.7C6 17 3 14 3 9.8V4.2L10 1.5Z" fill="${color}" stroke="#fff" stroke-width="1.6"/><polygon points="10,6.2 11.1,8.6 13.7,8.9 11.8,10.7 12.3,13.2 10,11.9 7.7,13.2 8.2,10.7 6.3,8.9 8.9,8.6" fill="#fff"/></svg>`;
+    const legendRadarSvg = color => `<svg viewBox="0 0 20 20" width="14" height="14" style="display:block"><circle cx="10" cy="10" r="8.5" fill="${color}" stroke="#fff" stroke-width="1.5"/><path d="M6.8 6.8 A4.8 4.8 0 0 1 13.2 6.8" fill="none" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M4.8 4.8 A7.6 7.6 0 0 1 15.2 4.8" fill="none" stroke="#fff" stroke-width="1.3" stroke-linecap="round"/><circle cx="10" cy="11.5" r="2" fill="#fff"/></svg>`;
+    const legendTsBadge = color => `<span style="display:inline-flex;align-items:center;justify-content:center;width:15px;height:14px;border-radius:3px;background:${color};border:1.3px solid #fff;color:#fff;font-size:7.5px;font-weight:800;line-height:1;letter-spacing:-0.3px">TŞ</span>`;
+    const legendCerimeBadge = color => `<span style="display:inline-flex;align-items:center;justify-content:center;width:15px;height:14px;border-radius:3px;background:${color};border:1.3px solid #fff;color:#FACC15;font-size:8.5px;font-weight:900;line-height:1">P</span>`;
+    const legendCamSvg = color => `<svg viewBox="0 0 20 20" width="14" height="14" style="display:block"><circle cx="10" cy="10" r="8.5" fill="${color}" stroke="#fff" stroke-width="1.5"/><rect x="5.5" y="7" width="9" height="6.5" rx="1.2" fill="#0F172A"/><circle cx="10" cy="10.2" r="2.2" fill="none" stroke="#fff" stroke-width="1.3"/></svg>`;
+    const legendFaceSvg = color => `<svg viewBox="0 0 20 20" width="14" height="14" style="display:block"><circle cx="10" cy="10" r="8.5" fill="${color}" stroke="#fff" stroke-width="1.5"/><circle cx="10" cy="8.2" r="2.2" fill="#fff"/><path d="M6.5 14.2 A3.8 3.8 0 0 1 13.5 14.2" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/></svg>`;
+    const renderVisBadgeHtml = (vis, tone) => {
+        const c = vis.pillColor || tone;
+        if (vis.legendType === "rps") return legendRpsSvg(c);
+        if (vis.legendType === "radar") return legendRadarSvg(c);
+        if (vis.legendType === "ts") return legendTsBadge(c);
+        if (vis.legendType === "cerime") return legendCerimeBadge(c);
+        if (vis.legendType === "cam") return legendCamSvg(c);
+        if (vis.legendType === "face") return legendFaceSvg(c);
+        const sym = vis.shapeObj?.symbol || "●";
+        return `<span style="color:${c}">${sym}</span>`;
+    };
+
     const pointProjectsHtml = activePointProjects.length > 0
         ? `<div class="legend-divider"></div><div class="legend-sec-title">Nöqtə layihələri</div>` +
           activePointProjects.map(p => {
@@ -5294,7 +5813,28 @@ function renderLegend() {
                   }).join("");
               }
               const shape = getProjectShape(p);
-              return `<div class="legend-row" title="${esc(cleanProjName)}"><span class="legend-shape-badge" style="color:${tone}">${shape.symbol}</span><span class="legend-proj-name">${esc(cleanProjName)}</span></div>`;
+              const rows = [`<div class="legend-row" title="${esc(cleanProjName)}"><span class="legend-shape-badge" style="color:${tone}">${shape.symbol}</span><span class="legend-proj-name">${esc(cleanProjName)}</span></div>`];
+
+              // Layihə daxilində fərqli ikonlu nöqtə növlərini (Radar, TŞ, RPŞ, Cərimə meydançası, Smart kamera, Üztanıma, Obyekt və s.) avtomatik topla və şərti işarədə göstər
+              const subVisMap = new Map();
+              (p.items || []).forEach(it => {
+                  if (it.isMagistral) return;
+                  const rVis = resolvePmoPointVisual(p, it, null);
+                  if (rVis.key !== "base" && !subVisMap.has(rVis.key)) {
+                      subVisMap.set(rVis.key, rVis);
+                  }
+                  (it.pmoRayon?.subPoints || []).forEach(sp => {
+                      const spVis = resolvePmoPointVisual(p, it, sp);
+                      if (spVis.key !== "base" && !subVisMap.has(spVis.key)) {
+                          subVisMap.set(spVis.key, spVis);
+                      }
+                  });
+              });
+
+              for (const vis of subVisMap.values()) {
+                  rows.push(`<div class="legend-row" style="padding-left:14px;opacity:.94" title="${esc(cleanProjName)} — ${esc(vis.label)}"><span class="legend-shape-badge">${renderVisBadgeHtml(vis, tone)}</span><span class="legend-proj-name">${esc(vis.label)}</span></div>`);
+              }
+              return rows.join("");
           }).join("")
         : "";
 
@@ -5342,7 +5882,7 @@ function renderLegend() {
           + rmItems.map(rm => `<div class="legend-row"><span class="legend-line" style="background:${rm.color}"></span><span>${esc(rm.name)}</span></div>`).join("")
         : "";
 
-    $("legend").innerHTML = STATUSES.map(s => `<div class="legend-row"><span class="legend-line" style="background:${STATUS_COLORS[s]}"></span>${t(`status${s}`)}</div>`).join("")
+    $("legend").innerHTML = STATUSES.filter(s => s !== "tehvil").map(s => `<div class="legend-row"><span class="legend-line" style="background:${STATUS_COLORS[s]}"></span>${t(`status${s}`)}</div>`).join("")
         + rmHtml
         + pointProjectsHtml;
 }
@@ -5435,6 +5975,9 @@ function renderProjects() {
         if ($("listHeadTitle")) $("listHeadTitle").textContent = "Qovluq seçilməyib";
         $("projectCount").textContent = "-";
         $("projectList").innerHTML = `<div class="empty">Yuxarıdakı yarım dairədən qovluq seçin (🏢 BCG, 🚦 NİİM, 🌐 Azərconnect, 🗂️ Digər)</div>`;
+        if (typeof window.refreshProjectRoller === "function") {
+            window.refreshProjectRoller({ empty: true, sig: "" });
+        }
         return;
     }
 
@@ -5575,7 +6118,7 @@ function renderProjects() {
                         <button class="project-main" data-action="expand" aria-expanded="${expanded}">
                             <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;width:100%">
                                 <span title="${esc(cleanProjName)}" style="flex:1 1 auto;min-width:95px;font-weight:700;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink)">
-                                    ${shapeBadge}${esc(cleanProjName)}
+                                    ${getProjectIconHtml(p, pTone)}${esc(cleanProjName)}
                                 </span>
                                 ${rightPct ? `<span class="project-pct-mid" style="flex:0 0 auto;font-size:11px;font-weight:800;color:${pTone};background:rgba(255,255,255,0.07);padding:1px 6px;border-radius:5px;white-space:nowrap;text-align:center">${rightPct}</span>` : ""}
                                 ${pmoExactCableHtml}
@@ -5611,17 +6154,20 @@ function renderProjects() {
                             : "";
                         const { planM: rPlanM, doneM: rDoneM } = isPoints ? getPointMetersPair(r) : { planM: 0, doneM: 0 };
                         const segEnds = isLifSeg ? resolveLineEndNames(r, p) : null;
-                        const rightText = r.isPmoRayon && r.pmoRayon
-                            ? `${r.pmoRayon.pct}% · BCG ${r.pmoRayon.bcgDone}/${r.pmoRayon.bcgPlan} · Avi ${r.pmoRayon.avicomDone}/${r.pmoRayon.avicomPlan}`
-                            : (r.isMagistral
-                                ? `${r.fiber || "FO"} · ${(r.doneM || 0).toLocaleString("az-AZ")}/${(r.planM || 0).toLocaleString("az-AZ")} m`
-                                : (isNim
-                                    ? t(`status${r.status}`)
-                                    : (isPoints
-                                        ? `${formatPointAntLabel(r.antennas, ptType)} - ${rPlanM} / ${rDoneM} m${cBrief}`
-                                        : (isLifSeg
-                                             ? `📍 ${esc(segEnds.aName)} ➔ ${esc(segEnds.bName)}`
-                                             : `${formatKm(r.doneKm)} / ${formatKm(r.totalKm)} km${cBrief}`))));
+                        const isTemirItem = r.isPmoRayon && (r.pmoRayon?.temirMeta?.isTemirRm || String(p.sheetId || p.pmoMeta?.sheetId || "") === "15.3");
+                        const rightText = isTemirItem
+                            ? `${r.pmoRayon.pct}% · ${Number(r.pmoRayon.totalDone || 0).toLocaleString("az-AZ")} / ${Number(r.pmoRayon.totalPlan || 0).toLocaleString("az-AZ")}`
+                            : (r.isPmoRayon && r.pmoRayon
+                                ? `${r.pmoRayon.pct}% · BCG ${r.pmoRayon.bcgDone}/${r.pmoRayon.bcgPlan} · Avi ${r.pmoRayon.avicomDone}/${r.pmoRayon.avicomPlan}`
+                                : (r.isMagistral
+                                    ? `${r.fiber || "FO"} · ${(r.doneM || 0).toLocaleString("az-AZ")}/${(r.planM || 0).toLocaleString("az-AZ")} m`
+                                    : (isNim
+                                        ? t(`status${r.status}`)
+                                        : (isPoints
+                                            ? `${formatPointAntLabel(r.antennas, ptType)} - ${rPlanM} / ${rDoneM} m${cBrief}`
+                                            : (isLifSeg
+                                                 ? `📍 ${esc(segEnds.aName)} ➔ ${esc(segEnds.bName)}`
+                                                 : `${formatKm(r.doneKm)} / ${formatKm(r.totalKm)} km${cBrief}`)))));
                         const qKey = `${p.id}:${r.id}`;
                         const isQuickOpen = isPoints && isAdmin() && state.quickEditKey === qKey;
                         const qContractors = [...new Set(["BCG", ...Object.keys(syncAdminContractors()), ...(r.contractor ? [r.contractor] : [])])];
@@ -5632,7 +6178,7 @@ function renderProjects() {
                                 <button type="button" style="flex:1;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:4px 8px;background:none;border:0;color:inherit;text-align:left;cursor:pointer;padding:3px 0;min-width:0" data-action="focus" data-item="${esc(r.id)}">
                                     <span style="display:flex;align-items:center;gap:6px;min-width:0;flex:1 1 auto">
                                         ${(!isNim && !itemShape) ? `<span class="dot" style="background:${statusTone(r.status)};flex-shrink:0"></span>` : ""}
-                                        <span class="segment-name" style="min-width:0;white-space:normal;word-break:break-word;line-height:1.25;font-weight:600;color:var(--ink)" title="${esc(cleanName)}">${isNim ? "🚦 " : (itemShape ? `<span style="color:${statusTone(r.status)};margin-right:4px">${itemShape.symbol}</span>` : "")}${foBadge}${esc(cleanName)}${ptTypeBadge}</span>
+                                        <span class="segment-name" style="min-width:0;white-space:normal;word-break:break-word;line-height:1.25;font-weight:600;color:var(--ink)" title="${esc(cleanName)}">${isNim ? "🚦 " : (/rp[şs]/i.test(cleanName) ? `<i class="fa-solid fa-shield-halved" style="color:${statusTone(r.status)};margin-right:5px" title="RPŞ (Polis)"></i>` : (itemShape ? `<span style="color:${statusTone(r.status)};margin-right:4px">${itemShape.symbol}</span>` : ""))}${foBadge}${esc(cleanName)}${ptTypeBadge}</span>
                                     </span>
                                     <span style="color:${statusTone(r.status)};font-weight:600;white-space:nowrap;font-size:11px;flex-shrink:0;margin-left:auto">${rightText}</span>
                                 </button>
@@ -5719,7 +6265,15 @@ function renderProjects() {
     });
 
     $("projectCount").textContent = totalShownCount;
-    $("projectList").innerHTML = `<div class="fiber-bus-wrap">${sectionsHtml.join("")}</div>`;
+    const listEl = $("projectList");
+    const prevScrollTop = listEl ? listEl.scrollTop : 0;
+    const rollerSig = `${activeOrder.join(",")}|${state.statusFilter || "all"}|${state.query || ""}`;
+    if (listEl) {
+        listEl.innerHTML = `<div class="fiber-bus-wrap">${sectionsHtml.join("")}</div>`;
+    }
+    if (typeof window.refreshProjectRoller === "function") {
+        window.refreshProjectRoller({ empty: totalShownCount === 0, sig: rollerSig, prevScrollTop });
+    }
 }
 
 const NIM_SPEC_FIELDS = [
@@ -8682,7 +9236,12 @@ document.addEventListener("DOMContentLoaded", init);
         $("detailView").hidden = true;
 
         const entry = selectedEntry();
-        const proj = entry ? entry.project : state.projects.find(p => p.id === activeProjectId);
+        // Aktiv layihə adına klikləyəndə sol yuxarı küncdə ümumi status pəncərəsi açılmasın — yalnız konkret obyekt / rayon / nöqtə seçildikdə göstərilsin
+        if (!entry) {
+            card.hidden = true;
+            return;
+        }
+        const proj = entry.project;
         if (!proj || !state.visibleIds.has(proj.id) || !state.activeFolders.has(proj.category || "project")) {
             card.hidden = true;
             return;
@@ -8746,7 +9305,6 @@ document.addEventListener("DOMContentLoaded", init);
                         <strong>${esc(cleanProjName)}</strong>
                     </div>
                     <div style="display:flex;align-items:center;gap:4px">
-                        ${entry ? `<button class="btn btn-outline" style="height:24px;padding:0 8px;font-size:11px;color:#fff;border-color:rgba(255,255,255,0.25)" data-card-act="showAll">Hamısı</button>` : ""}
                         <button class="icon-btn" data-card-act="close" title="${t("close")}"><i class="fa-solid fa-xmark"></i></button>
                     </div>
                 </div>
@@ -8928,6 +9486,40 @@ document.addEventListener("DOMContentLoaded", init);
                 const isMin = card.classList.contains("minimized");
                 const is239Rps = (String(proj.sheetId || proj.pmoMeta?.sheetId || "") === "10" || /239/i.test(cleanProjName))
                     && /rp[şs]/i.test(String(selItem.name || selSub.rayon || ""));
+                const isMuganli = String(proj.sheetId || proj.pmoMeta?.sheetId || "") === "12" || /mu[ğg]anl[ıi]/i.test(cleanProjName);
+                const subVis = resolvePmoPointVisual(proj, selItem, selSub);
+                const muganliBadge = subVis.pillText
+                    ? `<span class="pill" style="--tone:${subVis.pillColor || "#38bdf8"};font-size:10px">${esc(subVis.pillText)}</span>`
+                    : "";
+                const tsEqualRayon = selSub.tsNo && (selSub.tsNo.toLowerCase() === String(selSub.rayon || "").toLowerCase() || selSub.tsNo.toLowerCase() === String(selItem.name || "").toLowerCase());
+                const subTitle = ((isMuganli || tsEqualRayon) && selSub.address)
+                    ? selSub.address
+                    : (selSub.tsNo || selSub.name || "Nöqtə");
+
+                const isSeedUnstarted = selSub.cablePlanM === undefined && selSub.status === "layihe";
+                const subPlanM = isSeedUnstarted ? (Number(selSub.cableDoneM) || 0) : (Number(selSub.cablePlanM) || 0);
+                const subDoneM = isSeedUnstarted ? 0 : (Number(selSub.cableDoneM) || 0);
+                const subPlanText = subPlanM > 0 ? `${subPlanM.toLocaleString("az-AZ")} m` : "-";
+                const subDoneText = subDoneM > 0 ? `${subDoneM.toLocaleString("az-AZ")} m` : "-";
+                const subDetailsHtml = selSub.isTemirRayon
+                    ? `
+                        <dl class="info-kv" style="margin:0;font-size:11px">
+                            <dt>Rayon</dt><dd><b>${esc(selSub.rayon || selSub.name || "—")}</b></dd>
+                            <dt>Region (RM)</dt><dd><b>${esc(selItem.name)}</b></dd>
+                            <dt>Regional rəhbər</dt><dd><b style="color:#38bdf8">${esc(selSub.regLead || selItem.pmoRayon?.temirMeta?.regLead || "—")}</b></dd>
+                            <dt>Rayon üzrə nöqtə sayı</dt><dd><b style="color:#4ade80">${selSub.totalCount || 1} nöqtə</b>${selSub.doneCount !== undefined ? ` <small style="color:var(--ink-2)">(Bərpa: ${selSub.doneCount})</small>` : ""}</dd>
+                        </dl>
+                    `
+                    : `
+                        <dl class="info-kv" style="margin:0;font-size:11px">
+                            ${(selSub.address && selSub.address.trim() !== String(subTitle || "").trim()) ? `<dt>Ünvan</dt><dd><b>${esc(selSub.address)}</b></dd>` : ""}
+                            <dt>Dirək</dt><dd><b>${esc(selSub.pole || "—")}</b></dd>
+                            <dt>İş icraçısı</dt><dd>${execHtml}</dd>
+                            <dt>Layihə üzrə kabel</dt><dd><b>${esc(subPlanText)}</b></dd>
+                            <dt>Faktiki çəkilən kabel</dt><dd><b style="color:${subDoneM > 0 ? "#4ade80" : "var(--ink-2)"}">${esc(subDoneText)}</b></dd>
+                            <dt>Qoşulma tipi</dt><dd><b>${esc(selSub.connType || "—")}</b></dd>
+                        </dl>
+                    `;
 
                 card.innerHTML = `
                     <div class="info-card-head" style="gap:6px">
@@ -8936,7 +9528,7 @@ document.addEventListener("DOMContentLoaded", init);
                                 <span style="color:${spTone};font-size:12px">${projShape.symbol}</span>
                                 <span>${esc(cleanProjName)} · ${esc(selItem.name)}</span>
                             </small>
-                            <strong style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px">${esc(selSub.tsNo || selSub.name || "Nöqtə")}</strong>
+                            <strong style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px" title="${esc(subTitle)}">${esc(subTitle)}</strong>
                         </div>
                         <div style="display:flex;align-items:center;gap:3px;flex-shrink:0">
                             <button class="icon-btn" data-card-act="minimize" title="${isMin ? "Böyüt" : "Yığcam et / Kiçilt"}"><i class="fa-solid ${isMin ? "fa-plus" : "fa-minus"}"></i></button>
@@ -8944,17 +9536,12 @@ document.addEventListener("DOMContentLoaded", init);
                         </div>
                     </div>
                     <div class="info-card-body" style="padding:6px 10px">
-                        <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:5px">
+                        <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:5px;flex-wrap:wrap">
                             <span class="pill" style="--tone:${spTone};font-size:10px">${spStatusText}</span>
+                            ${muganliBadge}
                             ${selSub.pct ? `<b style="color:${spTone};font-size:11px">${selSub.pct}%</b>` : ""}
                         </div>
-                        <dl class="info-kv" style="margin:0;font-size:11px">
-                            ${(is239Rps && selSub.address) ? `<dt>Ünvan</dt><dd><b>${esc(selSub.address)}</b></dd>` : ""}
-                            <dt>Dirək</dt><dd><b>${esc(selSub.pole || "—")}</b></dd>
-                            <dt>İş icraçısı</dt><dd>${execHtml}</dd>
-                            <dt>Çəkilən kabel (CY)</dt><dd><b style="color:#4ade80">${selSub.cableDoneM ? Number(selSub.cableDoneM).toLocaleString("az-AZ") + " m" : "0 m"}</b></dd>
-                            <dt>Qoşulma tipi</dt><dd><b>${esc(selSub.connType || "—")}</b></dd>
-                        </dl>
+                        ${subDetailsHtml}
                         <div style="display:flex;gap:4px;padding-top:6px">
                             <button class="btn btn-outline" style="flex:1;height:24px;font-size:10.5px;padding:0 4px" data-pmo-split="${esc(clusterKey)}|${esc(proj.id)}|${esc(selItem.id)}">
                                 <i class="fa-solid fa-compress"></i> Birləşdir
@@ -8996,7 +9583,6 @@ document.addEventListener("DOMContentLoaded", init);
                         <strong>${esc(cleanProjName)}</strong>
                     </div>
                     <div style="display:flex;align-items:center;gap:4px">
-                        ${entry ? `<button class="btn btn-outline" style="height:24px;padding:0 8px;font-size:11px;color:#fff;border-color:rgba(255,255,255,0.25)" data-card-act="showAll">Hamısı</button>` : ""}
                         <button class="icon-btn" data-card-act="close" title="${t("close")}"><i class="fa-solid fa-xmark"></i></button>
                     </div>
                 </div>
@@ -9022,7 +9608,7 @@ document.addEventListener("DOMContentLoaded", init);
                                                 <span style="color:${rTone}">〰️</span>
                                                 ${esc(r.name)}
                                             </strong>
-                                            <span class="pill" style="--tone:${rTone}">${pct}%</span>
+                                            <span class="pill" style="--tone:${rTone}">${esc(t("status" + r.status))} · ${pct}%</span>
                                         </div>
                                         <div class="progress" style="height:4px;margin:3px 0"><span style="width:${Math.min(100, pct)}%;background:${rTone}"></span></div>
                                         <div style="display:flex;justify-content:space-between;gap:8px;font-size:11.5px;margin-top:2px">
@@ -9043,6 +9629,54 @@ document.addEventListener("DOMContentLoaded", init);
                             const subCnt = (pr.subPoints || []).filter(sp => sp.coords).length;
                             const clusterKey = `${proj.id}::pmo::${r.id}`;
                             const isExp = state.expandedRayons?.has(clusterKey);
+                            const tm = pr.temirMeta;
+                            const isTemir153 = Boolean(tm?.isTemirRm || String(proj.sheetId || proj.pmoMeta?.sheetId || "") === "15.3");
+                            if (isTemir153) {
+                                let seedIt = null;
+                                if (Array.isArray(window.PMO_SEED_PROJECTS)) {
+                                    const seedP = window.PMO_SEED_PROJECTS.find(p => p.sheetId === "15.3");
+                                    const rk = normalizeRmKey(r.name) || normMatchName(r.name);
+                                    seedIt = seedP?.items?.find(it => (normalizeRmKey(it.name) || normMatchName(it.name)) === rk) || null;
+                                }
+                                const seedTm = seedIt?.pmoRayon?.temirMeta;
+                                const rmTotal = tm?.totalCount || pr.totalPlan || seedTm?.totalCount || 0;
+                                const rmDone = tm?.doneCount ?? pr.totalDone ?? seedTm?.doneCount ?? 0;
+                                const rmLead = (tm?.regLead && tm.regLead !== "—") ? tm.regLead : (seedTm?.regLead || "—");
+                                const rBreak = (Array.isArray(tm?.rayonBreakdown) && tm.rayonBreakdown.length > 0)
+                                    ? tm.rayonBreakdown
+                                    : (Array.isArray(seedTm?.rayonBreakdown) ? seedTm.rayonBreakdown : []);
+                                if ((!pr.subPoints || pr.subPoints.length === 0) && Array.isArray(seedIt?.pmoRayon?.subPoints) && seedIt.pmoRayon.subPoints.length > 0) {
+                                    pr.subPoints = seedIt.pmoRayon.subPoints;
+                                }
+                                const effSubCnt = (pr.subPoints || []).filter(sp => sp.coords).length;
+                                const rayonPillsHtml = rBreak.length > 0
+                                    ? `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:5px">${rBreak.map(rb => `<span class="pill" style="--tone:#38bdf8;font-size:10.5px">${esc(rb.name)}: <b>${rb.count}</b></span>`).join("")}</div>`
+                                    : "";
+                                return `
+                                    <div class="info-sub-item" data-pick-seg="${esc(proj.id)}:${esc(r.id)}" style="border-color:${entry?.item === r ? rTone : "var(--line)"}">
+                                        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+                                            <strong style="display:flex;align-items:center;gap:6px">
+                                                <span style="color:${rTone}">${projShape.symbol}</span>
+                                                ${esc(r.name)}
+                                            </strong>
+                                            <span class="pill" style="--tone:${rTone}">${pr.pct ?? 0}%</span>
+                                        </div>
+                                        <div class="progress" style="height:4px;margin:3px 0"><span style="width:${Math.min(100, pr.pct || 0)}%;background:${rTone}"></span></div>
+                                        <dl class="info-kv" style="margin:4px 0 0;font-size:11px">
+                                            <dt>Nöqtə sayı (Bərpa / Cəmi)</dt><dd><b style="color:#4ade80">${rmDone.toLocaleString("az-AZ")}</b> / <b>${rmTotal.toLocaleString("az-AZ")}</b></dd>
+                                            <dt>Regional rəhbər</dt><dd><b style="color:#38bdf8">${esc(rmLead)}</b></dd>
+                                            ${rBreak.length > 0 ? `<dt>Rayonlar (${rBreak.length})</dt><dd><b>${rBreak.reduce((s, x) => s + (x.count || 0), 0)} nöqtə</b></dd>` : ""}
+                                        </dl>
+                                        ${rayonPillsHtml}
+                                        ${effSubCnt > 0 ? `
+                                        <div style="margin-top:6px">
+                                            <button type="button" class="btn btn-outline" style="width:100%;height:26px;font-size:11px;border-color:rgba(251,191,36,0.45);color:#fbbf24" data-pmo-split="${esc(clusterKey)}|${esc(proj.id)}|${esc(r.id)}">
+                                                <i class="fa-solid ${isExp ? "fa-compress" : "fa-expand"}"></i> ${isExp ? "RM üzrə birləşdir" : `Rayonlar üzrə xəritədə payla (${effSubCnt} rayon · 2x klik)`}
+                                            </button>
+                                        </div>` : ""}
+                                    </div>
+                                `;
+                            }
                             return `
                                 <div class="info-sub-item" data-pick-seg="${esc(proj.id)}:${esc(r.id)}" style="border-color:${entry?.item === r ? rTone : "var(--line)"}">
                                     <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
@@ -9095,7 +9729,6 @@ document.addEventListener("DOMContentLoaded", init);
                         <strong>${esc(cleanProjName)}</strong>
                     </div>
                     <div style="display:flex;align-items:center;gap:4px">
-                        ${entry ? `<button class="btn btn-outline" style="height:24px;padding:0 8px;font-size:11px;color:#fff;border-color:rgba(255,255,255,0.25)" data-card-act="showAll">Hamısı</button>` : ""}
                         <button class="icon-btn" data-card-act="close" title="${t("close")}"><i class="fa-solid fa-xmark"></i></button>
                     </div>
                 </div>
@@ -9163,7 +9796,6 @@ document.addEventListener("DOMContentLoaded", init);
                         <strong>${esc(cleanProjName)}</strong>
                     </div>
                     <div style="display:flex;align-items:center;gap:4px">
-                        ${entry ? `<button class="btn btn-outline" style="height:24px;padding:0 8px;font-size:11px;color:#fff;border-color:rgba(255,255,255,0.25)" data-card-act="showAll">Hamısı</button>` : ""}
                         <button class="icon-btn" data-card-act="close" title="${t("close")}"><i class="fa-solid fa-xmark"></i></button>
                     </div>
                 </div>
@@ -10497,17 +11129,342 @@ document.addEventListener("DOMContentLoaded", init);
         "xankəndi": [39.8153, 46.7519], "xızı": [40.9085, 49.0748], "xocalı": [39.9130, 46.7903],
         "xocavənd": [39.7915, 47.1101], "yardımlı": [38.9077, 48.2405], "yevlax": [40.6183, 47.1501],
         "zaqatala": [41.6316, 46.6448], "zəngilan": [39.0857, 46.6525], "zərdab": [40.2184, 47.7121],
+        "mazımçay": [41.7875, 46.3150], "zəngəzur": [38.8650, 46.1400],
+        "türkiyə": [39.6550, 44.8030], "ermənistan": [39.7450, 44.8650],
+        "nəsimi": [40.3890, 49.8390], "xətai": [40.3780, 49.9520], "xəzər": [40.4850, 50.1250],
+        "suraxanı": [40.4220, 50.0080], "yasamal": [40.3820, 49.8050], "binəqədi": [40.4550, 49.8220],
+        "səbail": [40.3520, 49.8320], "sabunçu": [40.4480, 49.9480], "nərimanov": [40.4080, 49.8680],
+        "nizami": [40.4090, 49.9320], "pirallahı": [40.4720, 50.3250], "qaradağ": [40.2850, 49.5850],
+        "əsgəran": [39.9360, 46.8320],
         "rpş": [40.4093, 49.8671]
     };
 
-    function lookupAzRayonCoord(name, fallbackIdx = 0) {
-        const clean = String(name || "").replace(/\s*rayon(u)?\b/gi, "").replace(/\s*şəhər(i)?\b/gi, "").trim().toLocaleLowerCase("az");
-        if (AZ_RAYON_COORDS[clean]) return AZ_RAYON_COORDS[clean];
+    function findKnownAzRayonCoord(name) {
+        const clean = String(name || "")
+            .replace(/\s*rayon(u)?\b/gi, "")
+            .replace(/\s*şəhər(i)?\b/gi, "")
+            .trim()
+            .toLocaleLowerCase("az");
+        if (!clean || clean === "rpş") return null;
+        if (AZ_RAYON_COORDS[clean]) return [...AZ_RAYON_COORDS[clean]];
         for (const [k, v] of Object.entries(AZ_RAYON_COORDS)) {
-            if (clean.includes(k) || k.includes(clean)) return v;
+            if (k === "rpş") continue;
+            if (clean === k || clean.startsWith(k + " ") || clean.startsWith(k + "-") || clean.includes(k)) {
+                return [...v];
+            }
         }
+        return null;
+    }
+
+    function lookupAzRayonCoord(name, fallbackIdx = 0) {
+        const known = findKnownAzRayonCoord(name);
+        if (known) return known;
+        const rmCent = findRmPolygonCentroid(name);
+        if (rmCent) return rmCent;
+        const clean = String(name || "").trim().toLocaleLowerCase("az");
+        if (AZ_RAYON_COORDS[clean]) return [...AZ_RAYON_COORDS[clean]];
         return [40.35 + ((fallbackIdx % 7) * 0.045), 47.55 + (Math.floor(fallbackIdx / 7) * 0.06)];
     }
+
+    // Dəyişim 2026 (Vərəq 14) üçün əsas "D" sütunundakı rayon/ünvan adına, "G" sütunundakı TŞ/kod prefiksinə və ya "C" koordinatına görə rayonu dəqiq təyin et
+    const AZ_PLATE_RAYON_MAP = {
+        "01": "Abşeron", "02": "Ağdam", "03": "Ağdaş", "04": "Ağcabədi", "05": "Ağstafa", "06": "Ağsu",
+        "07": "Astara", "08": "Balakən", "09": "Bərdə", "11": "Beyləqan", "12": "Biləsuvar", "14": "Cəbrayıl",
+        "15": "Cəlilabad", "16": "Daşkəsən", "17": "Şabran", "18": "Şirvan", "19": "Füzuli", "20": "Gəncə",
+        "21": "Gədəbəy", "22": "Goranboy", "23": "Göyçay", "24": "Hacıqabul", "25": "Göygöl", "26": "Xankəndi",
+        "27": "Xaçmaz", "28": "Xocavənd", "29": "Xızı", "30": "İmişli", "31": "İsmayıllı", "32": "Kəlbəcər",
+        "33": "Kürdəmir", "34": "Qax", "35": "Qazax", "36": "Qəbələ", "37": "Qobustan", "38": "Qusar",
+        "39": "Qubadlı", "40": "Quba", "41": "Laçın", "42": "Lənkəran", "43": "Lerik", "44": "Masallı",
+        "45": "Mingəçevir", "46": "Naftalan", "47": "Neftçala", "48": "Oğuz", "49": "Saatlı", "50": "Sumqayıt",
+        "51": "Samux", "52": "Salyan", "53": "Siyəzən", "54": "Sabirabad", "55": "Şəki", "56": "Şamaxı",
+        "57": "Şəmkir", "58": "Şuşa", "59": "Tərtər", "60": "Tovuz", "61": "Ucar", "62": "Zaqatala",
+        "63": "Zərdab", "64": "Zəngilan", "65": "Yardımlı", "66": "Yevlax", "70": "Naxçıvan", "75": "Naxçıvan", "85": "Naxçıvan"
+    };
+    const BAKU_TS_RAYON_MAP = {
+        "1": "Səbail", "2": "Yasamal", "3": "Nəsimi", "4": "Nizami", "5": "Xətai", "6": "Nərimanov",
+        "7": "Xəzər", "8": "Binəqədi", "9": "Sabunçu", "10": "Suraxanı", "11": "Qaradağ", "12": "Pirallahı"
+    };
+    const DEYISIM_RAYON_PATTERNS = [
+        [/pirallah[ıi]|g[üu]rgan/i, "Pirallahı"],
+        [/qarada[ğg]|l[öoəe]kbatan|meyv[əe]li|s[əe]ng[əe][çc]al|[əe]l[əe]t(?![\s\-]+astara)/i, "Qaradağ"],
+        [/suraxan[ıi]|[əe]mircan|h[öo]vsan|b[üu]lb[üu]l[əe]|qara[çc]uxur|yeni\s*g[üu]n[əe][şs]li/i, "Suraxanı"],
+        [/sabun[çc]u|zabrat|k[üu]rd[əe]xan[ıi]|ma[şs]ta[ğg]a|bak[ıi]xanov|ramana|nardaran|bilg[əe]h|pir[şs]a[ğg][ıi]|r[əe]him[əe]\s*xan[ıi]m/i, "Sabunçu"],
+        [/x[əe]z[əe]r|m[əe]rd[əe]kan|zir[əe]|[şs][üu]v[əe]lan|d[üu]b[əe]ndi|buzovna|\bqala\b|t[üu]rkan|[şs]a[ğg]an|bin[əe]\s*q[əe]s/i, "Xəzər"],
+        [/bin[əe]q[əe]di|bil[əe]c[əe]ri|sulut[əe]p[əe]|xoc[əe]s[əe]n|r[əe]sulzad[əe]|elit\s*tm|d[əe]rn[əe]g[üu]l/i, "Binəqədi"],
+        [/nizami\s*rayon|atletl[əe]r|gimnastika|ginastika|nga_|koro[ğg]lu\s*(?!r[əe]himov)|neft[çc]il[əe]r\s*(?!pr)|qara\s*qarayev|xalqlar\s*dostlu[ğg]u/i, "Nizami"],
+        [/n[əe]rimanov\s*rayon|t[əe]briz\s*k[üu][çc]|konqres|koro[ğg]lu\s*r[əe]himov|akademik\s*h[əe]s[əe]n\s*[əe]liyev|ya[şs][ıi]l.*bazar|g[əe]nclik|ziya\s*b[üu]nyadov/i, "Nərimanov"],
+        [/x[əe]tai|xocal[ıi]\s*pr|ukrayna\s*dair[əe]|[əe]hm[əe]dli|h[əe]zi\s*aslanov|37-ci\s*polis|a[ğg]\s*[şs][əe]h[əe]r|bab[əe]k\s*pr/i, "Xətai"],
+        [/n[əe]simi|28\s*may|azadl[ıi]q\s*pr|cavadxan|vaqif\s*pr|memar\s*[əe]c[əe]mi|h\.?[əe]liyev.*m[əe]mm[əe]dyarov|qa[şs]qay/i, "Nəsimi"],
+        [/yasamal|20\s*yanvar|[şs][əe]rifzad[əe]|[şs][əe]fa[əe]t\s*mehdiyev|[şs]\.mehdiyev|in[şs]aat[çc][ıi]lar|elml[əe]r|b[əe][şs]ir\s*s[əe]f[əe]ro[ğg]lu/i, "Yasamal"],
+        [/s[əe]bail|[şs][əe]hidl[əe]r|filarmoniya|badamdar|bay[ıi]l|sahil\s*ba[ğg]|i[çc][əe]ri[şs][əe]h[əe]r|neft[çc]il[əe]r\s*pr|saat\s*q[üu]ll[əe]|h[əe]s[əe]n\s*seyidb[əe]yli|parlament/i, "Səbail"],
+        [/ab[şs]eron|x[ıi]rdalan|masaz[ıi]r|saray\s*q[əe]s|novxan[ıi]|mehdiabad|digah/i, "Abşeron"],
+        [/sumqay[ıi]t/i, "Sumqayıt"], [/g[əe]nc[əe]/i, "Gəncə"], [/\bquba\b/i, "Quba"], [/qusar/i, "Qusar"],
+        [/xa[çc]maz/i, "Xaçmaz"], [/q[əe]b[əe]l[əe]/i, "Qəbələ"], [/[şs]amax[ıi]/i, "Şamaxı"], [/qazax/i, "Qazax"],
+        [/[şs][əe]mkir/i, "Şəmkir"], [/tovuz/i, "Tovuz"], [/o[ğg]uz/i, "Oğuz"], [/[şs][əe]ki/i, "Şəki"],
+        [/ismay[ıi]ll[ıi]/i, "İsmayıllı"], [/\bqax\b/i, "Qax"], [/zaqatala/i, "Zaqatala"], [/balak[əe]n/i, "Balakən"],
+        [/yevlax/i, "Yevlax"], [/b[əe]rd[əe]/i, "Bərdə"], [/ming[əe][çc]evir/i, "Mingəçevir"], [/a[ğg]cab[əe]di/i, "Ağcabədi"],
+        [/a[ğg]dam/i, "Ağdam"], [/a[ğg]da[şs]/i, "Ağdaş"], [/a[ğg]stafa/i, "Ağstafa"], [/a[ğg]su/i, "Ağsu"],
+        [/g[öo]y[çc]ay/i, "Göyçay"], [/k[üu]rd[əe]mir/i, "Kürdəmir"], [/ucar/i, "Ucar"], [/z[əe]rdab/i, "Zərdab"],
+        [/hac[ıi]qabul/i, "Hacıqabul"], [/saatl[ıi]/i, "Saatlı"], [/sabirabad/i, "Sabirabad"], [/[şs]irvan/i, "Şirvan"],
+        [/salyan/i, "Salyan"], [/neft[çc]ala/i, "Neftçala"], [/bil[əe]suvar/i, "Biləsuvar"], [/c[əe]lilabad/i, "Cəlilabad"],
+        [/masall[ıi]/i, "Masallı"], [/l[əe]nk[əe]ran/i, "Lənkəran"], [/astara/i, "Astara"], [/lerik/i, "Lerik"],
+        [/yard[ıi]ml[ıi]/i, "Yardımlı"], [/imi[şs]li/i, "İmişli"], [/beyl[əe]qan/i, "Beyləqan"], [/f[üu]zuli/i, "Füzuli"],
+        [/[əe]sg[əe]ran/i, "Əsgəran"], [/xank[əe]ndi/i, "Xankəndi"], [/[şs]u[şs]a/i, "Şuşa"], [/la[çc][ıi]n/i, "Laçın"],
+        [/k[əe]lb[əe]c[əe]r/i, "Kəlbəcər"], [/t[əe]rt[əe]r/i, "Tərtər"], [/goranboy/i, "Goranboy"], [/g[öo]yg[öo]l/i, "Göygöl"],
+        [/samux/i, "Samux"], [/da[şs]k[əe]s[əe]n/i, "Daşkəsən"], [/g[əe]d[əe]b[əe]y/i, "Gədəbəy"], [/qobustan/i, "Qobustan"],
+        [/[şs]abran/i, "Şabran"], [/siy[əe]z[əe]n/i, "Siyəzən"], [/x[ıi]z[ıi]/i, "Xızı"], [/nax[çc][ıi]van/i, "Naxçıvan"]
+    ];
+
+    function findNearestAzRayonByCoord(coords) {
+        if (!Array.isArray(coords) || coords.length !== 2) return "";
+        const [lat, lng] = coords;
+        let bestKey = "";
+        let bestDist = Infinity;
+        for (const [k, c] of Object.entries(AZ_RAYON_COORDS)) {
+            if (k === "rpş" || k === "bakı" || k === "qarabağ" || k === "mazımçay" || k === "zəngəzur" || k === "türkiyə" || k === "ermənistan") continue;
+            const d = Math.hypot(lat - c[0], lng - c[1]);
+            if (d < bestDist) {
+                bestDist = d;
+                bestKey = k;
+            }
+        }
+        if (!bestKey) return "";
+        return bestKey.charAt(0).toLocaleUpperCase("az") + bestKey.slice(1);
+    }
+
+    function resolveDeyisimRayon(colD, colG, coords) {
+        const dStr = String(colD || "").trim();
+        const gStr = String(colG || "").trim();
+        // 1. Əsas "D" sütununda rayon / şəhər / qəsəbə adı axtar
+        if (dStr) {
+            for (const [re, rName] of DEYISIM_RAYON_PATTERNS) {
+                if (re.test(dStr)) return rName;
+            }
+        }
+        // 2. "G" və ya "D" sütunundakı TŞ / seriya koduna görə (məs: 40TŞ → Quba, TŞ5 → Xətai, GTŞ → Gəncə)
+        const combined = `${gStr} ${dStr}`;
+        const plateM = combined.match(/\b(\d{2})\s*(?:T[ŞS]|NTS)\b/i);
+        if (plateM && AZ_PLATE_RAYON_MAP[plateM[1]]) return AZ_PLATE_RAYON_MAP[plateM[1]];
+        const bakuM = combined.match(/\b(?:T[ŞS]|NTS)[\-\s]*(\d{1,2})\-/i);
+        if (bakuM && BAKU_TS_RAYON_MAP[bakuM[1]]) return BAKU_TS_RAYON_MAP[bakuM[1]];
+        if (/\bGT[ŞS]/i.test(combined)) return "Gəncə";
+        if (/\bST[ŞS]/i.test(combined)) return "Sumqayıt";
+        if (/\bAT[ŞS]/i.test(combined)) return "Abşeron";
+        if (/\bQT[ŞS]/i.test(combined)) return "Quba";
+        // 3. Koordinat ("C" sütunu) varsa ən yaxın rayonu tap
+        if (Array.isArray(coords) && coords.length === 2) {
+            const near = findNearestAzRayonByCoord(coords);
+            if (near) return near;
+        }
+        if (/bak[ıi]/i.test(dStr)) return "Bakı (Ümumi)";
+        return "Bakı (Ümumi)";
+    }
+
+    // RM Region mərkəzləri ("Digər" qovluğundakı RM poliqonlarının həndəsi mərkəzi + coğrafi ehtiyat mərkəzlər)
+    const AZ_RM_PRESET_CENTROIDS = {
+        "bakı rm1": [40.4180, 49.8250],
+        "bakı rm2": [40.4480, 50.0250],
+        "cənub rm": [38.9800, 48.5800],
+        "qarabağ rm": [39.9200, 46.8500],
+        "qərb rm": [40.7500, 45.9500],
+        "şimal rm": [41.3200, 48.6800],
+        "şimal-qərb rm": [41.3200, 46.9500],
+        "mərkəz rm": [40.2500, 48.2000],
+        "naxçıvan rm": [39.2500, 45.4500]
+    };
+
+    const AZ_RAYON_TO_RM = {
+        // Bakı RM1
+        "bakı": "Bakı RM1", "binəqədi": "Bakı RM1", "qaradağ": "Bakı RM1", "nərimanov": "Bakı RM1",
+        "nəsimi": "Bakı RM1", "səbail": "Bakı RM1", "yasamal": "Bakı RM1", "abşeron": "Bakı RM1", "sumqayıt": "Bakı RM1",
+        // Bakı RM2
+        "xətai": "Bakı RM2", "nizami": "Bakı RM2", "sabunçu": "Bakı RM2", "suraxanı": "Bakı RM2",
+        "xəzər": "Bakı RM2", "pirallahı": "Bakı RM2",
+        // Cənub RM
+        "astara": "Cənub RM", "biləsuvar": "Cənub RM", "cəlilabad": "Cənub RM", "lerik": "Cənub RM",
+        "lənkəran": "Cənub RM", "masallı": "Cənub RM", "yardımlı": "Cənub RM", "salyan": "Cənub RM", "neftçala": "Cənub RM",
+        // Qarabağ RM
+        "xankəndi": "Qarabağ RM", "şuşa": "Qarabağ RM", "ağdam": "Qarabağ RM", "ağdərə": "Qarabağ RM",
+        "ağcabədi": "Qarabağ RM", "beyləqan": "Qarabağ RM", "bərdə": "Qarabağ RM", "cəbrayıl": "Qarabağ RM",
+        "füzuli": "Qarabağ RM", "xocalı": "Qarabağ RM", "xocavənd": "Qarabağ RM", "kəlbəcər": "Qarabağ RM",
+        "laçın": "Qarabağ RM", "qubadlı": "Qarabağ RM", "tərtər": "Qarabağ RM", "zəngilan": "Qarabağ RM", "qarabağ": "Qarabağ RM",
+        // Qərb RM
+        "gəncə": "Qərb RM", "ağstafa": "Qərb RM", "daşkəsən": "Qərb RM", "gədəbəy": "Qərb RM",
+        "goranboy": "Qərb RM", "göygöl": "Qərb RM", "naftalan": "Qərb RM", "qazax": "Qərb RM",
+        "samux": "Qərb RM", "şəmkir": "Qərb RM", "tovuz": "Qərb RM",
+        // Şimal RM
+        "quba": "Şimal RM", "qusar": "Şimal RM", "xaçmaz": "Şimal RM", "şabran": "Şimal RM",
+        "siyəzən": "Şimal RM", "xızı": "Şimal RM",
+        // Şimal-qərb RM
+        "şəki": "Şimal-qərb RM", "qax": "Şimal-qərb RM", "zaqatala": "Şimal-qərb RM", "balakən": "Şimal-qərb RM",
+        "oğuz": "Şimal-qərb RM", "qəbələ": "Şimal-qərb RM", "ismayıllı": "Şimal-qərb RM",
+        "ağsu": "Şimal-qərb RM", "şamaxı": "Şimal-qərb RM", "qobustan": "Şimal-qərb RM",
+        "kürdəmir": "Qarabağ RM", "zərdab": "Qarabağ RM", "ucar": "Qarabağ RM", "göyçay": "Qarabağ RM",
+        "ağdaş": "Qərb RM", "yevlax": "Qərb RM", "mingəçevir": "Qərb RM",
+        "imişli": "Qarabağ RM", "saatlı": "Cənub RM", "sabirabad": "Cənub RM", "şirvan": "Cənub RM", "hacıqabul": "Bakı RM1"
+    };
+
+    function normalizeRmKey(raw) {
+        const s = String(raw || "")
+            .replace(/^Digər\s*:\s*/i, "")
+            .replace(/\s+/g, " ")
+            .trim()
+            .toLocaleLowerCase("az");
+        if (!s) return "";
+        if (/rm\s*1\b/.test(s)) return "bakı rm1";
+        if (/rm\s*2\b/.test(s)) return "bakı rm2";
+        if (/c[əe]nub/.test(s)) return "cənub rm";
+        if (/qaraba[ğg]/.test(s)) return "qarabağ rm";
+        if (/^[şs]imal[\s\-]*q[əe]rb|simal[\s\-]*qerb/.test(s)) return "şimal-qərb rm";
+        if (/q[əe]rb/.test(s)) return "qərb rm";
+        if (/[şs]imal/.test(s)) return "şimal rm";
+        if (/m[əe]rk[əe]z/.test(s)) return "mərkəz rm";
+        if (/nax[çc][ıi]van/.test(s)) return "naxçıvan rm";
+        return /\brm\b/.test(s) ? s : "";
+    }
+
+    function computePolyAreaCentroid(ring) {
+        if (!Array.isArray(ring) || ring.length === 0) return null;
+        if (ring.length < 3) return [...ring[0]];
+        let area2 = 0, cx = 0, cy = 0;
+        for (let i = 0; i < ring.length; i++) {
+            const [y0, x0] = ring[i];
+            const [y1, x1] = ring[(i + 1) % ring.length];
+            const cross = (x0 * y1) - (x1 * y0);
+            area2 += cross;
+            cx += (x0 + x1) * cross;
+            cy += (y0 + y1) * cross;
+        }
+        if (Math.abs(area2) > 1e-9) {
+            const factor = 1 / (3 * area2);
+            const lat = cy * factor;
+            const lng = cx * factor;
+            if (lat >= 38 && lat <= 42.5 && lng >= 44 && lng <= 51.5) {
+                return [Number(lat.toFixed(6)), Number(lng.toFixed(6))];
+            }
+        }
+        let minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity;
+        for (const [lat, lng] of ring) {
+            if (lat < minLat) minLat = lat;
+            if (lat > maxLat) maxLat = lat;
+            if (lng < minLng) minLng = lng;
+            if (lng > maxLng) maxLng = lng;
+        }
+        return [Number(((minLat + maxLat) / 2).toFixed(6)), Number(((minLng + maxLng) / 2).toFixed(6))];
+    }
+
+    function isCoordInRing(pt, ring) {
+        if (!pt || !Array.isArray(ring) || ring.length < 3) return false;
+        const [py, px] = pt;
+        let inside = false;
+        for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+            const [iy, ix] = ring[i];
+            const [jy, jx] = ring[j];
+            const intersect = ((iy > py) !== (jy > py)) && (px < ((jx - ix) * (py - iy)) / ((jy - iy) || 1e-12) + ix);
+            if (intersect) inside = !inside;
+        }
+        return inside;
+    }
+
+    function getOtherRmPolygons() {
+        const mapByRm = new Map();
+        const otherProjs = (state?.projects || []).filter(p => p && p.category === "other");
+        for (const p of otherProjs) {
+            const pKey = normalizeRmKey(p.name);
+            for (const it of (p.items || [])) {
+                const coords = Array.isArray(it?.coords) ? it.coords.filter(c => Array.isArray(c) && c.length >= 2 && !isNaN(c[0]) && !isNaN(c[1])) : [];
+                if (coords.length < 3) continue;
+                const itKey = normalizeRmKey(it.name) || pKey;
+                if (!itKey) continue;
+                if (!mapByRm.has(itKey)) {
+                    mapByRm.set(itKey, { rmKey: itKey, displayName: String(it.name || p.name || "").replace(/^Digər\s*:\s*/i, "").trim(), rings: [] });
+                }
+                mapByRm.get(itKey).rings.push(coords);
+            }
+        }
+        for (const entry of mapByRm.values()) {
+            // Ən böyük halqanın sahə mərkəzini götür
+            let bestRing = entry.rings[0];
+            for (const rg of entry.rings) {
+                if (rg.length > bestRing.length) bestRing = rg;
+            }
+            entry.centroid = computePolyAreaCentroid(bestRing);
+        }
+        return mapByRm;
+    }
+
+    function findRmPolygonCentroid(rmName) {
+        const key = normalizeRmKey(rmName);
+        if (!key) return null;
+        const polyMap = getOtherRmPolygons();
+        const polyEntry = polyMap.get(key);
+        if (polyEntry && Array.isArray(polyEntry.centroid)) {
+            return [...polyEntry.centroid];
+        }
+        if (AZ_RM_PRESET_CENTROIDS[key]) {
+            return [...AZ_RM_PRESET_CENTROIDS[key]];
+        }
+        return null;
+    }
+
+    function canonicalRmDisplayName(rmKey) {
+        const map = {
+            "bakı rm1": "Bakı RM1",
+            "bakı rm2": "Bakı RM2",
+            "cənub rm": "Cənub RM",
+            "qarabağ rm": "Qarabağ RM",
+            "qərb rm": "Qərb RM",
+            "şimal rm": "Şimal RM",
+            "şimal-qərb rm": "Şimal-qərb RM",
+            "mərkəz rm": "Mərkəz RM",
+            "naxçıvan rm": "Naxçıvan RM"
+        };
+        return map[rmKey] || rmKey;
+    }
+
+    function resolveRmForRayon(rayonName, explicitRmText = "") {
+        const expKey = normalizeRmKey(explicitRmText);
+        if (expKey) return canonicalRmDisplayName(expKey);
+        const rayKey = normalizeRmKey(rayonName);
+        if (rayKey) return canonicalRmDisplayName(rayKey);
+
+        const rayCoord = findKnownAzRayonCoord(rayonName);
+        const polyMap = getOtherRmPolygons();
+        if (rayCoord && polyMap.size > 0) {
+            for (const entry of polyMap.values()) {
+                if (entry.rings.some(rg => isCoordInRing(rayCoord, rg))) {
+                    return canonicalRmDisplayName(entry.rmKey);
+                }
+            }
+        }
+        const cleanRay = String(rayonName || "")
+            .replace(/\s*rayon(u)?\b/gi, "")
+            .replace(/\s*şəhər(i)?\b/gi, "")
+            .trim()
+            .toLocaleLowerCase("az");
+        if (AZ_RAYON_TO_RM[cleanRay]) return AZ_RAYON_TO_RM[cleanRay];
+        for (const [k, rmVal] of Object.entries(AZ_RAYON_TO_RM)) {
+            if (cleanRay && (cleanRay === k || cleanRay.startsWith(k + " ") || cleanRay.includes(k))) {
+                return rmVal;
+            }
+        }
+        if (rayCoord && polyMap.size > 0) {
+            let bestKey = "", bestDist = Infinity;
+            for (const entry of polyMap.values()) {
+                if (!entry.centroid) continue;
+                const d = Math.hypot(rayCoord[0] - entry.centroid[0], rayCoord[1] - entry.centroid[1]);
+                if (d < bestDist) {
+                    bestDist = d;
+                    bestKey = entry.rmKey;
+                }
+            }
+            if (bestKey) return canonicalRmDisplayName(bestKey);
+        }
+        return "";
+    }
+    window.findRmPolygonCentroid = findRmPolygonCentroid;
+    window.resolveRmForRayon = resolveRmForRayon;
+    window.findKnownAzRayonCoord = findKnownAzRayonCoord;
 
     function loadPmoNotifs() {
         const arr = readStore(PMO_NOTIFS_KEY, []);
@@ -10522,15 +11479,37 @@ document.addEventListener("DOMContentLoaded", init);
         const list = loadPmoNotifs();
         const unreadCount = list.filter(n => n.unread).length;
         const badge = $("pmoNotifCount");
+        const notifBtn = $("pmoNotifBtn");
         if (badge) {
             badge.hidden = unreadCount === 0;
-            badge.textContent = unreadCount > 9 ? "9+" : String(unreadCount);
+            badge.textContent = String(unreadCount);
+        }
+        if (notifBtn) {
+            notifBtn.classList.toggle("has-unread", unreadCount > 0);
+        }
+        // Filtr düymələrində canlı sayları göstər
+        const tabs = $("pmoNotifFilterTabs");
+        if (tabs) {
+            const cntAll = list.length;
+            const cntComp = list.filter(n => n.type === "completed").length;
+            const cntNew = list.filter(n => n.type === "new_project").length;
+            const cntErr = list.filter(n => n.type === "error").length;
+            const lblMap = {
+                all: `Hamısı (${cntAll})`,
+                completed: `🟢 Bitən nöqtələr (${cntComp})`,
+                new_project: `🆕 Yeni layihələr (${cntNew})`,
+                error: `⚠️ Xətalı məlumatlar (${cntErr})`
+            };
+            tabs.querySelectorAll("[data-notif-filter]").forEach(btn => {
+                const k = btn.dataset.notifFilter;
+                if (lblMap[k]) btn.textContent = lblMap[k];
+            });
         }
         const box = $("pmoNotifList");
         if (!box) return;
         const filtered = pmoNotifFilter === "all" ? list : list.filter(n => n.type === pmoNotifFilter);
         if (filtered.length === 0) {
-            box.innerHTML = `<div class="empty">Hələ qeyd olunmuş bildiriş yoxdur. PMO cədvəlində nöqtə 100% (yaşıl 🟢) olduqda, yeni layihə əlavə edildikdə və ya xətalı məlumat aşkarlandıqda burada görünəcək.</div>`;
+            box.innerHTML = `<div class="empty">Hələ qeyd olunmuş bildiriş yoxdur. PMO cədvəlində nöqtə 100% (yaşıl 🟢) olduqda, yeni layihə əlavə edildikdə və ya standarta uyğun olmayan xətalı layihə aşkarlandıqda burada görünəcək.</div>`;
             return;
         }
         box.innerHTML = filtered.map(n => {
@@ -10539,11 +11518,11 @@ document.addEventListener("DOMContentLoaded", init);
             const tone = isError ? "#ef4444" : (isNewProj ? "#38bdf8" : "#22c55e");
             const icon = isError ? "⚠️" : (isNewProj ? "🆕" : "🟢");
             return `
-                <div class="note" data-notif-jump="${esc(n.id)}" style="cursor:pointer;border-left:3px solid ${tone};background:${isError ? "rgba(239,68,68,0.08)" : (n.unread ? "rgba(34,197,94,0.08)" : "var(--surface-2)")};padding:10px 12px;border-radius:8px;display:flex;align-items:flex-start;justify-content:space-between;gap:10px">
+                <div class="note" data-notif-jump="${esc(n.id)}" style="cursor:pointer;border-left:3px solid ${tone};background:${isError ? "rgba(239,68,68,0.09)" : (n.unread ? "rgba(34,197,94,0.08)" : "var(--surface-2)")};padding:10px 12px;border-radius:8px;display:flex;align-items:flex-start;justify-content:space-between;gap:10px">
                     <div style="flex:1;min-width:0">
                         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:3px">
                             <span style="font-weight:700;font-size:12.5px;color:${tone}">${icon} ${esc(n.title)}</span>
-                            ${n.unread ? `<span class="pill" style="--tone:${tone};font-size:9.5px">${isError ? "Problem" : "Yeni"}</span>` : ""}
+                            ${n.unread ? `<span class="pill" style="--tone:${tone};font-size:9.5px">${isError ? "Xəta" : "Yeni"}</span>` : ""}
                         </div>
                         <div style="font-size:12px;color:var(--ink)">${esc(n.detail)}</div>
                         <small style="color:var(--ink-3);font-size:10.5px">${esc(n.time || "")}</small>
@@ -10556,13 +11535,17 @@ document.addEventListener("DOMContentLoaded", init);
 
     function pushPmoNotif(entry, showToastNow = true) {
         const list = loadPmoNotifs();
+        // Eyni xəta/standart bildirişi 20 san yeniləmədə təkrar yazılmasın
+        if (entry.dedupeKey && list.some(n => n.dedupeKey === entry.dedupeKey)) {
+            return false;
+        }
         const now = new Date();
         const pad = x => String(x).padStart(2, "0");
         const timeStr = `${pad(now.getDate())}.${pad(now.getMonth() + 1)}.${now.getFullYear()} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
         const item = {
             id: `ntf_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
             time: timeStr,
-            unread: showToastNow,
+            unread: entry.unread !== undefined ? Boolean(entry.unread) : true,
             ...entry
         };
         list.unshift(item);
@@ -10573,6 +11556,7 @@ document.addEventListener("DOMContentLoaded", init);
             const icon = isErr ? "⚠️" : (entry.type === "new_project" ? "🆕" : "✅");
             toast(`${icon} ${entry.title}: ${entry.detail}`, isErr);
         }
+        return true;
     }
 
     function loadPmoConfig() {
@@ -10581,7 +11565,7 @@ document.addEventListener("DOMContentLoaded", init);
             url: DEFAULT_PMO_SHEET_URL,
             webhookUrl: "",
             useDomainAuth: false,
-            pollInterval: 10,
+            pollInterval: 20,
             sheetName: "",
             headerRow: 1,
             targetFolder: "project",
@@ -10591,7 +11575,7 @@ document.addEventListener("DOMContentLoaded", init);
             map: {},
             extraCols: [],
             ...(saved || {}),
-            pollInterval: (saved && saved.pollInterval && Number(saved.pollInterval) > 0) ? Number(saved.pollInterval) : 10,
+            pollInterval: (saved && Number(saved.pollInterval) >= 20) ? Number(saved.pollInterval) : 20,
             url: (saved && saved.url) ? saved.url : DEFAULT_PMO_SHEET_URL
         };
     }
@@ -10777,65 +11761,166 @@ document.addEventListener("DOMContentLoaded", init);
                 if (spProj) {
                     const allSubPts = spProj.items.flatMap(it => it.pmoRayon?.subPoints || []);
                     const mags = spProj.items.filter(it => it.isMagistral);
+                    const seedTemirRows = [];
+                    if (sheetId === "15.3") {
+                        spProj.items.forEach(it => {
+                            const tm = it.pmoRayon?.temirMeta;
+                            const rLead = tm?.regLead || "";
+                            (tm?.rayonBreakdown || []).forEach((rb, rIdx) => {
+                                seedTemirRows.push({
+                                    id: `seed_15_3_${it.id}_${rIdx}`,
+                                    rmName: it.name,
+                                    regLead: rLead,
+                                    rayon: rb.name,
+                                    ptCount: rb.count,
+                                    status: (rb.doneCount >= rb.count) ? "bitmis" : "icrada",
+                                    coords: null
+                                });
+                            });
+                        });
+                    }
                     return {
                         cablePlanM: spProj.pmoMeta?.cablePlanM || 0,
                         cableDoneM: spProj.pmoMeta?.cableDoneM || 0,
                         points: allSubPts,
-                        magistrals: mags
+                        magistrals: mags,
+                        temirRows: seedTemirRows,
+                        sheetMissing: true,
+                        foundCableCol: false,
+                        missingColARows: 0
                     };
                 }
             }
-            return { cablePlanM: 0, cableDoneM: 0, points: [], magistrals: [] };
+            return { cablePlanM: 0, cableDoneM: 0, points: [], magistrals: [], temirRows: [], sheetMissing: true, foundCableCol: false, missingColARows: 0 };
         }
         const rows = getSheetARows(wb, sheetName);
         if (!Array.isArray(rows) || rows.length === 0) {
-            return { cablePlanM: 0, cableDoneM: 0, points: [], magistrals: [] };
+            return { cablePlanM: 0, cableDoneM: 0, points: [], magistrals: [], temirRows: [], sheetMissing: true, foundCableCol: false, missingColARows: 0 };
         }
 
-        // 1. Kabel məsafəsi (AE sütununda "Layihə" və "İcra olunan" olan sətirlər; kabel sütunu: "FO kabelin çəkilməsi", CT və ya CY)
-        const topRows = rows.slice(0, 12);
+        // 1. Kabel məsafəsi: bütün layihələrdə başlıq eynidir — "FO kabelin çəkilməsi" (sütun hərfi vərəqdən vərəqə fərqlənir: CT, CY, DU və s.)
+        const topRows = rows.slice(0, 15);
         let cableCol = "";
+        let looseCableCol = "";
+        let radarCol = "AC";
+        let addrCol = "D";
         for (const hr of topRows) {
             for (const [colKey, val] of Object.entries(hr)) {
                 if (colKey === "__rowNum__") continue;
-                if (/FO\s*kabelin\s*çəkilməsi/i.test(String(val || ""))) {
+                const txt = String(val || "").replace(/\s+/g, " ").trim();
+                if (!txt) continue;
+                if (!cableCol && /^(?:\d+\s+)?FO[\s\-]*kabel(?:in(?:in)?)?\s*[çc][əe]kilm[əe]si$/i.test(txt)) {
                     cableCol = colKey;
-                    break;
+                } else if (!looseCableCol && /FO[\s\-]*kabel(?:in(?:in)?)?\s*[çc][əe]kilm[əe]si/i.test(txt)) {
+                    looseCableCol = colKey;
+                }
+                if (/^(?:\d+\s+)?radar$/i.test(txt)) {
+                    radarCol = colKey;
+                }
+                if (/^(?:\d+\s+)?[üu]nvan$/i.test(txt)) {
+                    addrCol = colKey;
                 }
             }
             if (cableCol) break;
         }
+        const foundCableCol = Boolean(cableCol || looseCableCol);
         if (!cableCol) {
-            cableCol = (sheetId === "11") ? "CY" : "CT";
+            cableCol = looseCableCol || (sheetId === "11" ? "CY" : (sheetId === "12" ? "DU" : "CT"));
         }
+
+        // İstənilən vərəqdə "magistral" sözü olan sətri aşkarla ("Ünvan" sütunundakı "avtomagistralı" sözünə qarışmadan)
+        const MAG_PRIORITY_COLS = ["H", "G", "I", "F", "E", "J", "P"];
+        const colLetterToIdx = col => {
+            let n = 0;
+            for (let k = 0; k < col.length; k++) n = n * 26 + (col.charCodeAt(k) - 64);
+            return n - 1;
+        };
+        const findMagistralCell = row => {
+            if (!row || typeof row !== "object") return null;
+            for (const ck of MAG_PRIORITY_COLS) {
+                if (ck === addrCol) continue;
+                const v = String(row[ck] ?? "").trim();
+                if (/\bmagistral\b/i.test(v)) {
+                    const nextKey = colToLetter(colLetterToIdx(ck) + 1);
+                    return { colKey: ck, text: v, nextColText: String(row[nextKey] ?? "").trim() };
+                }
+            }
+            for (const [ck, val] of Object.entries(row)) {
+                if (ck === "__rowNum__" || ck === "A" || ck === "B" || ck === "C" || ck === addrCol || MAG_PRIORITY_COLS.includes(ck)) continue;
+                const v = String(val ?? "").trim();
+                if (/\bmagistral\b/i.test(v)) {
+                    const nextKey = colToLetter(colLetterToIdx(ck) + 1);
+                    return { colKey: ck, text: v, nextColText: String(row[nextKey] ?? "").trim() };
+                }
+            }
+            return null;
+        };
         const normAe = v => String(v || "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
-        const rLay = topRows.find(r => /^layih[əe]$/i.test(normAe(r.AE)))
+        const rowHasLabel = (row, re) => {
+            if (re.test(normAe(row.AE))) return true;
+            return Object.entries(row).some(([k, v]) => k !== "__rowNum__" && re.test(normAe(v)));
+        };
+        const layIdx = topRows.findIndex(r => rowHasLabel(r, /^layih[əe]$/i));
+        const rLay = (layIdx >= 0 ? topRows[layIdx] : null)
             || rows.find(r => r.__rowNum__ === 4) || rows[3] || {};
-        const rIcra = topRows.find(r => /^[iı]cra\s*olunan$/i.test(normAe(r.AE)))
+        const rIcra = topRows.find(r => rowHasLabel(r, /^[iı]cra\s*olunan$/i))
+            || (layIdx >= 0 && rows[layIdx + 1] ? rows[layIdx + 1] : null)
             || rows.find(r => r.__rowNum__ === 5) || rows[4] || {};
 
-        const cablePlanM = parsePmoNum(rLay[cableCol]) || parsePmoNum(rLay.CT) || parsePmoNum(rLay.CY);
-        const cableDoneM = parsePmoNum(rIcra[cableCol]) || parsePmoNum(rIcra.CT) || parsePmoNum(rIcra.CY);
+        const cablePlanM = parsePmoNum(rLay[cableCol]) || 0;
+        const cableDoneM = parsePmoNum(rIcra[cableCol]) || 0;
 
-        // 2. Fərdi nöqtələr (Row 7-dən başlayaraq A sütununda 🟢/🟡/🔴 olan sətirlər)
+        // QIZIL QAYDA 2: Bütün layihələrdə xətt və ya nöqtə statusu ANCAQ VƏ ANCAQ "A" sütunundan götürülür!
+        const parseStatusFromColA = rawA => {
+            const s = String(rawA ?? "").trim();
+            if (!s) return "";
+            if (s.includes("❌") || /l[əe][ğg]v/i.test(s)) return "__cancelled__";
+            if (s.includes("🟢") || /tamamlan|bitmi|haz[ıi]r|b[əe]rpa\s*edil/i.test(s)) return "bitmis";
+            if (s.includes("🟡") || s.includes("🟠") || /icra/i.test(s)) return "icrada";
+            if (s.includes("🔵") || /t[əe]hvil/i.test(s)) return "tehvil";
+            if (s.includes("🔴") || /ba[şs]lan|layih|t[əe]xir/i.test(s)) return "layihe";
+            return "";
+        };
+
+        // 2. Fərdi nöqtələr (status ANCAQ "A" sütunundan — 🟢/🟡/🔴/🔵)
         const points = [];
+        let missingColARows = 0;
         for (let i = 0; i < rows.length; i++) {
             const r = rows[i];
             const rn = r.__rowNum__ ?? (i + 1);
-            if (rn < 6) continue;
             const aStr = String(r.A ?? "").trim();
-            if (!aStr) continue;
-            let status = "";
-            if (aStr.includes("🟢") || /tamamlan|bitmi/i.test(aStr)) status = "bitmis";
-            else if (aStr.includes("🟡") || /icra/i.test(aStr)) status = "icrada";
-            else if (aStr.includes("🔴") || /başlan|layih/i.test(aStr)) status = "layihe";
-            else continue;
+            const status = parseStatusFromColA(aStr);
+            if (!status) {
+                // Standart yoxlaması: 6-cı sətirdən aşağıda koordinat və ya ünvan+TŞ var, amma A sütununda status yoxdursa qeyd et
+                if (rn >= 7 && String(sheetId) !== "15.3") {
+                    const prevR = i > 0 ? rows[i - 1] : null;
+                    const prevHadStatus = prevR && Boolean(parseStatusFromColA(prevR.A));
+                    const dCheck = String(r[addrCol] ?? r.D ?? "").trim();
+                    const cCheck = parseCoordStr(r.C);
+                    const gCheck = String(r.G ?? "").trim();
+                    if (!prevHadStatus && (cCheck || (dCheck && gCheck)) && !/^(?:[üu]nvan|layih[əe]|[iı]cra|c[əe]mi|[üu]mumi)/i.test(dCheck)) {
+                        missingColARows++;
+                    }
+                }
+                continue;
+            }
+            if (status === "__cancelled__") continue;
 
-            // Növbəti sətir (i + 1) icra olunan detallarını (CY/CT kabel məsafəsi və s.) saxlayır
-            const nextR = (i + 1 < rows.length) ? rows[i + 1] : {};
+            // 15.2 (Layihəsiz Magistral) bütün sətirləri magistral xəttdir — fərdi nöqtələrə düşməsin
+            if (String(sheetId) === "15.2") continue;
+
+            // Magistral sətridirsə fərdi nöqtələrə deyil, aşağıdakı magistral bölməsinə düşsün
+            const rawAddrCheck = String(r[addrCol] ?? r.D ?? "").trim();
+            if (/^(?:[üu]nvan|layih[əe]|[iı]cra\s*olunan)$/i.test(rawAddrCheck)) continue;
+            if (findMagistralCell(r) && rawAddrCheck) continue;
+
+            // Növbəti sətir (i + 1) növbəti nöqtə deyilsə, icra olunan detallarını (FO kabelin çəkilməsi və s.) saxlayır
+            const rawNext = (i + 1 < rows.length) ? rows[i + 1] : null;
+            const nextIsAnotherPt = rawNext && /[🟢🟡🔴]/.test(String(rawNext.A || ""));
+            const nextR = (rawNext && !nextIsAnotherPt) ? rawNext : {};
 
             const coords = parseCoordStr(r.C);
-            const rawAddr = String(r.D ?? "").trim();
+            const rawAddr = rawAddrCheck;
             const rawPole = String(r.E ?? "").trim();
             const rawTs = String(r.G ?? "").trim();
             const rawRegion = String(r.H ?? "").trim();
@@ -10845,12 +11930,24 @@ document.addEventListener("DOMContentLoaded", init);
             const pct = status === "bitmis" ? 100 : parsePmoPct(r.R);
             const idxNum = parsePmoNum(r.B) || (points.length + 1);
 
-            // Faktiki çəkilən kabel məsafəsi (CY sütunu və ya kabelCol / CT; nöqtə üçün layihə kabeli yoxdur, yalnız faktiki çəkilən var)
-            const ptCableDoneM = parsePmoNum(nextR.CY) || parsePmoNum(nextR[cableCol]) || parsePmoNum(nextR.CT)
-                || parsePmoNum(r.CY) || parsePmoNum(r[cableCol]) || parsePmoNum(r.CT) || 0;
+            // Layihə üzrə verilən kabel (əsas sətir: r) və Faktiki çəkilən kabel (alt-sətir: nextR) ayrı-ayrı oxunur
+            const hasSubRow = Boolean(rawNext && !nextIsAnotherPt);
+            const ptCablePlanM = hasSubRow
+                ? (parsePmoNum(r[cableCol]) || 0)
+                : (status === "layihe" ? (parsePmoNum(r[cableCol]) || 0) : 0);
+            const ptCableDoneM = hasSubRow
+                ? (parsePmoNum(nextR[cableCol]) || 0)
+                : (status === "layihe" ? 0 : (parsePmoNum(r[cableCol]) || 0));
 
-            // Xəritədə çıxacaq ad: "TŞ nömrəsi" (G sütunu; əgər boşdursa ünvandan qısa ad)
-            let tsNo = rawTs;
+            // Nöqtə növü (Radar vs TŞ — Muğanlı və qarışıq layihələr üçün fərqli ikon)
+            const radarCount = parsePmoNum(r[radarCol]) || parsePmoNum(nextR[radarCol]);
+            const combinedLabel = `${rawTs} ${rawAddr} ${rawRegion}`;
+            const ptKind = (radarCount > 0 || /\bradar\b|ekin/i.test(combinedLabel))
+                ? "radar"
+                : ((/t[şs]/i.test(rawTs) || parsePmoNum(r.W) > 0 || parsePmoNum(r.X) > 0) ? "ts" : "");
+
+            // Xəritədə çıxacaq ad: Muğanlı (Vərəq 12) üçün "Ünvan" (D sütunu), Dəyişim 2026 (Vərəq 14) və digərləri üçün "G" sütunu (TŞ nömrə / ad)
+            let tsNo = (String(sheetId) === "12" && rawAddr) ? rawAddr : rawTs;
             if (!tsNo || tsNo.toLowerCase() === rawRegion.toLowerCase()) {
                 tsNo = rawAddr
                     ? (rawAddr.length > 36 ? `${rawAddr.slice(0, 35).trim()}…` : rawAddr)
@@ -10859,18 +11956,19 @@ document.addEventListener("DOMContentLoaded", init);
 
             // Boş/şablon sətirləri keç
             if (!coords && !rawAddr && !rawTs && !rawRegion) continue;
+            const resolvedRayon = String(sheetId) === "14"
+                ? resolveDeyisimRayon(rawAddr, rawTs, coords)
+                : rawRegion;
             if (!coords && (rawAddr || rawTs) && String(r.C || "").trim().length > 0) {
                 // Yalnız C sütununda nəsə yazılıb amma koordinat kimi oxunmursa (yalnış format) xəta kimi qeyd et
-                const errKey = `err_${sheetId}_r${rn}`;
-                if (!window.__pmoReportedErrKeys) window.__pmoReportedErrKeys = new Set();
-                if (!window.__pmoReportedErrKeys.has(errKey)) {
-                    window.__pmoReportedErrKeys.add(errKey);
-                    pushPmoNotif({
-                        type: "error",
-                        title: "Koordinat xətası",
-                        detail: `Vərəq ${sheetId}, Sətir ${rn}: ${tsNo || "Nöqtə"} koordinatı yalnışdır (${String(r.C).trim()})`
-                    }, false);
-                }
+                const errKey = `err_coord_${sheetId}_r${rn}`;
+                pushPmoNotif({
+                    dedupeKey: errKey,
+                    type: "error",
+                    title: "Koordinat xətası",
+                    detail: `Vərəq ${sheetId}, Sətir ${rn}: ${tsNo || "Nöqtə"} koordinatı yalnışdır (${String(r.C).trim()})`,
+                    projectId: `pmo_sheet_${String(sheetId).replace(/\./g, "_")}`
+                }, false);
             }
 
             points.push({
@@ -10880,11 +11978,13 @@ document.addEventListener("DOMContentLoaded", init);
                 name: tsNo,
                 address: rawAddr,
                 pole: rawPole,
-                rayon: rawRegion,
+                rayon: resolvedRayon,
                 bcgExec,
                 avicomExec,
                 connType,
+                cablePlanM: ptCablePlanM,
                 cableDoneM: ptCableDoneM,
+                ptKind,
                 status,
                 statusEmoji: aStr,
                 pct,
@@ -10892,69 +11992,142 @@ document.addEventListener("DOMContentLoaded", init);
             });
         }
 
-        // 3. 93 Radar (Vərəq 11) Magistral Xətləri (Sonda verilən 14 magistral marşrut)
+        // 3. Bütün layihələr üzrə Magistral Xətləri: hansı sətirdə "magistral" sözü varsa (və ya vərəq 15.2dirsə) magistraldır; status ANCAQ "A" sütunundan götürülür!
+        const headerFoMatch = topRows
+            .flatMap(hr => Object.values(hr))
+            .map(v => String(v || "").match(/FO[\s\-]*(\d+)/i))
+            .find(Boolean);
+        const sheetHeaderFiber = headerFoMatch ? `FO ${headerFoMatch[1]}` : "";
+        const isPureMagSheet = String(sheetId) === "15.2";
+
         const magistrals = [];
-        if (sheetId === "11") {
-            for (let i = 0; i < rows.length; i++) {
-                const r = rows[i];
-                const hVal = String(r.H ?? "").trim();
-                const dVal = String(r.D ?? "").trim();
-                if (/magistral/i.test(hVal) && dVal && dVal !== "Layihə" && dVal !== "İcra olunan") {
-                    const nextR = (i + 1 < rows.length && String(rows[i + 1].AE ?? rows[i + 1].D ?? "").includes("İcra")) ? rows[i + 1] : {};
-                    const aStr = String(r.A ?? "").trim();
-                    let status = "layihe";
-                    if (aStr.includes("🟢") || /tamamlan|bitmi/i.test(aStr)) status = "bitmis";
-                    else if (aStr.includes("🟡") || /icra/i.test(aStr)) status = "icrada";
-                    else if (aStr.includes("🔴") || /başlan|layih/i.test(aStr)) status = "layihe";
+        for (let i = 0; i < rows.length; i++) {
+            const r = rows[i];
+            const magHit = findMagistralCell(r);
+            const dVal = String(r[addrCol] ?? r.D ?? "").trim();
+            if (!dVal || /^(?:\d+\s+)?(?:[üu]nvan|layih[əe]|[iı]cra\s*olunan|rayon|region|m[öo]vcud)$/i.test(dVal)) continue;
+            if (!magHit && !isPureMagSheet) continue;
 
-                    const planM = parsePmoNum(r.U);
-                    const doneM = parsePmoNum(nextR.U);
-                    // Status yalnız Excel-dəki "A" sütununun rəngli dairəsindən (🟢/🟡/🔴) götürülür — məsafəyə görə özündən dəyişmə!
+            const rawNext = (i + 1 < rows.length) ? rows[i + 1] : null;
+            const nextIsAnother = rawNext && (Boolean(parseStatusFromColA(rawNext.A)) || Boolean(findMagistralCell(rawNext)));
+            const nextR = (rawNext && !nextIsAnother) ? rawNext : {};
 
-                    const foM = hVal.match(/FO\s*(\d+)/i);
-                    const fiber = foM ? `FO ${foM[1]}` : (hVal.includes("48") ? "FO 48" : "FO 12");
+            // QIZIL QAYDA 2: Xətt statusu ANCAQ VƏ ANCAQ "A" sütunundan götürülür!
+            const aStr = String(r.A ?? "").trim() || String(nextR.A ?? "").trim();
+            const status = parseStatusFromColA(aStr);
+            if (!status || status === "__cancelled__") continue;
 
-                    const contractor = cleanExecName(r.K);
-                    const rawDate = nextR.K;
-                    const endDate = parseExcelDate(rawDate);
+            const planM = parsePmoNum(r[cableCol]) || parsePmoNum(r.I) || parsePmoNum(r.U);
+            const doneM = parsePmoNum(nextR[cableCol]) || parsePmoNum(nextR.I) || parsePmoNum(nextR.U);
 
-                    const parts = dVal.split(/\s*[-–—]\s*/);
-                    const pointA = (parts[0] || dVal).trim();
-                    const pointB = (parts[1] || "").trim();
-                    const magIdx = magistrals.length + 1;
-                    const magId = `mag_93_${magIdx}`;
-                    const coords = MAGISTRAL_PRESET_COORDS[magId] || [[40.4, 49.8], [40.5, 49.9]];
+            const foSources = [magHit?.text, magHit?.nextColText, r.H, r.G, r.P, dVal, r.F, r.I, r.E, nextR.H, nextR.G, nextR.P]
+                .map(v => String(v ?? "").trim())
+                .filter(Boolean);
+            let fiber = "";
+            for (const src of foSources) {
+                const m1 = src.match(/FO[\s\-]*(\d+)/i);
+                if (m1) { fiber = `FO ${m1[1]}`; break; }
+                const m2 = src.match(/\b(\d{1,3})\s*(?:lif|fo\b|f\b)/i);
+                if (m2) { fiber = `FO ${m2[1]}`; break; }
+                const m3 = src.match(/magistral[^\d]{0,12}(\d{1,3})\b/i);
+                if (m3) { fiber = `FO ${m3[1]}`; break; }
+            }
+            if (!fiber && magHit) {
+                const mPlain = `${magHit.text} ${magHit.nextColText}`.match(/\(?\b(4|8|12|16|24|36|48|72|96|144|288)\b\)?/);
+                if (mPlain) fiber = `FO ${mPlain[1]}`;
+            }
+            if (!fiber) {
+                fiber = sheetHeaderFiber || (isPureMagSheet ? "FO 48" : "FO 12");
+            }
 
-                    magistrals.push({
-                        id: magId,
-                        name: dVal,
-                        pointA,
-                        pointB,
-                        fiber,
-                        fiberCount: fiber,
-                        status,
-                        statusEmoji: aStr || (status === "bitmis" ? "🟢" : (status === "icrada" ? "🟡" : "🔴")),
-                        planM,
-                        doneM,
-                        totalKm: Math.round(planM / 1000),
-                        doneKm: Math.round(doneM / 1000),
-                        contractor,
-                        endDate,
-                        isMagistral: true,
-                        coords
-                    });
+            const contractor = isPureMagSheet
+                ? (cleanExecName(r.H) || cleanExecName(nextR.H) || cleanExecName(r.K) || cleanExecName(nextR.K))
+                : (cleanExecName(r.K) || cleanExecName(nextR.K));
+            const rawDate = isPureMagSheet ? (nextR.H || r.H || nextR.K || r.K) : (nextR.K || r.K);
+            const endDate = parseExcelDate(rawDate);
+
+            const parts = dVal.split(/\s*(?:[-–—]|->|→)\s*/).filter(Boolean);
+            const pointA = (parts[0] || dVal).trim();
+            const pointB = parts.slice(1).join(" - ").trim();
+            const magIdx = magistrals.length + 1;
+            const magId = (sheetId === "11")
+                ? `mag_93_${magIdx}`
+                : `mag_${String(sheetId).replace(/\./g, "_")}_${magIdx}`;
+
+            let coords = MAGISTRAL_PRESET_COORDS[magId] || null;
+            if (!coords) {
+                const cA = findKnownAzRayonCoord(pointA) || parseCoordStr(r.C);
+                const cB = findKnownAzRayonCoord(pointB);
+                if (cA && cB) {
+                    coords = [cA, cB];
+                } else if (cA) {
+                    coords = [cA, [Number((cA[0] + 0.045).toFixed(6)), Number((cA[1] + 0.065).toFixed(6))]];
+                } else if (cB) {
+                    coords = [[Number((cB[0] + 0.035).toFixed(6)), Number((cB[1] + 0.045).toFixed(6))], cB];
+                } else {
+                    const fbA = lookupAzRayonCoord(pointA || dVal, magIdx);
+                    const fbB = lookupAzRayonCoord(pointB || `${dVal}_b`, magIdx + 1);
+                    coords = [fbA, fbB];
                 }
             }
-            if (magistrals.length === 0 && Array.isArray(window.PMO_SEED_PROJECTS)) {
-                const spProj = window.PMO_SEED_PROJECTS.find(p => p.sheetId === "11");
-                if (spProj) {
-                    const fallbackMags = spProj.items.filter(it => it.isMagistral);
-                    magistrals.push(...fallbackMags);
-                }
+
+            magistrals.push({
+                id: magId,
+                name: dVal,
+                pointA,
+                pointB,
+                fiber,
+                fiberCount: fiber,
+                status,
+                statusEmoji: aStr || (status === "bitmis" ? "🟢" : (status === "icrada" ? "🟡" : "🔴")),
+                planM,
+                doneM,
+                totalKm: Math.round(planM / 1000),
+                doneKm: Math.round(doneM / 1000),
+                contractor,
+                endDate,
+                isMagistral: true,
+                coords
+            });
+        }
+        if (sheetId === "11" && magistrals.length === 0 && Array.isArray(window.PMO_SEED_PROJECTS)) {
+            const spProj = window.PMO_SEED_PROJECTS.find(p => p.sheetId === "11");
+            if (spProj) {
+                const fallbackMags = spProj.items.filter(it => it.isMagistral);
+                magistrals.push(...fallbackMags);
             }
         }
 
-        return { cablePlanM, cableDoneM, points, magistrals };
+        // 4. Təmir - Bərpa xidməti (Vərəq 15.3): I = Regional mərkəz (RM), J = Regional rəhbər, K = Rayon, G = Nöqtə sayı
+        const temirRows = [];
+        if (sheetId === "15.3") {
+            for (let i = 0; i < rows.length; i++) {
+                const r = rows[i];
+                const aStr = String(r.A ?? "").trim();
+                const colI = String(r.I ?? "").trim(); // Regional mərkəz (RM)
+                const colJ = cleanExecName(r.J);       // Regional rəhbər
+                const colK = String(r.K ?? "").trim(); // Rayon
+                if (!colI || /^(?:\d+\s+)?(?:regional\s*m[əe]rk[əe]z|rm|layih[əe]|[iı]cra\s*olunan)$/i.test(colI)) continue;
+                if (/^(?:\d+\s+)?(?:rayon|layih[əe]|[iı]cra\s*olunan)$/i.test(colK)) continue;
+
+                // QIZIL QAYDA 2: Status ANCAQ VƏ ANCAQ "A" sütunundan götürülür (L və ya başqa sütundan yox!)
+                const st = parseStatusFromColA(aStr);
+                if (!st || st === "__cancelled__") continue;
+
+                const ptCount = Math.max(1, parsePmoNum(r.G) || 1);
+                temirRows.push({
+                    id: `pmo_15_3_r${r.__rowNum__ ?? (i + 1)}`,
+                    rmName: colI,
+                    regLead: colJ,
+                    rayon: colK,
+                    ptCount,
+                    status: st,
+                    coords: parseCoordStr(r.C)
+                });
+            }
+        }
+
+        return { cablePlanM, cableDoneM, points, magistrals, temirRows, sheetMissing: false, foundCableCol, missingColARows };
     }
 
     function applyStructuredPmoWorkbook(wb, silent = false) {
@@ -10967,19 +12140,35 @@ document.addEventListener("DOMContentLoaded", init);
 
         // 1. D1-dən layihələri oxu (sol panel — 🏢 BCG qovluğu üçün)
         const projectsMap = new Map();
+        const stdErrorQueue = [];
         for (const r of d1Rows) {
             const sid = normSheetId(r.A);
             const rawName = String(r.B ?? "").trim();
-            if (!sid || !rawName) continue;
+            if (!rawName) continue;
+            if (!sid) {
+                // D1-də layihə adı və plan/faiz yazılıb, amma A sütununda standart nömrə yoxdursa xəta kimi qeyd et
+                const isHdrOrTotal = /^(?:#|№|layih[əe]|c[əe]mi|[üu]mumi|m[öo]vcud|yeni|status|rayon|region|pmo|bcg|avicom|d1|d2|icra)/i.test(rawName);
+                const hasProjectData = (parsePmoNum(r.F) > 0 || /%/.test(String(r.D || "")));
+                if (!isHdrOrTotal && hasProjectData && rawName.length >= 3) {
+                    stdErrorQueue.push({
+                        dedupeKey: `err_std_d1_noid_${normMatchName(rawName)}`,
+                        type: "error",
+                        title: "Standarta uyğun deyil — Layihə nömrəsi yoxdur",
+                        detail: `D1 (${rawName}): 'A' sütununda standart layihə/vərəq nömrəsi qeyd olunmayıb`
+                    });
+                }
+                continue;
+            }
             const name = cleanProjectName(rawName, sid);
 
+            const hasExplicitDPct = /\d/.test(String(r.D || ""));
             let overallPct = parsePmoPct(r.D);
-            if (!overallPct && r.C && (r.C.includes("%") || /^\d+$/.test(r.C.trim()))) overallPct = parsePmoPct(r.C);
-            if (!overallPct && r.E && (r.E.includes("%") || /^\d+$/.test(r.E.trim()))) overallPct = parsePmoPct(r.E);
-            if (/bitmi|tamam/i.test(String(r.C || "")) || /bitmi|tamam/i.test(String(r.D || "")) || /🟢/.test(String(r.A || "") + String(r.B || "") + String(r.C || ""))) overallPct = 100;
+            if (!hasExplicitDPct && r.C && (r.C.includes("%") || /^\d+$/.test(r.C.trim()))) overallPct = parsePmoPct(r.C);
+            if (!hasExplicitDPct && !overallPct && r.E && (r.E.includes("%") || /^\d+$/.test(r.E.trim()))) overallPct = parsePmoPct(r.E);
+            if (!hasExplicitDPct && (/bitmi|tamam/i.test(String(r.C || "")) || /bitmi|tamam/i.test(String(r.D || "")) || /🟢/.test(String(r.A || "") + String(r.B || "") + String(r.C || "")))) overallPct = 100;
             const totalPlan = parsePmoNum(r.F);
             const totalDone = parsePmoNum(r.G);
-            if (totalPlan > 0 && totalDone >= totalPlan) overallPct = 100;
+            if (!hasExplicitDPct && totalPlan > 0 && totalDone >= totalPlan) overallPct = 100;
 
             const bcgPlan = parsePmoNum(r.K);
             const bcgDone = parsePmoNum(r.L);
@@ -10991,7 +12180,7 @@ document.addEventListener("DOMContentLoaded", init);
             let avicomPct = parsePmoPct(r.Q);
             if (!avicomPct && avicomPlan > 0 && avicomDone >= avicomPlan) avicomPct = 100;
 
-            if (overallPct === 0 && (bcgPct >= 100 || (totalPlan > 0 && totalDone >= totalPlan))) overallPct = 100;
+            if (!hasExplicitDPct && overallPct === 0 && (bcgPct >= 100 || (totalPlan > 0 && totalDone >= totalPlan))) overallPct = 100;
 
             const conn = {
                 fo: parsePmoNum(r.S),
@@ -11019,8 +12208,11 @@ document.addEventListener("DOMContentLoaded", init);
         }
 
         // 2. D2-dən hər layihənin rayon sətirlərini oxu (xəritə nöqtələri üçün)
+        let currentD2Sid = "";
         for (const r of d2Rows) {
-            const sid = normSheetId(r.A);
+            const rawSid = normSheetId(r.A);
+            if (rawSid) currentD2Sid = rawSid;
+            const sid = rawSid || currentD2Sid;
             if (!sid) continue;
             const projTitle = cleanProjectName(String(r.B ?? "").trim(), sid);
             const rayonName = String(r.C ?? "").trim();
@@ -11090,6 +12282,11 @@ document.addEventListener("DOMContentLoaded", init);
                 avicomDone,
                 avicomPct,
                 conn,
+                d2Cols: {
+                    I: String(r.I ?? "").trim(),
+                    J: String(r.J ?? "").trim(),
+                    K: String(r.K ?? "").trim()
+                },
                 subPoints: []
             });
         }
@@ -11100,10 +12297,212 @@ document.addEventListener("DOMContentLoaded", init);
         const currentProjectIds = [];
         let completedSnapshot = [];
 
+        const summarizeColValues = (vals) => {
+            const clean = vals.map(v => String(v ?? "").trim()).filter(v => v && v !== "-" && v !== "—" && v !== "0");
+            if (clean.length === 0) return "—";
+            const allNums = clean.every(v => /^-?\d+(?:[.,]\d+)?%?$/.test(v));
+            if (allNums && clean.length > 1) {
+                const isPct = clean.some(v => v.includes("%"));
+                if (isPct) return clean[0];
+                const sum = clean.reduce((acc, v) => acc + parsePmoNum(v), 0);
+                return sum.toLocaleString("az-AZ");
+            }
+            const uniq = [...new Set(clean)];
+            return uniq.slice(0, 5).join(", ");
+        };
+
         for (const pData of projectsMap.values()) {
             const detail = parseNumberedPmoSheet(wb, pData.sheetId);
             pData.cablePlanM = detail.cablePlanM;
             pData.cableDoneM = detail.cableDoneM;
+
+            // Xüsusi emal: 15.3 Təmir - Bərpa xidməti (RM poliqon mərkəzləri: RM üzrə nöqtə sayı, Regional rəhbər (J), klikləyəndə Rayonlar (K) üzrə xəritədə paylanma)
+            if (pData.sheetId === "15.3") {
+                const rmByNormKey = new Map();
+                pData.rayons.forEach(ry => {
+                    const rk = normalizeRmKey(ry.name) || normMatchName(ry.name);
+                    rmByNormKey.set(rk, ry);
+                    ry._temirList = [];
+                });
+
+                (detail.temirRows || []).forEach(tr => {
+                    const rk = normalizeRmKey(tr.rmName) || normalizeRmKey(resolveRmForRayon(tr.rayon, tr.rmName));
+                    const targetRm = rk ? rmByNormKey.get(rk) : null;
+                    if (targetRm) {
+                        targetRm._temirList.push(tr);
+                    }
+                });
+
+                pData.rayons.forEach(ry => {
+                    const list = ry._temirList || [];
+                    const regLeads = [...new Set(list.map(x => x.regLead).filter(Boolean))];
+                    const regLead = regLeads.join(", ") || "—";
+
+                    // K sütununda qeyd olunmuş rayonlar üzrə qruplaşdır
+                    const rayonMap = new Map();
+                    let sumTotal = 0;
+                    let sumDone = 0;
+                    list.forEach(tr => {
+                        const c = Math.max(1, Number(tr.ptCount) || 1);
+                        sumTotal += c;
+                        if (tr.status === "bitmis") sumDone += c;
+                        const rName = String(tr.rayon || "").trim();
+                        if (!rName) return;
+                        const rKey = normMatchName(rName);
+                        if (!rayonMap.has(rKey)) {
+                            rayonMap.set(rKey, {
+                                name: rName,
+                                count: 0,
+                                doneCount: 0,
+                                layiheCount: 0,
+                                icradaCount: 0
+                            });
+                        }
+                        const grp = rayonMap.get(rKey);
+                        grp.count += c;
+                        if (tr.status === "bitmis") grp.doneCount += c;
+                        else if (tr.status === "layihe") grp.layiheCount += c;
+                        else grp.icradaCount += c;
+                    });
+
+                    const rayonBreakdown = [...rayonMap.values()].sort((a, b) => b.count - a.count);
+                    const rmCenter = findRmPolygonCentroid(ry.name) || findKnownAzRayonCoord(ry.name) || [40.3, 47.5];
+
+                    let subPts = rayonBreakdown.map((grp, idx) => {
+                        const baseCoord = findKnownAzRayonCoord(grp.name);
+                        let coords = baseCoord ? [baseCoord[0], baseCoord[1]] : null;
+                        if (!coords) {
+                            const angle = (idx * 2 * Math.PI) / Math.max(1, rayonBreakdown.length);
+                            coords = [rmCenter[0] + Math.sin(angle) * 0.11, rmCenter[1] + Math.cos(angle) * 0.14];
+                        }
+                        const st = grp.doneCount === grp.count
+                            ? "bitmis"
+                            : (grp.doneCount === 0 && grp.layiheCount === grp.count ? "layihe" : "icrada");
+                        const pct = grp.count > 0 ? Math.round((grp.doneCount / grp.count) * 100) : ry.pct;
+                        const labelText = `${grp.name} (${grp.count} nöqtə)`;
+                        return {
+                            id: `pmo_15_3_${normMatchName(ry.name)}_${normMatchName(grp.name)}_${idx + 1}`,
+                            idx: idx + 1,
+                            isTemirRayon: true,
+                            tsNo: labelText,
+                            name: labelText,
+                            rayon: grp.name,
+                            rmName: ry.name,
+                            regLead,
+                            totalCount: grp.count,
+                            doneCount: grp.doneCount,
+                            status: st,
+                            pct,
+                            coords
+                        };
+                    });
+
+                    let finalRegLead = regLead;
+                    let finalBreakdown = rayonBreakdown;
+                    if ((finalRegLead === "—" || finalBreakdown.length === 0) && Array.isArray(window.PMO_SEED_PROJECTS)) {
+                        const seedP153 = window.PMO_SEED_PROJECTS.find(p => p.sheetId === "15.3");
+                        const rk = normalizeRmKey(ry.name) || normMatchName(ry.name);
+                        const seedIt = seedP153?.items?.find(it => (normalizeRmKey(it.name) || normMatchName(it.name)) === rk);
+                        const seedTm = seedIt?.pmoRayon?.temirMeta;
+                        if (seedTm) {
+                            if (finalRegLead === "—" && seedTm.regLead) finalRegLead = seedTm.regLead;
+                            if (finalBreakdown.length === 0 && Array.isArray(seedTm.rayonBreakdown)) finalBreakdown = seedTm.rayonBreakdown;
+                            if (subPts.length === 0 && Array.isArray(seedIt.pmoRayon?.subPoints)) subPts = seedIt.pmoRayon.subPoints;
+                        }
+                    }
+
+                    const totalCount = ry.totalPlan > 0 ? ry.totalPlan : sumTotal;
+                    const doneCount = ry.totalPlan > 0 ? ry.totalDone : sumDone;
+
+                    ry.subPoints = subPts;
+                    ry.temirMeta = {
+                        isTemirRm: true,
+                        totalCount,
+                        doneCount,
+                        regLead: finalRegLead,
+                        rayonBreakdown: finalBreakdown
+                    };
+                });
+            }
+
+            // Xüsusi emal: 14 (Dəyişim 2026) — D2-də avadanlıq növləri əvəzinə "D" sütununa görə Rayonlar üzrə qruplaşdır, koordinatı olanları "G" adı ilə parçala
+            if (pData.sheetId === "14") {
+                const livePts = Array.isArray(detail.points) ? detail.points : [];
+                if (livePts.length > 0) {
+                    const rMap = new Map();
+                    livePts.forEach(sp => {
+                        const rName = sp.rayon || resolveDeyisimRayon(sp.address, sp.tsNo, sp.coords);
+                        const rKey = normMatchName(rName);
+                        if (!rMap.has(rKey)) {
+                            rMap.set(rKey, {
+                                name: rName,
+                                pct: 0,
+                                totalPlan: 0,
+                                totalDone: 0,
+                                bcgPlan: 0,
+                                bcgDone: 0,
+                                bcgPct: 0,
+                                avicomPlan: 0,
+                                avicomDone: 0,
+                                avicomPct: 0,
+                                conn: { fo: 0, g3: 0, ant: 0, gpon: 0 },
+                                _allCount: 0,
+                                _doneCount: 0,
+                                _layiheCount: 0,
+                                subPoints: []
+                            });
+                        }
+                        const ry = rMap.get(rKey);
+                        ry.totalPlan += 1;
+                        ry._allCount += 1;
+                        if (sp.status === "bitmis") { ry.totalDone += 1; ry._doneCount += 1; }
+                        else if (sp.status === "layihe") { ry._layiheCount += 1; }
+                        if (sp.bcgExec) {
+                            ry.bcgPlan += 1;
+                            if (sp.status === "bitmis") ry.bcgDone += 1;
+                        }
+                        if (sp.avicomExec) {
+                            ry.avicomPlan += 1;
+                            if (sp.status === "bitmis") ry.avicomDone += 1;
+                        }
+                        const ct = String(sp.connType || "").toUpperCase();
+                        if (ct.includes("FO")) ry.conn.fo += 1;
+                        else if (ct.includes("3G")) ry.conn.g3 += 1;
+                        else if (ct.includes("ANT")) ry.conn.ant += 1;
+                        else if (ct.includes("GPON")) ry.conn.gpon += 1;
+                        // Yalnız koordinatı ("C" sütunu) olan nöqtələr parçalananda xəritəyə çıxsın
+                        if (Array.isArray(sp.coords) && sp.coords.length === 2) {
+                            ry.subPoints.push({ ...sp, rayon: rName });
+                        }
+                    });
+                    pData.rayons = [...rMap.values()]
+                        .map(ry => {
+                            ry.pct = ry.totalPlan > 0 ? Math.round((ry.totalDone / ry.totalPlan) * 100) : 0;
+                            ry.bcgPct = ry.bcgPlan > 0 ? Math.round((ry.bcgDone / ry.bcgPlan) * 100) : 0;
+                            ry.avicomPct = ry.avicomPlan > 0 ? Math.round((ry.avicomDone / ry.avicomPlan) * 100) : 0;
+                            return ry;
+                        })
+                        .sort((a, b) => b.totalPlan - a.totalPlan);
+                } else if (Array.isArray(window.PMO_SEED_PROJECTS)) {
+                    const seed14 = window.PMO_SEED_PROJECTS.find(p => p.sheetId === "14");
+                    if (seed14 && Array.isArray(seed14.items) && seed14.items.length > 0) {
+                        pData.rayons = seed14.items.map(it => ({
+                            name: it.name,
+                            pct: it.pmoRayon?.pct || 0,
+                            totalPlan: it.pmoRayon?.totalPlan || 0,
+                            totalDone: it.pmoRayon?.totalDone || 0,
+                            bcgPlan: it.pmoRayon?.bcgPlan || 0,
+                            bcgDone: it.pmoRayon?.bcgDone || 0,
+                            bcgPct: it.pmoRayon?.bcgPct || 0,
+                            avicomPlan: it.pmoRayon?.avicomPlan || 0,
+                            avicomDone: it.pmoRayon?.avicomDone || 0,
+                            avicomPct: it.pmoRayon?.avicomPct || 0,
+                            conn: it.pmoRayon?.conn || { fo: 0, g3: 0, ant: 0, gpon: 0 },
+                            subPoints: it.pmoRayon?.subPoints || []
+                        }));
+                    }
+                }
+            }
 
             // Alt-nöqtələri rayonlara uyğunlaşdır
             const rayonByNorm = new Map();
@@ -11111,7 +12510,7 @@ document.addEventListener("DOMContentLoaded", init);
                 rayonByNorm.set(normMatchName(ry.name), ry);
             });
 
-            detail.points.forEach(sp => {
+            if (pData.sheetId !== "15.3" && pData.sheetId !== "14") detail.points.forEach(sp => {
                 const ptKey = `${pData.sheetId}::${sp.id}`;
                 currentPointStates[ptKey] = sp.status;
                 if (sp.status === "bitmis") {
@@ -11135,29 +12534,52 @@ document.addEventListener("DOMContentLoaded", init);
                         }
                     }
                 }
-                if (!targetRy && pData.rayons.length === 0 && sp.coords) {
-                    // D2-də rayon sətiri olmayan layihələr (məs: 18.1) üçün ünvandan rayon çıxar
-                    const addrRayon = (sp.address.match(/^([A-ZƏÖÜÇŞĞİ][a-zəöüçşğı]+)\s+rayon/i)?.[1] || pData.name).trim();
-                    const arNorm = normMatchName(addrRayon);
-                    if (!rayonByNorm.has(arNorm)) {
+                if (!targetRy && (sp.rayon || sp.coords)) {
+                    // D2-də filtr/gizlətmə səbəbindən görünməyən rayonları nömrəli vərəqin öz nöqtələrindən avtomatik yarat
+                    const inferredRayon = (sp.rayon && !/^magistral/i.test(sp.rayon))
+                        ? sp.rayon.trim()
+                        : (sp.address.match(/^([A-ZƏÖÜÇŞĞİ][a-zəöüçşğı]+)\s+rayon/i)?.[1] || pData.name).trim();
+                    const arNorm = normMatchName(inferredRayon);
+                    if (arNorm && !rayonByNorm.has(arNorm)) {
                         const newRy = {
-                            name: addrRayon,
-                            pct: pData.overallPct,
+                            name: inferredRayon,
+                            pct: 0,
                             totalPlan: 0,
                             totalDone: 0,
-                            bcgPlan: pData.bcgPlan,
-                            bcgDone: pData.bcgDone,
-                            bcgPct: pData.bcgPct,
-                            avicomPlan: pData.avicomPlan,
-                            avicomDone: pData.avicomDone,
-                            avicomPct: pData.avicomPct,
-                            conn: pData.conn,
-                            subPoints: []
+                            bcgPlan: 0,
+                            bcgDone: 0,
+                            bcgPct: 0,
+                            avicomPlan: 0,
+                            avicomDone: 0,
+                            avicomPct: 0,
+                            conn: { fo: 0, g3: 0, ant: 0, gpon: 0 },
+                            subPoints: [],
+                            _autoBuilt: true
                         };
                         pData.rayons.push(newRy);
                         rayonByNorm.set(arNorm, newRy);
                     }
-                    targetRy = rayonByNorm.get(arNorm);
+                    targetRy = arNorm ? rayonByNorm.get(arNorm) : null;
+                }
+                if (targetRy && targetRy._autoBuilt) {
+                    targetRy.totalPlan += 1;
+                    targetRy.bcgPlan += 1;
+                    targetRy.avicomPlan += 1;
+                    if (sp.status === "bitmis") {
+                        targetRy.totalDone += 1;
+                        targetRy.bcgDone += 1;
+                        targetRy.avicomDone += 1;
+                    } else if (sp.status === "icrada") {
+                        targetRy.bcgDone += 1;
+                    }
+                    const ct = String(sp.connType || "").toUpperCase();
+                    if (ct.includes("FO")) targetRy.conn.fo += 1;
+                    else if (ct.includes("3G")) targetRy.conn.g3 += 1;
+                    else if (ct.includes("ANT")) targetRy.conn.ant += 1;
+                    else if (ct.includes("GPON")) targetRy.conn.gpon += 1;
+                    targetRy.pct = targetRy.totalPlan > 0 ? Math.round((targetRy.totalDone / targetRy.totalPlan) * 100) : 0;
+                    targetRy.bcgPct = targetRy.bcgPlan > 0 ? Math.round((targetRy.bcgDone / targetRy.bcgPlan) * 100) : 0;
+                    targetRy.avicomPct = targetRy.avicomPlan > 0 ? Math.round((targetRy.avicomDone / targetRy.avicomPlan) * 100) : 0;
                 }
                 if (targetRy) {
                     targetRy.subPoints.push(sp);
@@ -11169,17 +12591,31 @@ document.addEventListener("DOMContentLoaded", init);
             currentProjectIds.push(projId);
             const projStatus = pData.overallPct >= 100 ? "bitmis" : (pData.overallPct > 0 ? "icrada" : "layihe");
 
-            const items = pData.rayons.map((ry, rIdx) => {
+            let items = pData.rayons.map((ry, rIdx) => {
                 const validSubCoords = ry.subPoints.filter(sp => Array.isArray(sp.coords) && sp.coords.length === 2).map(sp => sp.coords);
-                let centerCoord;
-                if (validSubCoords.length > 0) {
-                    const avgLat = validSubCoords.reduce((s, c) => s + c[0], 0) / validSubCoords.length;
-                    const avgLng = validSubCoords.reduce((s, c) => s + c[1], 0) / validSubCoords.length;
-                    centerCoord = [Number(avgLat.toFixed(6)), Number(avgLng.toFixed(6))];
-                } else {
-                    centerCoord = lookupAzRayonCoord(ry.name, rIdx);
+                let centerCoord = (pData.sheetId === "15.3")
+                    ? findRmPolygonCentroid(ry.name)
+                    : findKnownAzRayonCoord(ry.name);
+                if (!centerCoord) {
+                    if (validSubCoords.length > 0) {
+                        const avgLat = validSubCoords.reduce((s, c) => s + c[0], 0) / validSubCoords.length;
+                        const avgLng = validSubCoords.reduce((s, c) => s + c[1], 0) / validSubCoords.length;
+                        centerCoord = [Number(avgLat.toFixed(6)), Number(avgLng.toFixed(6))];
+                    } else {
+                        centerCoord = lookupAzRayonCoord(ry.name, rIdx);
+                    }
                 }
-                const ryStatus = ry.pct >= 100 ? "bitmis" : (ry.pct > 0 ? "icrada" : "layihe");
+                // Rayon statusunu da alt-nöqtələrin "A" sütunundakı statusuna görə təyin et (bütün layihələr üzrə vahid qayda)
+                let ryStatus = ry.pct >= 100 ? "bitmis" : (ry.pct > 0 ? "icrada" : "layihe");
+                if (ry._allCount > 0) {
+                    ryStatus = ry._doneCount === ry._allCount
+                        ? "bitmis"
+                        : (ry._layiheCount === ry._allCount ? "layihe" : "icrada");
+                } else if (Array.isArray(ry.subPoints) && ry.subPoints.length > 0) {
+                    const allDone = ry.subPoints.every(sp => sp.status === "bitmis");
+                    const anyActive = ry.subPoints.some(sp => sp.status === "bitmis" || sp.status === "icrada");
+                    ryStatus = allDone ? "bitmis" : (anyActive ? "icrada" : "layihe");
+                }
                 return {
                     id: `pmo_${pData.sheetId}_ry_${rIdx + 1}`,
                     name: ry.name,
@@ -11196,6 +12632,7 @@ document.addEventListener("DOMContentLoaded", init);
                         avicomDone: ry.avicomDone,
                         avicomPct: ry.avicomPct,
                         conn: ry.conn,
+                        temirMeta: ry.temirMeta || undefined,
                         subPoints: ry.subPoints
                     },
                     status: ryStatus,
@@ -11208,13 +12645,60 @@ document.addEventListener("DOMContentLoaded", init);
             });
 
             if (Array.isArray(detail.magistrals) && detail.magistrals.length > 0) {
-                items.push(...detail.magistrals);
+                // Əgər vərəqdəki bütün sətirlər magistraldırsa (məs: 15.2 Layihəsiz Magistral), boş rayon nöqtələrini deyil, birbaşa magistral xətlərini göstər
+                if (detail.points.length === 0) {
+                    items = [...detail.magistrals];
+                } else {
+                    items.push(...detail.magistrals);
+                }
+            }
+
+            const cleanName = cleanProjectName(pData.name, pData.sheetId);
+
+            // Standart uyğunluq yoxlaması: bizim BCG PMO standartlarına uyğun gəlməyən layihələri Xəta bildirişinə yaz
+            const isSpecialTemir = String(pData.sheetId) === "15.3";
+            const isSpecial1511 = String(pData.sheetId) === "15.1.1";
+            if (detail.sheetMissing && items.length === 0) {
+                stdErrorQueue.push({
+                    dedupeKey: `err_std_nosheet_${pData.sheetId}`,
+                    type: "error",
+                    title: "Standarta uyğun deyil — Vərəq yoxdur",
+                    detail: `Vərəq ${pData.sheetId} (${cleanName}): D1-də qeyd olunub, amma standart nömrəli vərəqi tapılmadı və xəritə məlumatı boşdur`,
+                    projectId: projId
+                });
+            } else if (!detail.sheetMissing && !isSpecialTemir && !isSpecial1511) {
+                if (items.length === 0) {
+                    stdErrorQueue.push({
+                        dedupeKey: `err_std_empty_${pData.sheetId}`,
+                        type: "error",
+                        title: "Standarta uyğun deyil — Xəritə məlumatı yoxdur",
+                        detail: `Vərəq ${pData.sheetId} (${cleanName}): Nə D2-də rayon bölgüsü, nə də vərəqdə standart A-sütunu / koordinatlı nöqtə tapılmadı`,
+                        projectId: projId
+                    });
+                } else if (detail.missingColARows > 0) {
+                    stdErrorQueue.push({
+                        dedupeKey: `err_std_cola_${pData.sheetId}_${detail.missingColARows}`,
+                        type: "error",
+                        title: "Standart xətası — A sütununda status yoxdur",
+                        detail: `Vərəq ${pData.sheetId} (${cleanName}): ${detail.missingColARows} sətirdə 'A' sütununda status dairəsi (🟢/🟡/🔴) qoyulmayıb`,
+                        projectId: projId
+                    });
+                }
+                if (!detail.foundCableCol && (detail.points.length > 0 || detail.magistrals.length > 0)) {
+                    stdErrorQueue.push({
+                        dedupeKey: `err_std_cablecol_${pData.sheetId}`,
+                        type: "error",
+                        title: "Standart xətası — Kabel sütunu tapılmadı",
+                        detail: `Vərəq ${pData.sheetId} (${cleanName}): Başlıqlarda 'FO kabelin çəkilməsi' standart sütunu tapılmadı`,
+                        projectId: projId
+                    });
+                }
             }
 
             parsedProjects.push({
                 id: projId,
                 sheetId: pData.sheetId,
-                name: cleanProjectName(pData.name, pData.sheetId),
+                name: cleanName,
                 category: "project",
                 type: "points",
                 status: projStatus,
@@ -11239,8 +12723,19 @@ document.addEventListener("DOMContentLoaded", init);
             });
         }
 
-        // Dəyişiklik olub-olmadığını yoxla
-        const newHash = JSON.stringify(parsedProjects.map(p => ({ id: p.id, m: p.pmoMeta, n: p.items.length, s: p.items.map(i => [i.id, i.pmoRayon?.pct, i.pmoRayon?.subPoints?.map(sp => sp.status)]) })));
+        // Standarta uyğun gəlməyən layihə xətalarını bildiriş siyahısına əlavə et (təkrarsız, qırmızı sayğacla)
+        if (stdErrorQueue.length > 0) {
+            let newErrAdded = 0;
+            stdErrorQueue.forEach(errItem => {
+                if (pushPmoNotif(errItem, false)) newErrAdded++;
+            });
+            if (newErrAdded > 0 && !silent) {
+                toast(`⚠️ ${newErrAdded} layihədə standart uyğunsuzluğu aşkarlandı — yuxarıdakı Bildirişlər bölməsinə baxın`, true);
+            }
+        }
+
+        // Dəyişiklik olub-olmadığını yoxla: bütün sətirlərin bütün sahələri (ad, lif sayı, status, ünvan, məsafə, icraçı və s.) tam müqayisə olunur
+        const newHash = JSON.stringify(parsedProjects);
         if (silent && newHash === pmoLastContentHash) {
             return { updated: 0, added: 0, unchanged: true };
         }
@@ -11346,6 +12841,50 @@ document.addEventListener("DOMContentLoaded", init);
         parsedProjects.forEach(np => {
             const idx = state.projects.findIndex(p => p.id === np.id);
             if (idx >= 0) {
+                const prev = state.projects[idx];
+                // Qismən / timeout olmuş Google Sheets sorğusu mövcud rayonları və alt-nöqtələri silməsin
+                if (prev && Array.isArray(prev.items) && prev.items.length > 0) {
+                    if (!Array.isArray(np.items) || np.items.length === 0) {
+                        np.items = prev.items;
+                    } else {
+                        // Mövcud alt-nöqtələri qoruyub saxla (əgər nömrəli vərəq həmin 10 san sorğuda gecikibsə)
+                        const prevByName = new Map(prev.items.map(it => [String(it.name || it.id).trim().toLowerCase(), it]));
+                        np.items.forEach(it => {
+                            if (it.isPmoRayon && it.pmoRayon) {
+                                const oldIt = prevByName.get(String(it.name || it.id).trim().toLowerCase());
+                                if ((!it.pmoRayon.subPoints || it.pmoRayon.subPoints.length === 0) && oldIt?.pmoRayon?.subPoints?.length > 0) {
+                                    it.pmoRayon.subPoints = oldIt.pmoRayon.subPoints;
+                                }
+                                if (oldIt?.pmoRayon?.temirMeta && (!it.pmoRayon.temirMeta || it.pmoRayon.temirMeta.regLead === "—" || !it.pmoRayon.temirMeta.rayonBreakdown?.length)) {
+                                    it.pmoRayon.temirMeta = {
+                                        ...oldIt.pmoRayon.temirMeta,
+                                        totalCount: it.pmoRayon.totalPlan || oldIt.pmoRayon.temirMeta.totalCount,
+                                        doneCount: it.pmoRayon.totalDone ?? oldIt.pmoRayon.temirMeta.doneCount
+                                    };
+                                }
+                            }
+                        });
+                        // D2-də filtr/gizlətmə/gecikmə səbəbindən bəzi rayonlar gəlməyibsə, mövcud rayonları HEÇ VAXT silmə!
+                        const prevRayons = prev.items.filter(it => it.isPmoRayon && !it.isMagistral);
+                        const newRayons = np.items.filter(it => it.isPmoRayon && !it.isMagistral);
+                        const isPureMagistralProj = newRayons.length === 0 && np.items.some(it => it.isMagistral);
+                        if (!isPureMagistralProj && prevRayons.length > 1 && newRayons.length < prevRayons.length) {
+                            const newNormNames = new Set(newRayons.map(it => normMatchName(it.name || it.rayon)));
+                            const missingRayons = prevRayons.filter(it => !newNormNames.has(normMatchName(it.name || it.rayon)));
+                            if (missingRayons.length > 0) {
+                                const projNorm = normMatchName(np.name);
+                                np.items = np.items.filter(it => !(it.isPmoRayon && !it.isMagistral && normMatchName(it.name) === projNorm && newRayons.length === 1));
+                                np.items.unshift(...missingRayons);
+                            }
+                        }
+                        // Magistral xətlər gecikməyə görə düşməyibsə köhnələri saxla
+                        const hasNewMags = np.items.some(it => it.isMagistral);
+                        if (!hasNewMags) {
+                            const oldMags = prev.items.filter(it => it.isMagistral);
+                            if (oldMags.length > 0) np.items.push(...oldMags);
+                        }
+                    }
+                }
                 state.projects[idx] = np;
                 updatedCount++;
             } else {
@@ -11355,6 +12894,7 @@ document.addEventListener("DOMContentLoaded", init);
             }
         });
         state.activeFolders.add("project");
+        if (typeof applySavedGeomOverrides === "function") applySavedGeomOverrides();
 
         renderAll();
         renderPmoNotifsUI();
@@ -11590,6 +13130,10 @@ document.addEventListener("DOMContentLoaded", init);
     function resolvePmoStatus(rawStatus, planVal, doneVal) {
         const s = String(rawStatus ?? "").trim();
         if (s) {
+            if (s.includes("🟢")) return "bitmis";
+            if (s.includes("🟡") || s.includes("🟠")) return "icrada";
+            if (s.includes("🔵")) return "tehvil";
+            if (s.includes("🔴")) return "layihe";
             const pctMatch = s.match(/^(\d+(?:[.,]\d+)?)\s*%?$/);
             if (pctMatch) {
                 const p = Number(pctMatch[1].replace(",", "."));
@@ -11599,8 +13143,6 @@ document.addEventListener("DOMContentLoaded", init);
             }
             return normalizeStatus(s);
         }
-        if (planVal > 0 && doneVal >= planVal) return "bitmis";
-        if (doneVal > 0) return "icrada";
         return "layihe";
     }
 
@@ -11954,7 +13496,7 @@ document.addEventListener("DOMContentLoaded", init);
         return rows;
     }
 
-    function fetchGvizViaJsonp(sheetKey, sheetTitle) {
+    function fetchGvizViaJsonp(sheetKey, sheetTitle, headerRows = 0) {
         return new Promise((resolve, reject) => {
             if (typeof document === "undefined") return reject(new Error("No DOM"));
             const cbName = `__gviz_cb_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
@@ -11964,7 +13506,14 @@ document.addEventListener("DOMContentLoaded", init);
             window[cbName] = (resp) => {
                 cleanup();
                 if (resp && resp.status === "ok" && resp.table) {
-                    const rows2D = gvizTableTo2DRows(resp.table);
+                    const dataRows = gvizTableTo2DRows(resp.table);
+                    let rows2D = dataRows;
+                    // Nömrəli vərəqlərdə (headers=3) rəqəmli sütunların (DU, CT, CY və s.) başlıqları table.cols[].label-da gəlir
+                    if (headerRows > 0 && Array.isArray(resp.table.cols)) {
+                        const headerLabels = resp.table.cols.map(c => String(c?.label || "").replace(/\s+/g, " ").trim());
+                        const padRows = Array.from({ length: Math.max(0, headerRows - 1) }, () => []);
+                        rows2D = [...padRows, headerLabels, ...dataRows];
+                    }
                     if (rows2D && rows2D.length > 0) {
                         resolve(rows2D);
                         return;
@@ -11982,28 +13531,31 @@ document.addEventListener("DOMContentLoaded", init);
             timeoutId = setTimeout(() => {
                 cleanup();
                 reject(new Error("GViz JSONP timeout"));
-            }, 8000);
+            }, 12000);
 
             script.onerror = () => {
                 cleanup();
                 reject(new Error("GViz JSONP script error"));
             };
 
-            script.src = `https://docs.google.com/spreadsheets/d/${sheetKey}/gviz/tq?tqx=responseHandler:${cbName}&sheet=${encodeURIComponent(sheetTitle)}&_t=${Date.now()}`;
+            script.src = `https://docs.google.com/spreadsheets/d/${sheetKey}/gviz/tq?tqx=responseHandler:${cbName}&headers=${headerRows}&sheet=${encodeURIComponent(sheetTitle)}&_t=${Date.now()}`;
             document.head.appendChild(script);
         });
     }
 
     async function fetchGoogleSheetViaGviz(sheetKey) {
-        const fetchRows = async (sheetTitle) => {
+        const fetchRows = async (sheetTitle, headerRows = 0) => {
             const candidates = [sheetTitle];
             if (/^d\s*1$/i.test(sheetTitle)) candidates.unshift("D1", "D 1", "d1");
             else if (/^d\s*2$/i.test(sheetTitle)) candidates.unshift("D2", "D 2", "d2");
+            else if (String(sheetTitle).includes(".")) {
+                candidates.push(String(sheetTitle).replace(/\./g, ","));
+            }
 
             for (const title of candidates) {
                 // 1. JSONP (Brauzerdə CORS qadağasını tam aşaraq birbaşa canlı oxuyur)
                 try {
-                    const rows2D = await fetchGvizViaJsonp(sheetKey, title);
+                    const rows2D = await fetchGvizViaJsonp(sheetKey, title, headerRows);
                     if (rows2D && rows2D.length > 0 && rows2D.some(row => row.some(cell => cell && String(cell).trim().length > 0))) {
                         return { title, rows2D };
                     }
@@ -12028,8 +13580,8 @@ document.addEventListener("DOMContentLoaded", init);
         };
 
         const [d1Res, d2Res] = await Promise.all([
-            fetchRows("D1"),
-            fetchRows("D2")
+            fetchRows("D1", 0),
+            fetchRows("D2", 0)
         ]);
 
         const sheets = {
@@ -12040,22 +13592,41 @@ document.addEventListener("DOMContentLoaded", init);
         };
         const sheetNames = Array.from(new Set([d1Res.title, d2Res.title, "D1", "D2", "D 1", "D 2"]));
 
-        // D1-dən nömrələnmiş vərəqləri aşkarla və çək
+        // Həm D1-dən, həm D2-dən, həm də məlum layihə vərəqlərindən (məs: 15.1, 15.2, 16.1, 18.1) nömrəli vərəqləri aşkarla
         const numberedIds = [];
-        d1Res.rows2D.forEach(r => {
-            const sid = normSheetId(r[0]);
+        const addNumberedId = raw => {
+            const sid = normSheetId(raw);
             if (sid && !numberedIds.includes(sid)) numberedIds.push(sid);
-        });
+        };
+        d1Res.rows2D.forEach(r => addNumberedId(r[0]));
+        d2Res.rows2D.forEach(r => addNumberedId(r[0]));
+        if (Array.isArray(window.PMO_SEED_PROJECTS)) {
+            window.PMO_SEED_PROJECTS.forEach(p => addNumberedId(p.sheetId || p.pmoMeta?.sheetId));
+        }
 
-        await Promise.allSettled(numberedIds.map(async sid => {
-            try {
-                const subRes = await fetchRows(sid);
-                if (subRes && subRes.rows2D && subRes.rows2D.length > 0) {
-                    sheets[sid] = { _rawRows: subRes.rows2D };
-                    if (!sheetNames.includes(sid)) sheetNames.push(sid);
-                }
-            } catch {}
-        }));
+        // Hər yeniləmədə bütün nömrəli vərəqləri (10, 11, 12, ...) təzədən oxu ki, magistral adı, lif sayı, məsafə və s. dərhal yenilənsin.
+        // __pmoSubSheetCache yalnız hansısa vərəq müvəqqəti timeout olarsa itməsin deyə ehtiyat kimi saxlanır.
+        if (!window.__pmoSubSheetCache) window.__pmoSubSheetCache = { hash: "", ts: 0, sheets: {} };
+        for (let i = 0; i < numberedIds.length; i += 4) {
+            const batch = numberedIds.slice(i, i + 4);
+            await Promise.allSettled(batch.map(async sid => {
+                try {
+                    const subRes = await fetchRows(sid, 3);
+                    if (subRes && subRes.rows2D && subRes.rows2D.length > 0) {
+                        window.__pmoSubSheetCache.sheets[sid] = { _rawRows: subRes.rows2D };
+                    }
+                } catch {}
+            }));
+        }
+        window.__pmoSubSheetCache.ts = Date.now();
+
+        // Bütün vərəqləri birləşdir (təzə oxunanlar + timeout olarsa əvvəlki ehtiyat)
+        for (const sid of numberedIds) {
+            if (window.__pmoSubSheetCache.sheets[sid]) {
+                sheets[sid] = window.__pmoSubSheetCache.sheets[sid];
+                if (!sheetNames.includes(sid)) sheetNames.push(sid);
+            }
+        }
 
         return { SheetNames: sheetNames, Sheets: sheets };
     }
@@ -12162,7 +13733,7 @@ document.addEventListener("DOMContentLoaded", init);
         }
 
         if (cfg.url && Number(cfg.pollInterval) > 0) {
-            const sec = Math.max(10, Number(cfg.pollInterval) || 10);
+            const sec = Math.max(20, Number(cfg.pollInterval) || 20);
             let pmoPollInFlight = false;
             updatePmoLiveIndicators(true, cfg.url);
             pmoLiveTimer = setInterval(async () => {
@@ -12216,7 +13787,7 @@ document.addEventListener("DOMContentLoaded", init);
                 if ($("pmoExcelUrl")) $("pmoExcelUrl").value = cfg.url || "";
                 if ($("pmoWebhookUrl")) $("pmoWebhookUrl").value = cfg.webhookUrl || "";
                 if ($("pmoUseDomainAuth")) $("pmoUseDomainAuth").checked = cfg.useDomainAuth !== false;
-                if ($("pmoPollInterval")) $("pmoPollInterval").value = String(cfg.pollInterval ?? 10);
+                if ($("pmoPollInterval")) $("pmoPollInterval").value = String(cfg.pollInterval ?? 20);
                 if ($("pmoTargetFolder")) $("pmoTargetFolder").value = cfg.targetFolder || [...state.activeFolders][0] || "project";
                 populatePmoTargetProjects();
                 modal.showModal();
@@ -12328,7 +13899,7 @@ document.addEventListener("DOMContentLoaded", init);
             const cfg = {
                 url: $("pmoExcelUrl")?.value.trim() || "",
                 useDomainAuth: $("pmoUseDomainAuth")?.checked !== false,
-                pollInterval: Number($("pmoPollInterval")?.value ?? 30),
+                pollInterval: Number($("pmoPollInterval")?.value ?? 20),
                 sheetName: $("pmoSheetSelect")?.value || "",
                 headerRow: Number($("pmoHeaderRow")?.value) || 1,
                 targetFolder: $("pmoTargetFolder")?.value || "project",
@@ -12366,12 +13937,17 @@ document.addEventListener("DOMContentLoaded", init);
 
         $("pmoStopLiveBtn")?.addEventListener("click", () => stopPmoLiveWatch(false));
 
-        // 🔔 Canlı Bildirişlər Pəncərəsi (Material Reyestri əvəzinə: 100% / Yaşıl nöqtələr və yeni layihələr)
+        // 🔔 Canlı Bildirişlər Pəncərəsi (100% Yaşıl nöqtələr, yeni layihələr və standart xətaları)
         $("pmoNotifBtn")?.addEventListener("click", () => {
-            const list = loadPmoNotifs().map(n => ({ ...n, unread: false }));
-            savePmoNotifs(list);
             renderPmoNotifsUI();
             $("pmoNotifModal")?.showModal();
+        });
+        $("pmoNotifModal")?.addEventListener("close", () => {
+            const list = loadPmoNotifs();
+            if (list.some(n => n.unread)) {
+                savePmoNotifs(list.map(n => ({ ...n, unread: false })));
+                renderPmoNotifsUI();
+            }
         });
         $("pmoNotifFilterTabs")?.addEventListener("click", e => {
             const btn = e.target.closest("[data-notif-filter]");
@@ -12385,6 +13961,11 @@ document.addEventListener("DOMContentLoaded", init);
             savePmoNotifs(list);
             renderPmoNotifsUI();
             toast("✅ Bütün bildirişlər oxunmuş kimi işarələndi");
+        });
+        $("pmoNotifClearBtn")?.addEventListener("click", () => {
+            savePmoNotifs([]);
+            renderPmoNotifsUI();
+            toast("🗑️ Bildirişlər təmizləndi");
         });
         $("pmoNotifList")?.addEventListener("click", e => {
             const row = e.target.closest("[data-notif-jump]");
@@ -12447,4 +14028,486 @@ document.addEventListener("DOMContentLoaded", init);
     }
 
     document.addEventListener("DOMContentLoaded", initPmoExcelIntegration);
+})();
+
+/* === 🎡 3D FİBER BARABAN / ROLİK (SİLİNDİRİK LAYİHƏ ÇARXI) === */
+(() => {
+    const ROLLER_MODE_KEY = "bcg.list.roller.v1";
+    let rollerEnabled = true;
+    try {
+        rollerEnabled = localStorage.getItem(ROLLER_MODE_KEY) !== "list";
+    } catch {}
+
+    let lastSig = "";
+    let frontIdx = 0;
+    let frontProjectId = "";
+    let targetScroll = 0;
+    let animRaf = null;
+    let scrollRaf = null;
+    let snapTimer = null;
+    let isProgrammaticAnim = false;
+    let wheelTargetIdx = 0;
+    let wheelLastTime = 0;
+
+    const elById = id => document.getElementById(id);
+
+    function getLayoutOffsetTop(el, container) {
+        let top = 0;
+        let cur = el;
+        while (cur && cur !== container) {
+            top += cur.offsetTop;
+            cur = cur.offsetParent;
+        }
+        return top;
+    }
+
+    function getCards(listEl) {
+        if (!listEl) return [];
+        return Array.from(listEl.querySelectorAll(".project"));
+    }
+
+    function isDesktopRollerEligible(listEl, cards) {
+        if (!rollerEnabled || !listEl) return false;
+        if (window.innerWidth <= 860) return false;
+        return cards.length >= 3;
+    }
+
+    function updateModeButtonUI() {
+        const btn = elById("rollerModeBtn");
+        if (!btn) return;
+        btn.classList.toggle("active", rollerEnabled);
+        btn.innerHTML = rollerEnabled
+            ? `<i class="fa-solid fa-circle-notch"></i><span>Qövs</span>`
+            : `<i class="fa-solid fa-list"></i><span>Siyahı</span>`;
+        btn.title = rollerEnabled
+            ? "Fiber Optik Qövs Çarxı aktivdir · Standart siyahıya keçmək üçün klikləyin"
+            : "Standart siyahı aktivdir · Fiber Optik Qövs Çarxı rejiminə keçmək üçün klikləyin";
+    }
+
+    function getCenterScrollForCard(listEl, card) {
+        if (!listEl || !card) return 0;
+        const viewH = listEl.clientHeight;
+        const cardTop = getLayoutOffsetTop(card, listEl);
+        const cardH = card.offsetHeight;
+        const maxScroll = Math.max(0, listEl.scrollHeight - viewH);
+        const desired = cardTop + (cardH / 2) - (viewH / 2);
+        return Math.max(0, Math.min(maxScroll, desired));
+    }
+
+    function hasAnyExpandedCard(cards) {
+        return cards.some(c => c.classList.contains("expanded"));
+    }
+
+    function stopRollerAnim() {
+        if (animRaf) {
+            cancelAnimationFrame(animRaf);
+            animRaf = null;
+        }
+        isProgrammaticAnim = false;
+    }
+
+    function clearCardInlineTransforms(cards) {
+        cards.forEach(c => {
+            c.style.transform = "";
+            c.style.opacity = "";
+            c.style.filter = "";
+            c.classList.remove("roller-front");
+        });
+    }
+
+    function syncRailAndHud(cards) {
+        const rail = elById("rollerRail");
+        const hud = elById("rollerHud");
+        const counter = elById("rollerCounter");
+        if (counter) {
+            counter.textContent = cards.length > 0 ? `${Math.min(frontIdx + 1, cards.length)} / ${cards.length}` : "0 / 0";
+        }
+        if (rail) {
+            const ticks = rail.querySelectorAll(".roller-tick");
+            ticks.forEach((tk, idx) => tk.classList.toggle("active", idx === frontIdx));
+        }
+        if (hud) {
+            hud.hidden = cards.length < 3;
+        }
+    }
+
+    function buildRail(cards) {
+        const rail = elById("rollerRail");
+        if (!rail) return;
+        if (cards.length < 3) {
+            rail.hidden = true;
+            rail.innerHTML = "";
+            return;
+        }
+        rail.hidden = false;
+        rail.innerHTML = cards.map((card, idx) => {
+            const tone = card.style.getPropertyValue("--proj-tone") || "#38bdf8";
+            const titleEl = card.querySelector(".project-main [title], .project-main strong");
+            const title = (titleEl?.getAttribute("title") || titleEl?.textContent || `Layihə #${idx + 1}`).trim();
+            const pctEl = card.querySelector(".project-pct-mid, .project-pct");
+            const pctTxt = pctEl ? ` · ${pctEl.textContent.trim()}` : "";
+            const isHidden = card.classList.contains("hidden-on-map");
+            const safeTip = `${idx + 1}. ${title}${pctTxt}`.replace(/"/g, "&quot;");
+            return `<button type="button" class="roller-tick ${idx === frontIdx ? "active" : ""} ${isHidden ? "hidden-proj" : ""}" data-roller-idx="${idx}" data-tip="${safeTip}" style="--tick-tone:${tone}" aria-label="${safeTip}"></button>`;
+        }).join("");
+    }
+
+    function applyRollerTransforms() {
+        const stage = elById("projectListStage");
+        const listEl = elById("projectList");
+        if (!stage || !listEl) return;
+        const cards = getCards(listEl);
+        if (!stage.classList.contains("roller-on") || cards.length < 3) {
+            clearCardInlineTransforms(cards);
+            return;
+        }
+
+        const viewH = listEl.clientHeight;
+        if (viewH < 120) return;
+
+        const midY = listEl.scrollTop + viewH / 2;
+        let bestIdx = 0;
+        let bestDist = Infinity;
+        let anyExpanded = false;
+
+        cards.forEach((card, idx) => {
+            const isExp = card.classList.contains("expanded");
+            if (isExp) anyExpanded = true;
+            const cardTop = getLayoutOffsetTop(card, listEl);
+            const cardH = card.offsetHeight;
+            const cardMid = cardTop + cardH / 2;
+            const dist = cardMid - midY;
+            const absDist = Math.abs(dist);
+            if (absDist < bestDist) {
+                bestDist = absDist;
+                bestIdx = idx;
+            }
+
+            if (isExp) {
+                card.style.transform = "";
+                card.style.opacity = "";
+                card.style.filter = "";
+                return;
+            }
+
+            const norm = dist / (viewH * 0.44);
+            const c = Math.max(-1.18, Math.min(1.18, norm));
+            const absC = Math.abs(c);
+
+            // 🌀 Kompakt Fiber Optik Yarım-Dairə Qövs Çarxı:
+            // Daha yığcam diametr (17px qövs) və daha tünd/aydın oxunan layihə adları
+            const arcX = -(c * c) * 17;
+            const yPull = -Math.sign(c) * Math.pow(absC, 1.5) * 10;
+            const fanDeg = c * 1.6;
+            const scale = Math.max(0.89, 1.01 - absC * 0.09);
+            const baseOpacity = Math.max(0.56, 1 - Math.pow(absC, 1.12) * 0.38);
+            const isHidden = card.classList.contains("hidden-on-map");
+            const opacity = isHidden ? Math.max(0.36, baseOpacity * 0.72) : baseOpacity;
+
+            card.style.transform = `translate3d(${arcX.toFixed(1)}px, ${yPull.toFixed(1)}px, 0) rotateZ(${fanDeg.toFixed(2)}deg) scale(${scale.toFixed(3)})`;
+            card.style.opacity = opacity.toFixed(3);
+            card.style.filter = "";
+        });
+
+        stage.classList.toggle("has-expanded", anyExpanded);
+        frontIdx = bestIdx;
+        frontProjectId = cards[bestIdx]?.dataset?.id || "";
+
+        cards.forEach((card, idx) => {
+            card.classList.toggle("roller-front", idx === bestIdx);
+        });
+        syncRailAndHud(cards);
+    }
+
+    function animateScrollTo(destScroll) {
+        const listEl = elById("projectList");
+        if (!listEl) return;
+        const maxScroll = Math.max(0, listEl.scrollHeight - listEl.clientHeight);
+        targetScroll = Math.max(0, Math.min(maxScroll, Math.round(destScroll)));
+        isProgrammaticAnim = true;
+
+        if (animRaf) return;
+        let frames = 0;
+        const step = () => {
+            frames++;
+            const cur = listEl.scrollTop;
+            const diff = targetScroll - cur;
+            if (Math.abs(diff) <= 1.2 || frames > 90) {
+                listEl.scrollTop = targetScroll;
+                animRaf = null;
+                isProgrammaticAnim = false;
+                applyRollerTransforms();
+                return;
+            }
+            // Minimum 1px addım (brauzer scrollTop tam ədəd yuvarlaqlaşdırmasına ilişib qalmasın!)
+            const delta = Math.sign(diff) * Math.max(1, Math.round(Math.abs(diff) * 0.24));
+            const prevTop = listEl.scrollTop;
+            listEl.scrollTop = prevTop + delta;
+            if (listEl.scrollTop === prevTop) {
+                animRaf = null;
+                isProgrammaticAnim = false;
+                applyRollerTransforms();
+                return;
+            }
+            applyRollerTransforms();
+            animRaf = requestAnimationFrame(step);
+        };
+        animRaf = requestAnimationFrame(step);
+    }
+
+    function rollToIndex(idx, instant = false) {
+        const listEl = elById("projectList");
+        if (!listEl) return;
+        const cards = getCards(listEl);
+        if (cards.length === 0) return;
+        const clampedIdx = Math.max(0, Math.min(cards.length - 1, idx));
+        wheelTargetIdx = clampedIdx;
+        const dest = getCenterScrollForCard(listEl, cards[clampedIdx]);
+        if (instant) {
+            stopRollerAnim();
+            listEl.scrollTop = dest;
+            targetScroll = dest;
+            applyRollerTransforms();
+        } else {
+            animateScrollTo(dest);
+        }
+    }
+
+    function scheduleMagneticSnap(delayMs = 170) {
+        if (snapTimer) clearTimeout(snapTimer);
+        snapTimer = setTimeout(() => {
+            const stage = elById("projectListStage");
+            const listEl = elById("projectList");
+            if (!stage || !listEl || !stage.classList.contains("roller-on")) return;
+            const cards = getCards(listEl);
+            if (cards.length < 3 || hasAnyExpandedCard(cards)) return;
+            rollToIndex(frontIdx, false);
+        }, delayMs);
+    }
+
+    function refreshProjectRoller(opts = {}) {
+        const stage = elById("projectListStage");
+        const listEl = elById("projectList");
+        const rail = elById("rollerRail");
+        const hud = elById("rollerHud");
+        const tip = elById("rollerRailTip");
+        updateModeButtonUI();
+        if (!stage || !listEl) return;
+
+        const cards = getCards(listEl);
+        const eligible = !opts.empty && isDesktopRollerEligible(listEl, cards);
+        stage.classList.toggle("roller-on", eligible);
+
+        if (!eligible) {
+            stopRollerAnim();
+            stage.classList.remove("has-expanded");
+            clearCardInlineTransforms(cards);
+            if (rail) { rail.hidden = true; rail.innerHTML = ""; }
+            if (hud) hud.hidden = true;
+            if (tip) tip.hidden = true;
+            if (typeof opts.prevScrollTop === "number" && opts.sig === lastSig) {
+                listEl.scrollTop = opts.prevScrollTop;
+            }
+            if (opts.sig !== undefined) lastSig = opts.sig;
+            return;
+        }
+
+        // Baraban yuxarı/aşağı boşluqlarını pəncərə hündürlüyünə uyğunlaşdır ki 1-ci və sonuncu layihə mərkəzə gəlsin
+        const wrap = listEl.querySelector(".fiber-bus-wrap");
+        const viewH = listEl.clientHeight || 360;
+        const firstCardH = cards[0]?.offsetHeight || 68;
+        const pad = Math.max(46, Math.round((viewH - firstCardH) * 0.46));
+        if (wrap) {
+            wrap.style.setProperty("--drum-pad", `${pad}px`);
+        }
+
+        const sigChanged = opts.sig !== undefined && opts.sig !== lastSig;
+        if (opts.sig !== undefined) lastSig = opts.sig;
+
+        buildRail(cards);
+
+        if (sigChanged) {
+            frontIdx = 0;
+            wheelTargetIdx = 0;
+            rollToIndex(0, true);
+        } else if (opts.recenterOnFront && frontProjectId) {
+            const matchIdx = cards.findIndex(c => c.dataset.id === frontProjectId);
+            rollToIndex(matchIdx >= 0 ? matchIdx : Math.min(frontIdx, cards.length - 1), true);
+        } else if (typeof opts.prevScrollTop === "number") {
+            const maxScroll = Math.max(0, listEl.scrollHeight - listEl.clientHeight);
+            const hasExp = cards.some(c => c.classList.contains("expanded"));
+            if (!hasExp && opts.prevScrollTop === 0 && !frontProjectId) {
+                rollToIndex(0, true);
+            } else {
+                listEl.scrollTop = Math.max(0, Math.min(maxScroll, opts.prevScrollTop));
+                targetScroll = listEl.scrollTop;
+                applyRollerTransforms();
+                wheelTargetIdx = frontIdx;
+            }
+        } else {
+            applyRollerTransforms();
+            wheelTargetIdx = frontIdx;
+        }
+    }
+
+    window.refreshProjectRoller = refreshProjectRoller;
+
+    function initProjectRoller() {
+        const stage = elById("projectListStage");
+        const listEl = elById("projectList");
+        const modeBtn = elById("rollerModeBtn");
+        const rail = elById("rollerRail");
+        const tip = elById("rollerRailTip");
+        const hud = elById("rollerHud");
+        if (!stage || !listEl) return;
+
+        updateModeButtonUI();
+
+        modeBtn?.addEventListener("click", () => {
+            rollerEnabled = !rollerEnabled;
+            try { localStorage.setItem(ROLLER_MODE_KEY, rollerEnabled ? "roller" : "list"); } catch {}
+            updateModeButtonUI();
+            refreshProjectRoller({ recenterOnFront: rollerEnabled });
+            if (typeof toast === "function") {
+                toast(rollerEnabled ? "🌀 Fiber Optik Qövs Çarxı aktivdir" : "📋 Standart siyahı rejiminə keçildi");
+            }
+        });
+
+        // Maus təkəri: yumşaq inersiyalı qövs çarxı fırlanması (açıq layihə olduqda sərbəst scroll işləyir, heç vaxt ilişmir)
+        listEl.addEventListener("wheel", e => {
+            if (!stage.classList.contains("roller-on")) return;
+            const cards = getCards(listEl);
+            if (cards.length < 3) return;
+            // Açıq layihə varsa və ya rayon siyahısı üzərindədirsə, animasiyanı dərhal dayandır və sərbəst scroll ver
+            if (e.target.closest(".segments") || hasAnyExpandedCard(cards)) {
+                stopRollerAnim();
+                if (snapTimer) clearTimeout(snapTimer);
+                return;
+            }
+
+            e.preventDefault();
+            if (snapTimer) clearTimeout(snapTimer);
+
+            const now = performance.now();
+            const isDiscreteWheel = e.deltaMode === 1 || Math.abs(e.deltaY) >= 40;
+            if (isDiscreteWheel) {
+                const dir = e.deltaY > 0 ? 1 : -1;
+                if (now - wheelLastTime > 260) {
+                    wheelTargetIdx = frontIdx;
+                }
+                wheelLastTime = now;
+                wheelTargetIdx = Math.max(0, Math.min(cards.length - 1, wheelTargetIdx + dir));
+                animateScrollTo(getCenterScrollForCard(listEl, cards[wheelTargetIdx]));
+            } else {
+                const base = isProgrammaticAnim ? targetScroll : listEl.scrollTop;
+                animateScrollTo(base + e.deltaY * 1.15);
+                scheduleMagneticSnap(180);
+            }
+        }, { passive: false });
+
+        // Normal scroll / toxunuş zamanı 60fps qövs yeniləmə
+        listEl.addEventListener("pointerdown", () => {
+            stopRollerAnim();
+        }, { passive: true });
+        listEl.addEventListener("scroll", () => {
+            if (!stage.classList.contains("roller-on")) return;
+            if (!scrollRaf) {
+                scrollRaf = requestAnimationFrame(() => {
+                    scrollRaf = null;
+                    applyRollerTransforms();
+                });
+            }
+            if (!isProgrammaticAnim) {
+                scheduleMagneticSnap(190);
+            }
+        }, { passive: true });
+
+        // Klaviatura ↑ / ↓ ilə çarxı fırlatma
+        listEl.addEventListener("keydown", e => {
+            if (!stage.classList.contains("roller-on")) return;
+            if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                const cards = getCards(listEl);
+                if (cards.length < 3 || hasAnyExpandedCard(cards)) return;
+                e.preventDefault();
+                rollToIndex(frontIdx + (e.key === "ArrowDown" ? 1 : -1), false);
+            }
+        });
+
+        // Layihəyə kliklədikdə: açılıbsa rahat mövqeyə gətir, bağlanıbsa mərkəz qövsə qaytar
+        listEl.addEventListener("click", e => {
+            if (!stage.classList.contains("roller-on")) return;
+            if (e.target.closest("input, .segments, [data-action='edit']")) return;
+            const card = e.target.closest(".project");
+            if (!card) return;
+            const projId = card.dataset.id;
+            stopRollerAnim();
+            if (snapTimer) clearTimeout(snapTimer);
+            setTimeout(() => {
+                const freshCards = getCards(listEl);
+                const freshCard = freshCards.find(c => c.dataset.id === projId);
+                if (!freshCard) return;
+                if (freshCard.classList.contains("expanded")) {
+                    const cardTop = getLayoutOffsetTop(freshCard, listEl);
+                    const targetTop = Math.max(0, cardTop - 16);
+                    animateScrollTo(targetTop);
+                } else {
+                    animateScrollTo(getCenterScrollForCard(listEl, freshCard));
+                }
+            }, 40);
+        });
+
+        // Sağ kənar Fiber İndikatoru: üstünə gələndə ad göstər, klikləyəndə açıq kartı bağlayıb həmin layihəyə fırlan
+        rail?.addEventListener("mousemove", e => {
+            const tk = e.target.closest(".roller-tick");
+            if (!tk || !tip) return;
+            tip.textContent = tk.dataset.tip || "";
+            const stageRect = stage.getBoundingClientRect();
+            const tkRect = tk.getBoundingClientRect();
+            const relTop = Math.max(18, Math.min(stageRect.height - 24, (tkRect.top + tkRect.height / 2) - stageRect.top));
+            tip.style.top = `${relTop}px`;
+            tip.hidden = false;
+        });
+        rail?.addEventListener("mouseleave", () => {
+            if (tip) tip.hidden = true;
+        });
+        rail?.addEventListener("click", e => {
+            const tk = e.target.closest(".roller-tick");
+            if (!tk) return;
+            const idx = Number(tk.dataset.rollerIdx);
+            if (!Number.isFinite(idx)) return;
+            if (typeof state !== "undefined" && state.expandedIds && state.expandedIds.size > 0) {
+                state.expandedIds.clear();
+                if (typeof renderProjects === "function") renderProjects();
+            }
+            rollToIndex(idx, false);
+        });
+
+        // Aşağı sağ HUD ▲ / ▼ düymələri: açıq layihə varsa bağlayıb növbəti layihəyə keç
+        hud?.addEventListener("click", e => {
+            const btn = e.target.closest("[data-roller-step]");
+            if (!btn) return;
+            const step = Number(btn.dataset.rollerStep) || 0;
+            const targetIdx = frontIdx + step;
+            if (typeof state !== "undefined" && state.expandedIds && state.expandedIds.size > 0) {
+                state.expandedIds.clear();
+                if (typeof renderProjects === "function") renderProjects();
+            }
+            rollToIndex(targetIdx, false);
+        });
+
+        // Pəncərə ölçüsü dəyişəndə baraban mərkəzini yenidən hesabla
+        if (typeof ResizeObserver !== "undefined") {
+            const ro = new ResizeObserver(() => {
+                refreshProjectRoller({ recenterOnFront: false });
+            });
+            ro.observe(stage);
+        } else {
+            window.addEventListener("resize", () => refreshProjectRoller({ recenterOnFront: false }));
+        }
+
+        // İlk açılışda artıq render olunmuş layihələr varsa barabanı işə sal
+        setTimeout(() => refreshProjectRoller({ recenterOnFront: false }), 120);
+    }
+
+    document.addEventListener("DOMContentLoaded", initProjectRoller);
 })();
