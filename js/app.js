@@ -1173,11 +1173,11 @@ function resolveLineEndNames(r, project) {
             if (isPlaceholderEnd(rawB)) rawB = parts[parts.length - 1];
         }
     }
-    if ((isPlaceholderEnd(rawA) || isPlaceholderEnd(rawB)) && /[-–—➔→/]/.test(projName)) {
+    if ((isPlaceholderEnd(rawA) && isPlaceholderEnd(rawB)) && /[-–—➔→/]/.test(projName)) {
         const parts = projName.split(/\s*[-–—➔→/]+\s*/).map(s => s.trim()).filter(s => s && !/^(?:fo|of|f)\s*\d+$/i.test(s));
         if (parts.length >= 2) {
-            if (isPlaceholderEnd(rawA)) rawA = parts[0];
-            if (isPlaceholderEnd(rawB)) rawB = parts[parts.length - 1];
+            rawA = parts[0];
+            rawB = parts[parts.length - 1];
         }
     }
 
@@ -1308,8 +1308,72 @@ function scheduleCloudMetaSync() {
     }, 800);
 }
 
+const PMO_LIVE_CACHE_KEY = "bcg.pmo.live_cache.v2";
+
+function isPmoProjectId(id) {
+    return String(id || "").startsWith("pmo_");
+}
+
+function isPmoProjectObj(p) {
+    return Boolean(p && (p.isPmo || isPmoProjectId(p.id)));
+}
+
+function readPmoLiveCacheSync() {
+    try {
+        const cached = readStore(PMO_LIVE_CACHE_KEY, null);
+        if (cached && Array.isArray(cached.projects) && cached.projects.length > 0) {
+            return cached.projects.filter(p => p && p.id && p.isPmo);
+        }
+    } catch {}
+    return null;
+}
+
+function savePmoLiveCache(projects) {
+    try {
+        if (!Array.isArray(projects) || projects.length === 0) return;
+        const payload = { savedAt: Date.now(), projects };
+        saveToIndexedDB(PMO_LIVE_CACHE_KEY, payload);
+        writeStore(PMO_LIVE_CACHE_KEY, payload);
+    } catch {}
+}
+window.savePmoLiveCache = savePmoLiveCache;
+
+function purgeStalePmoLocalPollution() {
+    try {
+        // Köhnə versiyalardan qalmış pmo_* qeydlərini lokal/IndexedDB override keşlərindən birdəfəlik təmizlə
+        const pMap = readStore(PROJ_META_STORE_KEY, null);
+        if (pMap && typeof pMap === "object") {
+            let dirty = false;
+            Object.keys(pMap).forEach(k => { if (isPmoProjectId(k)) { delete pMap[k]; dirty = true; } });
+            if (dirty) writeStore(PROJ_META_STORE_KEY, pMap);
+        }
+        const sMap = readStore(SEG_META_STORE_KEY, null);
+        if (sMap && typeof sMap === "object") {
+            let dirty = false;
+            Object.keys(sMap).forEach(k => { if (isPmoProjectId(k)) { delete sMap[k]; dirty = true; } });
+            if (dirty) writeStore(SEG_META_STORE_KEY, sMap);
+        }
+        const imp = readStore(STORAGE_IMPORTED_KEY, null);
+        if (Array.isArray(imp)) {
+            const cleanImp = imp.filter(p => p && !isPmoProjectObj(p));
+            if (cleanImp.length !== imp.length) writeStore(STORAGE_IMPORTED_KEY, cleanImp);
+        }
+        const customItems = readStore("bcg.custom.items.v1", null);
+        if (Array.isArray(customItems)) {
+            const cleanCustom = customItems.filter(e => e && !isPmoProjectId(e.projectId));
+            if (cleanCustom.length !== customItems.length) writeStore("bcg.custom.items.v1", cleanCustom);
+        }
+        getFromIndexedDB(STORAGE_IMPORTED_KEY).then(idbImp => {
+            if (Array.isArray(idbImp)) {
+                const cleanIdb = idbImp.filter(p => p && !isPmoProjectObj(p));
+                if (cleanIdb.length !== idbImp.length) saveToIndexedDB(STORAGE_IMPORTED_KEY, cleanIdb);
+            }
+        }).catch(() => {});
+    } catch {}
+}
+
 function saveProjectOverride(project) {
-    if (!project || !project.id) return;
+    if (!project || !project.id || isPmoProjectObj(project)) return;
     const map = readStore(PROJ_META_STORE_KEY, {}) || {};
     map[project.id] = {
         name: project.name,
@@ -1329,7 +1393,7 @@ function saveProjectOverride(project) {
 }
 
 function saveSegmentOverride(projectId, item) {
-    if (!projectId || !item || !item.id) return;
+    if (!projectId || !item || !item.id || isPmoProjectId(projectId)) return;
     const map = readStore(SEG_META_STORE_KEY, {}) || {};
     map[`${projectId}:${item.id}`] = {
         id: item.id,
@@ -1507,7 +1571,7 @@ function applySavedMetaOverrides() {
 function getStoredImportedProjects() {
     const delProjs = getDeletedProjectIds();
     const list = readStore(STORAGE_IMPORTED_KEY, []);
-    return Array.isArray(list) ? list.filter(p => p && !delProjs.has(p.id)) : [];
+    return Array.isArray(list) ? list.filter(p => p && !delProjs.has(p.id) && !isPmoProjectObj(p)) : [];
 }
 
 function saveImportedProjects() {
@@ -1515,7 +1579,7 @@ function saveImportedProjects() {
         const delProjs = getDeletedProjectIds();
         const delSegs = getDeletedSegmentKeys();
         const cleanProjects = (state.projects || [])
-            .filter(p => p && !delProjs.has(p.id))
+            .filter(p => p && !delProjs.has(p.id) && !isPmoProjectObj(p))
             .map(p => ({
                 ...p,
                 items: (p.items || []).filter(r => r && !delSegs.has(`${p.id}:${r.id}`))
@@ -1523,7 +1587,7 @@ function saveImportedProjects() {
         const toSave = cleanProjects.filter(p =>
             p.imported || p.isLocal || p.category === "other" || String(p.id).startsWith("imp_") || String(p.id).startsWith("proj_custom_") || String(p.id).startsWith("proj_local_") || String(p.id).startsWith("proj_mm_")
         );
-        // Həm limitsiz IndexedDB disk bazasına, həm də kiçikdirsə localStorage-a yaz
+        // Həm limitsiz IndexedDB disk bazasına, həm də kiçikdirsə localStorage-a yaz (PMO layihələri ayrı canlı keşdə saxlanılır)
         saveToIndexedDB(STORAGE_IMPORTED_KEY, toSave);
         writeStore(STORAGE_IMPORTED_KEY, toSave);
         // Bulud snapshot keşini də dərhal yenilə ki digər kompüterlər bütün nöqtələri tam görsün
@@ -1545,7 +1609,8 @@ async function syncUnsavedLocalProjectsToCloud(rawDbProjects = []) {
         const dbById = new Map((Array.isArray(rawDbProjects) ? rawDbProjects : []).map(p => [p.id, p]));
         let syncedAny = false;
         for (const p of (state.projects || [])) {
-            if (!p || !p.id || delProjs.has(p.id)) continue;
+            // PMO layihələri yalnız Google Sheets-dən canlı idarə olunur — heç vaxt Supabase-ə yazılmasın
+            if (!p || !p.id || isPmoProjectObj(p) || delProjs.has(p.id)) continue;
             // Standart demo NİİM / Azconnect layihələrini yalnız dəyişdirilibsə göndər
             if ((p.id === "nim_baki_svetofor" || p.id === "nim_sumqayit_gence" || p.id === "azc_abseron_ring" || p.id === "azc_merkez_west") && !dbById.has(p.id)) {
                 continue;
@@ -1575,8 +1640,9 @@ async function syncUnsavedLocalProjectsToCloud(rawDbProjects = []) {
 async function enterApp(user) {
     state.user = user;
     $("login").hidden = true;
+    purgeStalePmoLocalPollution();
 
-    // 1. YALNIZ TƏZƏ MƏLUMAT: köhnə keş ekrana çıxmır; yükləmə ekranı göstərilir, buluddan təzə məlumat gələn kimi açılır
+    // 1. YALNIZ TƏZƏ MƏLUMAT: köhnə keş ekrana çıxmır; yükləmə ekranı göstərilir, bulud və Google Sheets paralel yüklənir
     const showBootLoader = () => {
         let el = document.getElementById("bootLoader");
         if (!el) {
@@ -1590,13 +1656,19 @@ async function enterApp(user) {
     };
     const hideBootLoader = () => document.getElementById("bootLoader")?.remove();
 
+    showBootLoader();
+
+    // Google Sheets canlı PMO məlumatını Supabase ilə EYNİ ANDA (paralel) başlat ki ilk açılışda dərhal ən təzə variant görünsün
+    const pmoBootPromise = (typeof window.__fetchPmoInitialWorkbook === "function")
+        ? window.__fetchPmoInitialWorkbook().catch(() => null)
+        : Promise.resolve(null);
+
     let fresh = null;
     if (api.configured) {
-        showBootLoader();
         try {
             fresh = await Promise.race([
                 api.loadAll(user.id),
-                new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 20000))
+                new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 15000))
             ]);
         } catch (err) {
             console.warn("Buluddan yükləmə alınmadı:", err);
@@ -1604,16 +1676,19 @@ async function enterApp(user) {
     }
 
     const rawDbProjectsSnapshot = fresh && Array.isArray(fresh.projects)
-        ? JSON.parse(JSON.stringify(fresh.projects))
+        ? JSON.parse(JSON.stringify(fresh.projects.filter(p => p && !isPmoProjectObj(p))))
         : [];
 
     if (fresh && Array.isArray(fresh.projects)) {
-        Object.assign(state, fresh);
+        Object.assign(state, {
+            ...fresh,
+            projects: fresh.projects.filter(p => p && !isPmoProjectObj(p))
+        });
     } else {
-        // Yalnız internet tamamilə yoxdursa: son saxlanmış məlumatla açılır və aydın xəbərdarlıq verilir
+        // Yalnız internet tamamilə yoxdursa: son saxlanmış qeyri-PMO məlumatla açılır
         const snap = readStore("bcg.db.snapshot.v1", null);
         if (snap && Array.isArray(snap.projects)) {
-            state.projects = snap.projects;
+            state.projects = snap.projects.filter(p => p && !isPmoProjectObj(p));
             if (snap.materials) state.materials = snap.materials;
             if (snap.notes) state.notes = snap.notes;
             state.role = user.role || snap.role || "viewer";
@@ -1621,10 +1696,10 @@ async function enterApp(user) {
         if (api.configured) setTimeout(() => toast("⚠️ İnternet bağlantısı yoxdur — son saxlanmış məlumat göstərilir", true), 300);
     }
 
-    // Baza layihələri ilə lokal/idxal olunmuş layihələri birləşdir
+    // Baza layihələri ilə lokal/idxal olunmuş qeyri-PMO layihələri birləşdir
     const storedImported = getStoredImportedProjects();
     storedImported.forEach(localProj => {
-        if (!localProj || !localProj.id) return;
+        if (!localProj || !localProj.id || isPmoProjectObj(localProj)) return;
         const idx = state.projects.findIndex(p => p.id === localProj.id);
         if (idx >= 0) {
             state.projects[idx] = mergeLocalProjectIntoDb(state.projects[idx], localProj);
@@ -1633,23 +1708,59 @@ async function enterApp(user) {
         }
     });
 
-    // Köhnə demo layihələri sil və D1 PMO layihələrini BCG qovluğuna yerləşdir
+    // Köhnə demo layihələri və kənar/köhnəlmiş pmo_* qalıqlarını təmizlə
     const LEGACY_DEMO_PROJECT_IDS = new Set(["proj_magistral", "proj_gpon_north", "proj_gpon_west", "proj_karabakh"]);
-    state.projects = (state.projects || []).filter(p => p && !LEGACY_DEMO_PROJECT_IDS.has(p.id) && !(p.category === "project" && !p.isPmo && !String(p.id).startsWith("pmo_")));
+    state.projects = (state.projects || []).filter(p => p && !LEGACY_DEMO_PROJECT_IDS.has(p.id) && !isPmoProjectObj(p) && p.category !== "project");
 
-    if (Array.isArray(window.PMO_SEED_PROJECTS) && window.PMO_SEED_PROJECTS.length > 0) {
-        window.PMO_SEED_PROJECTS.forEach(np => {
+    // PMO layihələrini yüklə: əvvəlcə canlı Google Sheets-i gözlə (maksimum 6 san); gecikərsə son canlı keş (IndexedDB/LS) və ya seed ilə aç, gələn kimi yenilə
+    let liveBootApplied = false;
+    const liveWb = await Promise.race([
+        pmoBootPromise,
+        new Promise(resolve => setTimeout(() => resolve("__pending__"), 6000))
+    ]);
+
+    if (liveWb && liveWb !== "__pending__" && typeof window.__applyPmoBootWorkbook === "function") {
+        try {
+            await window.__applyPmoBootWorkbook(liveWb, true);
+            liveBootApplied = state.projects.some(p => isPmoProjectObj(p));
+        } catch (err) {
+            console.warn("PMO boot apply error:", err);
+        }
+    }
+
+    if (!liveBootApplied) {
+        let cachedPmo = readPmoLiveCacheSync();
+        if (!cachedPmo) {
+            try {
+                const idbCached = await Promise.race([
+                    getFromIndexedDB(PMO_LIVE_CACHE_KEY),
+                    new Promise(resolve => setTimeout(() => resolve(null), 400))
+                ]);
+                if (idbCached && Array.isArray(idbCached.projects) && idbCached.projects.length > 0) {
+                    cachedPmo = idbCached.projects.filter(p => p && p.id && p.isPmo);
+                }
+            } catch {}
+        }
+        const fallbackPmoList = (Array.isArray(cachedPmo) && cachedPmo.length > 0)
+            ? cachedPmo
+            : (Array.isArray(window.PMO_SEED_PROJECTS) ? window.PMO_SEED_PROJECTS : []);
+        fallbackPmoList.forEach(np => {
+            if (!np || !np.id) return;
             const idx = state.projects.findIndex(p => p.id === np.id);
-            if (idx >= 0) {
-                if (!state.projects[idx].isPmo) state.projects[idx] = np;
-            } else {
-                state.projects.push(np);
-            }
+            if (idx >= 0) state.projects[idx] = np;
+            else state.projects.push(np);
         });
         state.activeFolders.add("project");
+
+        if (liveWb === "__pending__" && typeof window.__applyPmoBootWorkbook === "function") {
+            pmoBootPromise.then(wb => {
+                if (wb) window.__applyPmoBootWorkbook(wb, false).catch(() => {});
+            }).catch(() => {});
+        }
     }
 
     applySavedMetaOverrides();
+    if (typeof window.applySavedGeomOverrides === "function") window.applySavedGeomOverrides();
     const hiddenSet = getHiddenProjectIds();
     state.projects.forEach(p => {
         if (!hiddenSet.has(p.id)) state.visibleIds.add(p.id);
@@ -1662,12 +1773,17 @@ async function enterApp(user) {
     renderAll();
     hideBootLoader();
 
-    // Əgər bu kompüterdə əlavə edilmiş, lakin bazaya tam düşməmiş nöqtələr/layihələr varsa, arxa fonda dərhal buluda yaz
-    if (isAdmin() && api.configured) {
-        setTimeout(() => syncUnsavedLocalProjectsToCloud(rawDbProjectsSnapshot).catch(() => {}), 400);
+    // Canlı PMO Google Sheets 20 san izləməsini açılış tamamlandıqdan sonra başlat (race condition olmadan)
+    if (typeof window.__startPmoLiveWatch === "function") {
+        window.__startPmoLiveWatch();
     }
 
-    // Canlı sinxronizasiya: başqa cihazdan edilən dəyişikliklər səhifəni yeniləmədən avtomatik əks olunur
+    // Əgər bu kompüterdə əlavə edilmiş, lakin bazaya tam düşməmiş qeyri-PMO nöqtələr/layihələr varsa, arxa fonda dərhal buluda yaz
+    if (isAdmin() && api.configured) {
+        setTimeout(() => syncUnsavedLocalProjectsToCloud(rawDbProjectsSnapshot).catch(() => {}), 600);
+    }
+
+    // Canlı sinxronizasiya: başqa cihazdan edilən qeyri-PMO dəyişikliklər səhifəni yeniləmədən avtomatik əks olunur
     if (api.configured && typeof api.startLiveSync === "function") {
         api.startLiveSync(async () => {
             if ($("editModal")?.open || document.activeElement?.closest?.(".info-card, #editModal")) return;
@@ -1680,12 +1796,12 @@ async function enterApp(user) {
         });
     }
 
-    // Əgər localStorage dolubsa və ya layihələr limitsiz IndexedDB-də saxlanılıbsa, onları da daxil et
+    // Əgər localStorage dolubsa və ya qeyri-PMO layihələr limitsiz IndexedDB-də saxlanılıbsa, onları da daxil et
     getFromIndexedDB(STORAGE_IMPORTED_KEY).then(idbProjs => {
         if (Array.isArray(idbProjs) && idbProjs.length > 0) {
             let changed = false;
             idbProjs.forEach(lp => {
-                if (!lp || !lp.id) return;
+                if (!lp || !lp.id || isPmoProjectObj(lp)) return;
                 const idx = state.projects.findIndex(p => p.id === lp.id);
                 if (idx < 0) {
                     state.projects.push(lp);
@@ -1714,19 +1830,22 @@ async function reloadData() {
     const known = new Set(state.projects.map(p => p.id));
     const knownVisible = new Set(state.visibleIds);
 
-    // Mövcud yaddaşda və lokal depoda olan layihələri qoru
+    // Canlı PMO Google Sheets layihələrini TAM QORU — Supabase reload heç vaxt onların üzərinə köhnə seed və ya stripped məlumat yazmasın!
+    const livePmoProjects = (state.projects || []).filter(p => isPmoProjectObj(p));
+
+    // Mövcud yaddaşda və lokal depoda olan qeyri-PMO layihələri qoru
     const localImported = state.projects.filter(p =>
-        p && (p.imported || p.isLocal || p.category === "other" || String(p.id).startsWith("imp_") || String(p.id).startsWith("proj_custom_") || String(p.id).startsWith("proj_local_") || String(p.id).startsWith("proj_mm_"))
+        p && !isPmoProjectObj(p) && (p.imported || p.isLocal || p.category === "other" || String(p.id).startsWith("imp_") || String(p.id).startsWith("proj_custom_") || String(p.id).startsWith("proj_local_") || String(p.id).startsWith("proj_mm_"))
     );
     const storedImported = getStoredImportedProjects();
 
     const localMap = new Map();
-    storedImported.forEach(p => { if (p && p.id) localMap.set(p.id, p); });
-    localImported.forEach(p => { if (p && p.id) localMap.set(p.id, p); });
+    storedImported.forEach(p => { if (p && p.id && !isPmoProjectObj(p)) localMap.set(p.id, p); });
+    localImported.forEach(p => { if (p && p.id && !isPmoProjectObj(p)) localMap.set(p.id, p); });
 
     try {
         const fresh = await api.loadAll(state.user.id);
-        const dbProjects = fresh.projects || [];
+        const dbProjects = (fresh.projects || []).filter(p => p && !isPmoProjectObj(p));
 
         let merged = [...dbProjects];
         for (const [id, localProj] of localMap.entries()) {
@@ -1738,13 +1857,18 @@ async function reloadData() {
             }
         }
         const LEGACY_DEMO_PROJECT_IDS = new Set(["proj_magistral", "proj_gpon_north", "proj_gpon_west", "proj_karabakh"]);
-        merged = merged.filter(p => p && !LEGACY_DEMO_PROJECT_IDS.has(p.id) && !(p.category === "project" && !p.isPmo && !String(p.id).startsWith("pmo_")));
-        if (Array.isArray(window.PMO_SEED_PROJECTS) && window.PMO_SEED_PROJECTS.length > 0) {
-            window.PMO_SEED_PROJECTS.forEach(np => {
-                const idx = merged.findIndex(p => p.id === np.id);
-                if (idx < 0) merged.push(np);
-            });
-        }
+        merged = merged.filter(p => p && !LEGACY_DEMO_PROJECT_IDS.has(p.id) && !isPmoProjectObj(p) && p.category !== "project");
+
+        // Canlı PMO layihələrini (subPoints və ən son Google Sheets məlumatları ilə) geri qaytar
+        const pmoListToKeep = livePmoProjects.length > 0
+            ? livePmoProjects
+            : (readPmoLiveCacheSync() || (Array.isArray(window.PMO_SEED_PROJECTS) ? window.PMO_SEED_PROJECTS : []));
+        pmoListToKeep.forEach(np => {
+            if (!np || !np.id) return;
+            const idx = merged.findIndex(p => p.id === np.id);
+            if (idx < 0) merged.push(np);
+        });
+
         state.projects = merged;
         if (fresh.contractors) state.contractors = fresh.contractors;
         if (fresh.materials) state.materials = fresh.materials;
@@ -1754,6 +1878,7 @@ async function reloadData() {
     }
 
     applySavedMetaOverrides();
+    if (typeof window.applySavedGeomOverrides === "function") window.applySavedGeomOverrides();
     const hiddenSet = getHiddenProjectIds();
     state.visibleIds.clear();
     state.projects.forEach(p => {
@@ -4922,9 +5047,9 @@ function drawRoutes() {
                         coords = [rmCent];
                     }
                 }
-                const pmoClusterKey = `${project.id}::pmo::${r.id}`;
+                const pmoClusterKey = getPmoRayonClusterKey(project, r);
                 const subPtsWithCoords = (r.pmoRayon.subPoints || []).filter(sp => Array.isArray(sp.coords) && sp.coords.length === 2);
-                const isExpandedPmo = state.expandedRayons.has(pmoClusterKey) && subPtsWithCoords.length > 0;
+                const isExpandedPmo = (state.expandedRayons.has(pmoClusterKey) || state.expandedRayons.has(`${project.id}::pmo::${r.id}`)) && subPtsWithCoords.length > 0;
                 const rawProjBase = cleanProjectName(project.name, project.sheetId || project.pmoMeta?.sheetId);
                 const compactProjName = rawProjBase.length > 32 ? `${rawProjBase.slice(0, 31).trim()}…` : rawProjBase;
 
@@ -5377,6 +5502,9 @@ function drawRoutes() {
 
         // 1) Uzaq miqyas (zoom < 10.2) üçün qovuşmuş kart + yan-yana fərqli ikonlar
         const hasIcrada = grp.entries.some(e => e.r.status === "icrada");
+        const clusterEntries = grp.entries.filter(e => e.clusterKey);
+        const primaryClusterEntry = clusterEntries[0] || first;
+        const allClusterKeys = [...new Set(clusterEntries.map(e => e.clusterKey))].join("|");
         labelFeatures.push({
             type: "Feature",
             geometry: { type: "Point", coordinates: [centerLng, centerLat] },
@@ -5389,9 +5517,10 @@ function drawRoutes() {
                 centerLat,
                 color: first.stColor,
                 dim: grp.entries.every(e => e.dim),
-                projectId: first.project.id,
-                itemId: first.r.id,
-                clusterKey: grp.clusterKey || first.clusterKey || "",
+                projectId: primaryClusterEntry.project.id,
+                itemId: primaryClusterEntry.r.id,
+                clusterKey: primaryClusterEntry.clusterKey || "",
+                allClusterKeys,
                 tip: mergedTip,
                 cardAnchor: grpCorner.anchor,
                 cardOffset: grpCorner.offset,
@@ -5426,7 +5555,8 @@ function drawRoutes() {
                     sel: e.sel,
                     projectId: e.project.id,
                     itemId: e.r.id,
-                    clusterKey: e.clusterKey || grp.clusterKey || "",
+                    clusterKey: e.clusterKey || primaryClusterEntry.clusterKey || "",
+                    allClusterKeys,
                     tip: n > 1 ? mergedTip : singleTip
                 }
             });
@@ -5478,7 +5608,7 @@ function drawRoutes() {
                 sel: e.sel,
                 projectId: e.project.id,
                 itemId: e.r.id,
-                clusterKey: grp.clusterKey || e.clusterKey || "",
+                clusterKey: e.clusterKey || "",
                 tip: singleTip,
                 cardAnchor,
                 cardOffset,
@@ -5570,63 +5700,215 @@ function clearSelection() {
     renderAll();
 }
 
-function toggleRayonClusterExpand(clusterKey, project, item) {
-    if (!clusterKey || !project) return false;
-    if (!state.expandedRayons) state.expandedRayons = new Set();
-    if (state.expandedRayons.has(clusterKey)) {
-        state.expandedRayons.delete(clusterKey);
-        if (state.selected?.pmoSubId) state.selected.pmoSubId = null;
-        renderAll();
-        toast("📍 Rayon nöqtələri ümumi status altında birləşdirildi");
+function getPmoRayonClusterKey(project, item) {
+    if (!project || !item) return "";
+    const normName = String(item.name || item.rayon || item.id || "")
+        .toLocaleLowerCase("az")
+        .replace(/\s*rayon(u)?\b/gi, "")
+        .replace(/\s*şəhər(i)?\b/gi, "")
+        .replace(/[^a-z0-9əıöüçşğ]/gi, "")
+        .trim();
+    return `${project.id}::pmo::${normName || item.id}`;
+}
+window.getPmoRayonClusterKey = getPmoRayonClusterKey;
+
+function resolvePmoClusterTarget(clusterKey, fallbackProject = null, fallbackItem = null) {
+    if (!clusterKey || !String(clusterKey).includes("::pmo::")) {
+        return { project: fallbackProject, item: fallbackItem };
+    }
+    const [projId, , tail] = String(clusterKey).split("::");
+    const project = (state.projects || []).find(p => p.id === projId) || fallbackProject;
+    if (!project) return { project: null, item: null };
+    const item = (project.items || []).find(it =>
+        getPmoRayonClusterKey(project, it) === clusterKey || it.id === tail
+    ) || fallbackItem;
+    return { project, item };
+}
+
+let _lastRayonToggleSig = "";
+let _lastRayonToggleAt = 0;
+
+function toggleRayonClusterExpand(clusterKey, project, item, opts = {}) {
+    if (!clusterKey) return false;
+    const now = Date.now();
+    // Eyni 2x klikdə onMapClick + onMapDblClick ardıcıl düşüb açılan rayonu 1ms sonra bağlamasın!
+    if (!opts.bypassDebounce && clusterKey === _lastRayonToggleSig && (now - _lastRayonToggleAt) < 480) {
         return true;
     }
-    state.expandedRayons.add(clusterKey);
-    renderAll();
-    if (item?.isPmoRayon && item?.pmoRayon?.subPoints) {
-        const subCoords = item.pmoRayon.subPoints
+    const resolved = resolvePmoClusterTarget(clusterKey, project, item);
+    const targetProj = resolved.project || project;
+    const targetItem = resolved.item || item;
+    if (!targetProj) return false;
+
+    const stableKey = (targetItem?.isPmoRayon) ? getPmoRayonClusterKey(targetProj, targetItem) : clusterKey;
+    const legacyKey = targetItem ? `${targetProj.id}::pmo::${targetItem.id}` : "";
+    _lastRayonToggleSig = clusterKey;
+    _lastRayonToggleAt = now;
+
+    if (!state.expandedRayons) state.expandedRayons = new Set();
+    if (state.expandedRayons.has(stableKey) || (legacyKey && state.expandedRayons.has(legacyKey)) || state.expandedRayons.has(clusterKey)) {
+        state.expandedRayons.delete(stableKey);
+        if (legacyKey) state.expandedRayons.delete(legacyKey);
+        state.expandedRayons.delete(clusterKey);
+        if (state.selected?.pmoSubId) state.selected.pmoSubId = null;
+        if (!opts.silentRender) {
+            renderAll();
+            toast("📍 Rayon nöqtələri ümumi status altında birləşdirildi");
+        }
+        return true;
+    }
+
+    if (targetItem?.isPmoRayon && targetItem?.pmoRayon) {
+        // Əgər hansısa səbəbdən subPoints boşdursa, seed-dən avtomatik bərpa et
+        if ((!Array.isArray(targetItem.pmoRayon.subPoints) || targetItem.pmoRayon.subPoints.length === 0) && Array.isArray(window.PMO_SEED_PROJECTS)) {
+            const seedP = window.PMO_SEED_PROJECTS.find(p => p.id === targetProj.id || (targetProj.sheetId && p.sheetId === targetProj.sheetId));
+            const seedIt = seedP?.items?.find(it => getPmoRayonClusterKey(targetProj, it) === stableKey);
+            if (Array.isArray(seedIt?.pmoRayon?.subPoints) && seedIt.pmoRayon.subPoints.length > 0) {
+                targetItem.pmoRayon.subPoints = seedIt.pmoRayon.subPoints;
+            }
+        }
+        const subCoords = (targetItem.pmoRayon.subPoints || [])
             .filter(sp => Array.isArray(sp.coords) && sp.coords.length === 2)
             .map(sp => (sp.coords[0] >= 43.5 && sp.coords[1] <= 42.5) ? [sp.coords[1], sp.coords[0]] : sp.coords);
-        if (subCoords.length > 0) {
-            flyToCoords(subCoords);
-            const isTemir = Boolean(item.pmoRayon.temirMeta?.isTemirRm || String(project.sheetId || "") === "15.3");
-            toast(isTemir
-                ? `📍 ${item.name} üzrə ${subCoords.length} rayon xəritədə paylandı!`
-                : `📍 ${item.name} rayonu üzrə ${subCoords.length} nöqtə öz koordinatlarına parçalandı!`);
-            return true;
+        if (subCoords.length === 0) {
+            if (!opts.silentRender) {
+                toast(`ℹ️ ${targetItem.name} üzrə koordinatlı alt-nöqtə qeyd olunmayıb`);
+            }
+            return false;
         }
+        state.expandedRayons.add(stableKey);
+        if (!opts.silentRender) {
+            renderAll();
+            flyToCoords(subCoords);
+            const isTemir = Boolean(targetItem.pmoRayon.temirMeta?.isTemirRm || String(targetProj.sheetId || "") === "15.3");
+            toast(isTemir
+                ? `📍 ${targetItem.name} üzrə ${subCoords.length} rayon xəritədə paylandı!`
+                : `📍 ${targetItem.name} rayonu üzrə ${subCoords.length} nöqtə öz koordinatlarına parçalandı!`);
+        }
+        return { expanded: true, coords: subCoords, count: subCoords.length, name: targetItem.name };
     }
-    const rayonNorm = clusterKey.split("::")[1] || "";
-    const clusterCoords = (project.items || [])
+
+    state.expandedRayons.add(stableKey);
+    const rayonNorm = stableKey.split("::")[1] || "";
+    const clusterCoords = (targetProj.items || [])
         .filter(it => String(it.rayon || "").replace(/\s*rayon(u)?(?![a-zəçşğıöü])/gi, "").trim().toLocaleLowerCase("az") === rayonNorm)
         .flatMap(it => it.coords || []);
-    flyToCoords(clusterCoords.length ? clusterCoords : (item?.coords || []));
-    toast("📍 Rayon üzrə alt-nöqtələr xəritədə öz koordinatlarına paylandı!");
-    return true;
+    if (!opts.silentRender) {
+        renderAll();
+        flyToCoords(clusterCoords.length ? clusterCoords : (targetItem?.coords || []));
+        toast("📍 Rayon üzrə alt-nöqtələr xəritədə öz koordinatlarına paylandı!");
+    }
+    return { expanded: true, coords: clusterCoords.length ? clusterCoords : (targetItem?.coords || []) };
 }
 window.toggleRayonClusterExpand = toggleRayonClusterExpand;
 
+function toggleMergedRayonClusters(allKeysStr, singleKey, project, item) {
+    const keys = String(allKeysStr || "").split("|").map(s => s.trim()).filter(Boolean);
+    if (keys.length <= 1) {
+        return toggleRayonClusterExpand(keys[0] || singleKey, project, item);
+    }
+    const sig = keys.join("|");
+    const now = Date.now();
+    if (sig === _lastRayonToggleSig && (now - _lastRayonToggleAt) < 480) {
+        return true;
+    }
+    _lastRayonToggleSig = sig;
+    _lastRayonToggleAt = now;
+    if (!state.expandedRayons) state.expandedRayons = new Set();
+
+    const anyNotExpanded = keys.some(k => !state.expandedRayons.has(k));
+    const allCoords = [];
+    let totalPts = 0;
+    keys.forEach(k => {
+        const res = resolvePmoClusterTarget(k);
+        if (!res.project || !res.item) return;
+        if (anyNotExpanded) {
+            if (!state.expandedRayons.has(k)) {
+                const r = toggleRayonClusterExpand(k, res.project, res.item, { silentRender: true, bypassDebounce: true });
+                if (r && Array.isArray(r.coords)) {
+                    allCoords.push(...r.coords);
+                    totalPts += r.count || r.coords.length;
+                }
+            }
+        } else {
+            state.expandedRayons.delete(k);
+        }
+    });
+    renderAll();
+    if (anyNotExpanded && allCoords.length > 0) {
+        flyToCoords(allCoords);
+        toast(`📍 ${item?.name || "Rayon"} üzrə ${totalPts} nöqtə öz koordinatlarına parçalandı!`);
+    } else if (!anyNotExpanded) {
+        if (state.selected?.pmoSubId) state.selected.pmoSubId = null;
+        toast("📍 Rayon nöqtələri ümumi status altında birləşdirildi");
+    }
+    return true;
+}
+
 const MAP_HIT_LAYERS = ["routes-summary-card", "routes-summary-card-merged", "routes-summary-name", "routes-point-halo-split", "routes-point-shape-split", "routes-point-halo", "routes-point-shape", "routes-point-label", "routes-point-label-near", "routes-point-name", "routes-ends", "routes-ends-label", "routes-other-points", "routes-other-line", "routes-fo-points", "routes-hit", "routes-other", "routes-poly-line", "routes-poly-fill"];
 
-function onMapDblClick(e) {
-    if (tools.isActive()) return;
-    const box = [[e.point.x - 38, e.point.y - 38], [e.point.x + 38, e.point.y + 38]];
-    const hits = map.queryRenderedFeatures(box, { layers: MAP_HIT_LAYERS });
-    if (!hits || hits.length === 0) return;
-    const hit = hits[0];
-    const project = state.projects.find(p => p.id === hit.properties.projectId);
-    const item = project?.items.find(r => r.id === hit.properties.itemId);
-    const clusterKey = hit.properties?.clusterKey || (item?.isPmoRayon && item?.pmoRayon?.subPoints?.some(sp => sp.coords) ? `${project?.id}::pmo::${item?.id}` : "");
-    if (clusterKey && project) {
-        e.preventDefault();
-        lastMapPtClickTime = 0;
-        toggleRayonClusterExpand(clusterKey, project, item);
+function pickBestMapHit(point, preferCluster = false) {
+    if (!map || !point) return null;
+    const activeLayers = MAP_HIT_LAYERS.filter(id => map.getLayer(id));
+    if (activeLayers.length === 0) return null;
+
+    const scoreHit = f => {
+        const p = f?.properties || {};
+        if (!p.projectId) return -1;
+        let s = 0;
+        if (p.isPmoSubPoint) s += 110;
+        if (p.isSummary || p.isRayonPoint) s += 90;
+        if (p.clusterKey || p.allClusterKeys) s += (preferCluster ? 160 : 50);
+        if (p.isPolygon) s -= 60;
+        if (p.isOther) s -= 40;
+        return s;
+    };
+
+    const radii = preferCluster ? [16, 36] : [14, 30];
+    for (const r of radii) {
+        const box = [[point.x - r, point.y - r], [point.x + r, point.y + r]];
+        const hits = map.queryRenderedFeatures(box, { layers: activeLayers });
+        if (hits && hits.length > 0) {
+            const ranked = hits.slice().sort((a, b) => scoreHit(b) - scoreHit(a));
+            if (!preferCluster || scoreHit(ranked[0]) > 40 || r === radii[radii.length - 1]) {
+                return ranked[0];
+            }
+        }
     }
+    return null;
 }
 
 let lastMapPtClickTime = 0;
 let lastMapPtClickKey = "";
 let lastMapPtClusterKey = "";
+let lastMapPtAllClusterKeys = "";
 let lastMapPtPoint = null;
+let _multiRayonFlyTimer = null;
+
+function onMapDblClick(e) {
+    if (tools.isActive()) return;
+    if (_multiRayonFlyTimer) { clearTimeout(_multiRayonFlyTimer); _multiRayonFlyTimer = null; }
+    // Əgər onMapClick 2-ci klikdə rayonu artıq parçalayıbsa, MapLibre-in doubleClickZoom hərəkətini blokla və təkrar bağlama!
+    if ((Date.now() - _lastRayonToggleAt) < 520) {
+        e.preventDefault();
+        return;
+    }
+    const hit = pickBestMapHit(e.point, true);
+    if (!hit) return;
+    const project = state.projects.find(p => p.id === hit.properties.projectId);
+    const item = project?.items.find(r => r.id === hit.properties.itemId);
+    const clusterKey = hit.properties?.clusterKey || (item?.isPmoRayon && item?.pmoRayon?.subPoints?.some(sp => sp.coords) ? getPmoRayonClusterKey(project, item) : "");
+    const allKeys = hit.properties?.allClusterKeys || "";
+    if ((clusterKey || allKeys) && project) {
+        e.preventDefault();
+        lastMapPtClickTime = 0;
+        if (allKeys && hit.properties?.isMultiRayon && map.getZoom() < 10.2) {
+            toggleMergedRayonClusters(allKeys, clusterKey, project, item);
+        } else {
+            toggleRayonClusterExpand(clusterKey || allKeys.split("|")[0], project, item);
+        }
+    }
+}
 
 function onMapClick(e) {
     $("coordClicked").value = `${e.lngLat.lat.toFixed(6)}, ${e.lngLat.lng.toFixed(6)}`;
@@ -5636,22 +5918,29 @@ function onMapClick(e) {
         setSidebar(false);
         setDrawer(false);
     }
-    const box = [[e.point.x - 32, e.point.y - 32], [e.point.x + 32, e.point.y + 32]];
-    const hit = map.queryRenderedFeatures(box, { layers: MAP_HIT_LAYERS })[0];
+    const hit = pickBestMapHit(e.point, false);
     if (!hit) return;
     const project = state.projects.find(p => p.id === hit.properties.projectId);
     const item = project?.items.find(r => r.id === hit.properties.itemId);
     const pmoSubId = hit.properties?.pmoSubId || null;
-    const clusterKey = hit.properties?.clusterKey || (item?.isPmoRayon && item?.pmoRayon?.subPoints?.some(sp => sp.coords) ? `${project?.id}::pmo::${item?.id}` : "");
+    const clusterKey = hit.properties?.clusterKey || (item?.isPmoRayon && item?.pmoRayon?.subPoints?.some(sp => sp.coords) ? getPmoRayonClusterKey(project, item) : "");
+    const allKeys = hit.properties?.allClusterKeys || "";
     const clickKey = clusterKey || `${hit.properties?.projectId}:${hit.properties?.itemId}`;
     const now = Date.now();
 
-    // 2x Klik (ehtiyat detektor): Rayon nöqtəsinin yaxınlığına (45px) 2 dəfə ardıcıl vurduqda qəbul edilsin
+    // 2x Klik detektoru: Rayon nöqtəsinin/kartının yaxınlığına (48px) 2 dəfə ardıcıl vurduqda dərhal parçala
     const distToLast = lastMapPtPoint ? Math.hypot(e.point.x - lastMapPtPoint.x, e.point.y - lastMapPtPoint.y) : 999;
-    if (now - lastMapPtClickTime < 650 && distToLast < 45 && project) {
+    if (now - lastMapPtClickTime < 650 && distToLast < 48 && project) {
+        if (_multiRayonFlyTimer) { clearTimeout(_multiRayonFlyTimer); _multiRayonFlyTimer = null; }
         lastMapPtClickTime = 0;
-        if (clusterKey || (lastMapPtClusterKey && lastMapPtClusterKey.includes(project.id))) {
-            toggleRayonClusterExpand(clusterKey || lastMapPtClusterKey, project, item);
+        const effKey = clusterKey || (lastMapPtClusterKey && lastMapPtClusterKey.includes(project.id) ? lastMapPtClusterKey : "");
+        const effAllKeys = allKeys || lastMapPtAllClusterKeys || "";
+        if (effAllKeys && hit.properties?.isMultiRayon && map.getZoom() < 10.2) {
+            toggleMergedRayonClusters(effAllKeys, effKey, project, item);
+            return;
+        }
+        if (effKey || effAllKeys) {
+            toggleRayonClusterExpand(effKey || effAllKeys.split("|")[0], project, item);
             return;
         }
         if (item?.coords) {
@@ -5662,12 +5951,18 @@ function onMapClick(e) {
     lastMapPtClickTime = now;
     lastMapPtClickKey = clickKey;
     lastMapPtClusterKey = clusterKey;
+    lastMapPtAllClusterKeys = allKeys;
     lastMapPtPoint = { x: e.point.x, y: e.point.y };
 
+    if (_multiRayonFlyTimer) { clearTimeout(_multiRayonFlyTimer); _multiRayonFlyTimer = null; }
     if (hit.properties?.isMultiRayon && map.getZoom() < 10.2) {
         const cLng = Number(hit.properties.centerLng) || e.lngLat.lng;
         const cLat = Number(hit.properties.centerLat) || e.lngLat.lat;
-        map.flyTo({ center: [cLng, cLat], zoom: 10.6, duration: 650 });
+        // Tək klikdə 2-ci klik gəlmirsə (340ms sonra) zoom et — beləliklə 2x kliklə parçalanma heç vaxt pozulmur!
+        _multiRayonFlyTimer = setTimeout(() => {
+            _multiRayonFlyTimer = null;
+            map.flyTo({ center: [cLng, cLat], zoom: 10.6, duration: 650 });
+        }, 340);
     }
     if (project && item) selectSegment(project, item, false, pmoSubId);
 }
@@ -8507,6 +8802,7 @@ document.addEventListener("DOMContentLoaded", init);
             });
         } catch {}
     }
+    window.applySavedGeomOverrides = applySavedGeomOverrides;
 
     function clearGeomHandles() {
         if (!geomEditState) return;
@@ -9627,8 +9923,8 @@ document.addEventListener("DOMContentLoaded", init);
                             const pr = r.pmoRayon || {};
                             const rTone = statusTone(r.status);
                             const subCnt = (pr.subPoints || []).filter(sp => sp.coords).length;
-                            const clusterKey = `${proj.id}::pmo::${r.id}`;
-                            const isExp = state.expandedRayons?.has(clusterKey);
+                            const clusterKey = getPmoRayonClusterKey(proj, r);
+                            const isExp = Boolean(state.expandedRayons?.has(clusterKey) || state.expandedRayons?.has(`${proj.id}::pmo::${r.id}`));
                             const tm = pr.temirMeta;
                             const isTemir153 = Boolean(tm?.isTemirRm || String(proj.sheetId || proj.pmoMeta?.sheetId || "") === "15.3");
                             if (isTemir153) {
@@ -12065,9 +12361,26 @@ document.addEventListener("DOMContentLoaded", init);
                 } else if (cB) {
                     coords = [[Number((cB[0] + 0.035).toFixed(6)), Number((cB[1] + 0.045).toFixed(6))], cB];
                 } else {
-                    const fbA = lookupAzRayonCoord(pointA || dVal, magIdx);
-                    const fbB = lookupAzRayonCoord(pointB || `${dVal}_b`, magIdx + 1);
-                    coords = [fbA, fbB];
+                    const sheetTitle = String(rows[0]?.A || rows[0]?.B || "").trim();
+                    const titleCoord = findKnownAzRayonCoord(sheetTitle);
+                    const ptCoords = points.filter(pt => Array.isArray(pt.coords) && pt.coords.length === 2).map(pt => pt.coords);
+                    let basePt = titleCoord;
+                    if (!basePt && ptCoords.length > 0) {
+                        const avgLat = ptCoords.reduce((s, c) => s + c[0], 0) / ptCoords.length;
+                        const avgLng = ptCoords.reduce((s, c) => s + c[1], 0) / ptCoords.length;
+                        basePt = [Number(avgLat.toFixed(6)), Number(avgLng.toFixed(6))];
+                    }
+                    if (basePt) {
+                        coords = [
+                            [Number((basePt[0] - 0.025).toFixed(6)), Number((basePt[1] - 0.038).toFixed(6))],
+                            basePt,
+                            [Number((basePt[0] + 0.025).toFixed(6)), Number((basePt[1] + 0.038).toFixed(6))]
+                        ];
+                    } else {
+                        const fbA = lookupAzRayonCoord(pointA || dVal, magIdx);
+                        const fbB = lookupAzRayonCoord(pointB || `${dVal}_b`, magIdx + 1);
+                        coords = [fbA, fbB];
+                    }
                 }
             }
 
@@ -12736,7 +13049,11 @@ document.addEventListener("DOMContentLoaded", init);
 
         // Dəyişiklik olub-olmadığını yoxla: bütün sətirlərin bütün sahələri (ad, lif sayı, status, ünvan, məsafə, icraçı və s.) tam müqayisə olunur
         const newHash = JSON.stringify(parsedProjects);
-        if (silent && newHash === pmoLastContentHash) {
+        const stateAlreadyHasAllLivePmo = parsedProjects.length > 0 && parsedProjects.every(np => {
+            const cur = (state.projects || []).find(p => p.id === np.id && p.isPmo);
+            return cur && Array.isArray(cur.items) && cur.items.length === np.items.length;
+        });
+        if (silent && newHash === pmoLastContentHash && stateAlreadyHasAllLivePmo) {
             return { updated: 0, added: 0, unchanged: true };
         }
         pmoLastContentHash = newHash;
@@ -12885,6 +13202,14 @@ document.addEventListener("DOMContentLoaded", init);
                         }
                     }
                 }
+                if (state.selected?.projectId === np.id && state.selected.itemId && !np.items.some(it => it.id === state.selected.itemId)) {
+                    const oldSel = prev?.items?.find(it => it.id === state.selected.itemId);
+                    if (oldSel) {
+                        const oldNorm = normMatchName(oldSel.name || oldSel.rayon);
+                        const matchedNew = np.items.find(it => normMatchName(it.name || it.rayon) === oldNorm);
+                        if (matchedNew) state.selected.itemId = matchedNew.id;
+                    }
+                }
                 state.projects[idx] = np;
                 updatedCount++;
             } else {
@@ -12895,6 +13220,9 @@ document.addEventListener("DOMContentLoaded", init);
         });
         state.activeFolders.add("project");
         if (typeof applySavedGeomOverrides === "function") applySavedGeomOverrides();
+        if (typeof window.savePmoLiveCache === "function") {
+            window.savePmoLiveCache(state.projects.filter(p => p && p.isPmo));
+        }
 
         renderAll();
         renderPmoNotifsUI();
@@ -13987,7 +14315,10 @@ document.addEventListener("DOMContentLoaded", init);
                     const item = n.itemId ? proj.items.find(it => it.id === n.itemId) : null;
                     if (item && n.pmoSubId) {
                         if (!state.expandedRayons) state.expandedRayons = new Set();
-                        state.expandedRayons.add(`${proj.id}::pmo::${item.id}`);
+                        const ck = typeof window.getPmoRayonClusterKey === "function"
+                            ? window.getPmoRayonClusterKey(proj, item)
+                            : `${proj.id}::pmo::${item.id}`;
+                        state.expandedRayons.add(ck);
                         selectSegment(proj, item, true, n.pmoSubId);
                     } else if (item) {
                         selectSegment(proj, item, true);
@@ -14000,32 +14331,42 @@ document.addEventListener("DOMContentLoaded", init);
             }
         });
         renderPmoNotifsUI();
-
-        // Canlı PMO Google Sheets linkinə sayt açılan kimi avtomatik qoşul və hər 10 saniyədən bir yenilə
-        const triggerPmoAutoSync = async () => {
-            const cfg = loadPmoConfig();
-            const targetUrl = cfg.url || DEFAULT_PMO_SHEET_URL;
-            if (targetUrl) {
-                try {
-                    pmoSourceType = "url";
-                    pmoSourceName = "PMO Google Sheets";
-                    const wb = await fetchPmoWorkbookFromUrl(targetUrl, cfg.useDomainAuth);
-                    pmoWorkbook = wb;
-                    const res = await applyPmoDataToMap(wb, false);
-                    if (res && (res.added > 0 || res.updated > 0)) {
-                        toast(`📊 PMO Google Sheets canlı qoşuldu (${res.added + res.updated} layihə sinxronlaşdırıldı)`);
-                    }
-                } catch (err) {
-                    console.warn("PMO auto-sync initial fetch error:", err);
-                } finally {
-                    startPmoLiveWatch();
-                }
-            } else {
-                startPmoLiveWatch();
-            }
-        };
-        setTimeout(triggerPmoAutoSync, 1200);
     }
+
+    // Açılışda race condition olmaması üçün boot hook-ları sinxron olaraq window-a çıxarılır (enterApp paralel çağırır)
+    let pmoInitialFetchPromise = null;
+    window.__fetchPmoInitialWorkbook = () => {
+        if (pmoInitialFetchPromise) return pmoInitialFetchPromise;
+        const cfg = loadPmoConfig();
+        const targetUrl = cfg.url || DEFAULT_PMO_SHEET_URL;
+        if (!targetUrl) return Promise.resolve(null);
+        pmoSourceType = "url";
+        pmoSourceName = "PMO Google Sheets";
+        pmoInitialFetchPromise = fetchPmoWorkbookFromUrl(targetUrl, cfg.useDomainAuth)
+            .then(wb => {
+                pmoWorkbook = wb;
+                return wb;
+            })
+            .catch(err => {
+                console.warn("PMO boot initial fetch error:", err);
+                pmoInitialFetchPromise = null;
+                return null;
+            });
+        return pmoInitialFetchPromise;
+    };
+
+    window.__applyPmoBootWorkbook = async (wb, silent = true) => {
+        if (!wb) return { updated: 0, added: 0 };
+        pmoWorkbook = wb;
+        pmoLastContentHash = "";
+        const res = await applyPmoDataToMap(wb, silent);
+        updatePmoLiveIndicators(true, "PMO Google Sheets");
+        return res;
+    };
+
+    window.__startPmoLiveWatch = () => {
+        startPmoLiveWatch();
+    };
 
     document.addEventListener("DOMContentLoaded", initPmoExcelIntegration);
 })();

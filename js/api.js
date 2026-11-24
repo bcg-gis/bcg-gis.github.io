@@ -202,7 +202,7 @@ const api = (() => {
         const delProjs = getDeletedProjectsSet();
         const delSegs = getDeletedSegmentsSet();
         return (Array.isArray(projList) ? projList : [])
-            .filter(p => p && !delProjs.has(p.id) && !LEGACY_DEMO_PROJECT_IDS.has(p.id) && !(p.category === "project" && !p.isPmo && !String(p.id).startsWith("pmo_")))
+            .filter(p => p && !delProjs.has(p.id) && !LEGACY_DEMO_PROJECT_IDS.has(p.id) && !String(p.id).startsWith("pmo_") && !(p.category === "project" && !p.isPmo && !String(p.id).startsWith("pmo_")))
             .map(p => ({
                 ...p,
                 items: (p.items || []).filter(r => r && !delSegs.has(`${p.id}:${r.id}`))
@@ -637,6 +637,7 @@ const api = (() => {
                     if (Array.isArray(customList)) {
                         customList.forEach(entry => {
                             if (!entry || !entry.projectId || !entry.item?.id) return;
+                            if (String(entry.projectId).startsWith("pmo_")) return;
                             if (delProjs.has(entry.projectId) || delSegs.has(`${entry.projectId}:${entry.item.id}`)) return;
                             let proj = mappedProjects.find(p => p.id === entry.projectId);
                             if (!proj && entry.newProjectMeta) {
@@ -651,11 +652,13 @@ const api = (() => {
                     const sMeta = JSON.parse(localStorage.getItem("bcg.seg.meta.v1") || "{}");
                     if (sMeta && typeof sMeta === "object") {
                         for (const [k, m] of Object.entries(sMeta)) {
+                            if (k.startsWith("pmo_")) continue;
                             if (!m || !Array.isArray(m.coords) || m.coords.length === 0) continue;
                             const sepIdx = k.indexOf(":");
                             if (sepIdx <= 0) continue;
                             const pId = k.slice(0, sepIdx);
                             const sId = k.slice(sepIdx + 1);
+                            if (pId.startsWith("pmo_")) continue;
                             if (delProjs.has(pId) || delSegs.has(k)) continue;
                             const proj = mappedProjects.find(p => p.id === pId);
                             if (proj && !proj.items.some(i => i.id === sId)) {
@@ -804,6 +807,7 @@ const api = (() => {
 
         /* Layihə və seqmentləri bazada saxla. Əgər FK və ya constraint xətası olarsa təhlükəsiz bərpa et */
         async saveProject(project) {
+            if (!project || !project.id || project.isPmo || String(project.id).startsWith("pmo_")) return;
             const VALID_DB_STATUSES = ["bitmis", "icrada", "tehvil", "layihe"];
             const dbStatus = VALID_DB_STATUSES.includes(project.status) ? project.status : "layihe";
             const dbType = project.type === "points" ? "points" : "lines";
@@ -939,6 +943,7 @@ const api = (() => {
         },
 
         async saveSegment(projectId, code, row, extraMeta = null) {
+            if (!projectId || String(projectId).startsWith("pmo_")) return;
             const VALID_DB_STATUSES = ["bitmis", "icrada", "tehvil", "layihe"];
             const segCode = code || row.code;
             let basePointB = row.point_b;
