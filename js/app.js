@@ -6859,15 +6859,19 @@ function renderAll() {
 
 /* QEYDLƏR */
 function renderNotes() {
-    $("notesList").innerHTML = state.notes.length === 0
-        ? `<div class="empty">${t("notesEmpty")}</div>`
-        : state.notes.map(n => `
-            <div class="note">
-                <p>${esc(n.text)}<small>${esc(n.author)} · ${new Date(n.date).toLocaleString(state.lang)}</small></p>
-                ${isAdmin() || n.userId === state.user?.id ? `<button class="icon-btn small" data-id="${n.id}" title="${t("delete")}"><i class="fa-solid fa-trash"></i></button>` : ""}
-            </div>`).join("");
-    $("notesCount").hidden = state.notes.length === 0;
-    $("notesCount").textContent = state.notes.length;
+    if ($("notesList")) {
+        $("notesList").innerHTML = state.notes.length === 0
+            ? `<div class="empty">${t("notesEmpty")}</div>`
+            : state.notes.map(n => `
+                <div class="note">
+                    <p>${esc(n.text)}<small>${esc(n.author)} · ${new Date(n.date).toLocaleString(state.lang)}</small></p>
+                    ${isAdmin() || n.userId === state.user?.id ? `<button class="icon-btn small" data-id="${n.id}" title="${t("delete")}"><i class="fa-solid fa-trash"></i></button>` : ""}
+                </div>`).join("");
+    }
+    if ($("notesCount")) {
+        $("notesCount").hidden = state.notes.length === 0;
+        $("notesCount").textContent = state.notes.length;
+    }
 }
 
 async function addNote(event) {
@@ -7682,7 +7686,14 @@ function bindEvents() {
         $("menuBtn").setAttribute("aria-expanded", open);
     });
 
-    $("notesBtn").addEventListener("click", () => $("notesModal").showModal());
+    $("notesBtn")?.addEventListener("click", () => $("notesModal")?.showModal());
+    $("quickGuideBtn")?.addEventListener("click", () => {
+        $("topActions")?.classList.remove("open");
+        $("quickGuideModal")?.showModal();
+    });
+    $("quickGuideModal")?.addEventListener("click", e => {
+        if (e.target === $("quickGuideModal")) $("quickGuideModal").close();
+    });
     $("materialsBtn")?.addEventListener("click", () => $("materialsModal")?.showModal());
     $("printBtn").addEventListener("click", () => openExportPrintModal());
 
@@ -8199,30 +8210,60 @@ document.addEventListener("DOMContentLoaded", init);
             else if (act === "mmCancel") cancelMapMarkerCreate();
         });
 
-        // 4) Map Marker üslubunda Admin Kənar Əlavəetmə Paneli (Mövcud layihə daxilində yeni Xətt və Nöqtə yaratma)
+        // 4) Map Marker üslubunda yığcam "+" düyməsi (klikləyəndə Yeni Nöqtə / Yeni Xətt seçimi açılır — yalnız Admin)
         const mmDock = document.createElement("div");
         mmDock.id = "mapMarkerDock";
         mmDock.className = "map-marker-dock";
         mmDock.hidden = !isAdmin();
         mmDock.innerHTML = `
-            <div class="mm-dock-title"><i class="fa-solid fa-compass-drafting"></i> Layihəyə əlavə et</div>
-            <button type="button" class="mm-btn" data-mm-start="point" title="Xəritədə nöqtə qoy və mövcud layihəyə əlavə et">
-                <i class="fa-solid fa-location-dot"></i> + Yeni Nöqtə
-            </button>
-            <button type="button" class="mm-btn" data-mm-start="line" title="Xəritədə xətt çək və mövcud layihəyə əlavə et">
-                <i class="fa-solid fa-route"></i> + Yeni Xətt
+            <div class="mm-fab-menu" id="mmFabMenu" hidden>
+                <div class="mm-dock-title"><i class="fa-solid fa-compass-drafting"></i> Nə əlavə edək?</div>
+                <button type="button" class="mm-btn" data-mm-start="point" title="Xəritədə nöqtə qoy və layihəyə əlavə et">
+                    <i class="fa-solid fa-location-dot"></i> Yeni Nöqtə
+                </button>
+                <button type="button" class="mm-btn" data-mm-start="line" title="Xəritədə xətt çək və layihəyə əlavə et">
+                    <i class="fa-solid fa-route"></i> Yeni Xətt
+                </button>
+            </div>
+            <button type="button" class="mm-fab-btn" id="mmFabToggle" title="Layihəyə yeni nöqtə və ya xətt əlavə et" aria-expanded="false">
+                <i class="fa-solid fa-plus"></i>
             </button>
         `;
         stage.appendChild(mmDock);
 
+        const setMmMenuOpen = open => {
+            const menu = mmDock.querySelector("#mmFabMenu");
+            const fab = mmDock.querySelector("#mmFabToggle");
+            if (menu) menu.hidden = !open;
+            mmDock.classList.toggle("open", open);
+            if (fab) fab.setAttribute("aria-expanded", String(open));
+        };
+
         mmDock.addEventListener("click", e => {
+            e.stopPropagation();
+            if (e.target.closest("#mmFabToggle")) {
+                if (mmCreateState) {
+                    cancelMapMarkerCreate();
+                    setMmMenuOpen(false);
+                    return;
+                }
+                setMmMenuOpen(!mmDock.classList.contains("open"));
+                return;
+            }
             const btn = e.target.closest("[data-mm-start]");
             if (!btn) return;
             const mode = btn.dataset.mmStart;
+            setMmMenuOpen(false);
             if (mmCreateState && mmCreateState.mode === mode) {
                 cancelMapMarkerCreate();
             } else {
                 startMapMarkerCreate(mode);
+            }
+        });
+
+        document.addEventListener("click", e => {
+            if (mmDock.classList.contains("open") && !e.target.closest("#mapMarkerDock")) {
+                setMmMenuOpen(false);
             }
         });
 
@@ -9132,6 +9173,7 @@ document.addEventListener("DOMContentLoaded", init);
         document.querySelectorAll("[data-mm-start]").forEach(btn => {
             btn.classList.toggle("active", btn.dataset.mmStart === mode);
         });
+        $("mmFabToggle")?.classList.add("active");
         if (window.map) map.getCanvas().style.cursor = "crosshair";
         updateMmBar();
         toast(mode === "point"
@@ -9171,6 +9213,7 @@ document.addEventListener("DOMContentLoaded", init);
         mmCreateState = null;
         window.__mmDraftCoords = null;
         document.querySelectorAll("[data-mm-start]").forEach(btn => btn.classList.remove("active"));
+        $("mmFabToggle")?.classList.remove("active");
         if ($("geomEditBar")) $("geomEditBar").hidden = true;
         if ($("mapMarkerModal")?.open) $("mapMarkerModal").close();
         if (window.map) map.getCanvas().style.cursor = "";
@@ -10997,25 +11040,29 @@ document.addEventListener("DOMContentLoaded", init);
             return isAdmin() || !rec || rec === "all" || (myEmail && (rec === myEmail || auth === myEmail));
         });
 
-        $("notesList").innerHTML = visibleForMe.length === 0
-            ? `<div class="empty">${t("notesEmpty")}</div>`
-            : visibleForMe.map(n => {
-                const toLabel = !n.recipient || n.recipient === "all" ? "Hamıya (All)" : n.recipient;
-                const timeBadge = n.durationHours ? `${n.durationHours}s · ${remainingHours(n.expiresAt)}` : "Müddətsiz";
-                return `
-                    <div class="note">
-                        <div style="flex:1;min-width:0">
-                            <div class="note-badges">
-                                <span class="note-badge"><i class="fa-solid fa-bell"></i> Kimə: ${esc(toLabel)}</span>
-                                <span class="note-badge time"><i class="fa-regular fa-clock"></i> ${esc(timeBadge)}</span>
+        if ($("notesList")) {
+            $("notesList").innerHTML = visibleForMe.length === 0
+                ? `<div class="empty">${t("notesEmpty")}</div>`
+                : visibleForMe.map(n => {
+                    const toLabel = !n.recipient || n.recipient === "all" ? "Hamıya (All)" : n.recipient;
+                    const timeBadge = n.durationHours ? `${n.durationHours}s · ${remainingHours(n.expiresAt)}` : "Müddətsiz";
+                    return `
+                        <div class="note">
+                            <div style="flex:1;min-width:0">
+                                <div class="note-badges">
+                                    <span class="note-badge"><i class="fa-solid fa-bell"></i> Kimə: ${esc(toLabel)}</span>
+                                    <span class="note-badge time"><i class="fa-regular fa-clock"></i> ${esc(timeBadge)}</span>
+                                </div>
+                                <p>${esc(n.text)}<small>${esc(n.author)} · ${new Date(n.date).toLocaleString(state.lang)}</small></p>
                             </div>
-                            <p>${esc(n.text)}<small>${esc(n.author)} · ${new Date(n.date).toLocaleString(state.lang)}</small></p>
-                        </div>
-                        ${isAdmin() || n.userId === state.user?.id || (myEmail && String(n.author || "").trim().toLowerCase() === myEmail) ? `<button class="icon-btn small" data-id="${n.id}" title="${t("delete")}"><i class="fa-solid fa-trash"></i></button>` : ""}
-                    </div>`;
-            }).join("");
-        $("notesCount").hidden = visibleForMe.length === 0;
-        $("notesCount").textContent = visibleForMe.length;
+                            ${isAdmin() || n.userId === state.user?.id || (myEmail && String(n.author || "").trim().toLowerCase() === myEmail) ? `<button class="icon-btn small" data-id="${n.id}" title="${t("delete")}"><i class="fa-solid fa-trash"></i></button>` : ""}
+                        </div>`;
+                }).join("");
+        }
+        if ($("notesCount")) {
+            $("notesCount").hidden = visibleForMe.length === 0;
+            $("notesCount").textContent = visibleForMe.length;
+        }
 
         const incoming = visibleForMe.find(n => {
             const rec = String(n.recipient || "all").trim().toLowerCase();
@@ -14535,8 +14582,7 @@ document.addEventListener("DOMContentLoaded", init);
             const c = Math.max(-1.18, Math.min(1.18, norm));
             const absC = Math.abs(c);
 
-            // 🌀 Kompakt Fiber Optik Yarım-Dairə Qövs Çarxı:
-            // Daha yığcam diametr (17px qövs) və daha tünd/aydın oxunan layihə adları
+            // 🌀 Normal simmetrik Fiber Optik Yarım-Dairə Qövs Çarxı
             const arcX = -(c * c) * 17;
             const yPull = -Math.sign(c) * Math.pow(absC, 1.5) * 10;
             const fanDeg = c * 1.6;
@@ -14653,13 +14699,15 @@ document.addEventListener("DOMContentLoaded", init);
             return;
         }
 
-        // Baraban yuxarı/aşağı boşluqlarını pəncərə hündürlüyünə uyğunlaşdır ki 1-ci və sonuncu layihə mərkəzə gəlsin
+        // Normal simmetrik qövs + yuxarıda artıq boşluq yaratmayan yığcam məsafə
         const wrap = listEl.querySelector(".fiber-bus-wrap");
         const viewH = listEl.clientHeight || 360;
         const firstCardH = cards[0]?.offsetHeight || 68;
-        const pad = Math.max(46, Math.round((viewH - firstCardH) * 0.46));
+        const padTop = Math.min(62, Math.max(24, Math.round((viewH - firstCardH) * 0.22)));
+        const padBottom = Math.min(76, Math.max(36, Math.round((viewH - firstCardH) * 0.28)));
         if (wrap) {
-            wrap.style.setProperty("--drum-pad", `${pad}px`);
+            wrap.style.setProperty("--drum-pad-top", `${padTop}px`);
+            wrap.style.setProperty("--drum-pad-bottom", `${padBottom}px`);
         }
 
         const sigChanged = opts.sig !== undefined && opts.sig !== lastSig;
