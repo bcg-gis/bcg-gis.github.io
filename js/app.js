@@ -6377,7 +6377,7 @@ function renderProjects() {
 
                 // 1. Dəqiq verilən (Layihə) və icra olunan (çəkilən) kabel — təqribi yox, excel-də nə yazılıbsa o
                 if (pm.cablePlanM > 0 || pm.cableDoneM > 0) {
-                    pmoExactCableHtml = `<span style="flex:0 0 auto;font-weight:600;font-size:10.5px;color:#cbd5e1;white-space:nowrap;text-align:right" title="Layihə (Verilən) / İcra olunan kabel">🔌 ${Number(pm.cablePlanM || 0).toLocaleString("az-AZ")} / <b style="color:#4ade80">${Number(pm.cableDoneM || 0).toLocaleString("az-AZ")}</b> m</span>`;
+                    pmoExactCableHtml = `<div style="font-weight:600;font-size:10.5px;color:#cbd5e1;margin-top:2px;line-height:1.25" title="Layihə (Verilən) / İcra olunan kabel">🔌 Kabel: ${Number(pm.cablePlanM || 0).toLocaleString("az-AZ")} / <b style="color:#4ade80">${Number(pm.cableDoneM || 0).toLocaleString("az-AZ")}</b> m</div>`;
                 }
 
                 // 2. İcra olunan nöqtə sayı
@@ -6411,13 +6411,13 @@ function renderProjects() {
                     <div class="project-row">
                         <label class="check" title="${t("toggleVisibility")}"><input type="checkbox" data-action="toggle" ${visible ? "checked" : ""}></label>
                         <button class="project-main" data-action="expand" aria-expanded="${expanded}">
-                            <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;width:100%">
-                                <span title="${esc(cleanProjName)}" style="flex:1 1 auto;min-width:95px;font-weight:700;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink)">
+                            <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:6px;width:100%">
+                                <span title="${esc(cleanProjName)}" style="flex:1 1 auto;min-width:0;font-weight:700;font-size:12px;line-height:1.28;white-space:normal;word-break:break-word;overflow-wrap:break-word;color:var(--ink)">
                                     ${getProjectIconHtml(p, pTone)}${esc(cleanProjName)}
                                 </span>
-                                ${rightPct ? `<span class="project-pct-mid" style="flex:0 0 auto;font-size:11px;font-weight:800;color:${pTone};background:rgba(255,255,255,0.07);padding:1px 6px;border-radius:5px;white-space:nowrap;text-align:center">${rightPct}</span>` : ""}
-                                ${pmoExactCableHtml}
+                                ${rightPct ? `<span class="project-pct-mid" style="flex:0 0 auto;font-size:11px;font-weight:800;color:${pTone};background:rgba(255,255,255,0.07);padding:1px 6px;border-radius:5px;white-space:nowrap;text-align:center;margin-top:1px">${rightPct}</span>` : ""}
                             </div>
+                            ${pmoExactCableHtml}
                             ${pmoInstalledHtml || `<small>${subTitle}</small>`}
                             ${pmoConnHtml}
                         </button>
@@ -12499,12 +12499,23 @@ document.addEventListener("DOMContentLoaded", init);
         const d2Rows = getSheetARows(wb, d2Name);
 
         // 1. D1-dən layihələri oxu (sol panel — 🏢 BCG qovluğu üçün)
+        const findSeedSheetIdByTitle = title => {
+            if (!title || !Array.isArray(window.PMO_SEED_PROJECTS)) return "";
+            const nk = normMatchName(title);
+            if (!nk) return "";
+            const m = window.PMO_SEED_PROJECTS.find(p => normMatchName(p.name) === nk);
+            return m?.sheetId ? String(m.sheetId) : "";
+        };
         const projectsMap = new Map();
         const stdErrorQueue = [];
         for (const r of d1Rows) {
-            const sid = normSheetId(r.A);
+            let sid = normSheetId(r.A);
             const rawName = String(r.B ?? "").trim();
             if (!rawName) continue;
+            if (!sid) {
+                const recoveredSid = findSeedSheetIdByTitle(rawName);
+                if (recoveredSid) sid = recoveredSid;
+            }
             if (!sid) {
                 // D1-də layihə adı və plan/faiz yazılıb, amma A sütununda standart nömrə yoxdursa xəta kimi qeyd et
                 const isHdrOrTotal = /^(?:#|№|layih[əe]|c[əe]mi|[üu]mumi|m[öo]vcud|yeni|status|rayon|region|pmo|bcg|avicom|d1|d2|icra)/i.test(rawName);
@@ -12570,12 +12581,30 @@ document.addEventListener("DOMContentLoaded", init);
         // 2. D2-dən hər layihənin rayon sətirlərini oxu (xəritə nöqtələri üçün)
         let currentD2Sid = "";
         for (const r of d2Rows) {
-            const rawSid = normSheetId(r.A);
+            let rawSid = normSheetId(r.A);
+            const rawB = String(r.B ?? "").trim();
+            const rayonName = String(r.C ?? "").trim();
+            // Google GViz rəqəmli "A" sütununda 2 nöqtəli mətn ID-ləri (məs: "15.1.1") boş (null) qaytara bilir — B sütunundan layihəni tanı!
+            if (!rawSid && rawB && !rayonName) {
+                const isHdrOrTotal = /^(?:#|№|layih[əe]\s*ad|c[əe]mi|[üu]mumi|status|rayon|region|pmo|bcg|avicom|d1|d2|icra)/i.test(rawB);
+                const curProj = currentD2Sid ? projectsMap.get(currentD2Sid) : null;
+                const sameAsCur = curProj && normMatchName(curProj.name) === normMatchName(rawB);
+                if (!isHdrOrTotal && !sameAsCur) {
+                    const seedSid = findSeedSheetIdByTitle(rawB);
+                    if (seedSid) {
+                        rawSid = seedSid;
+                    } else if (currentD2Sid && (parsePmoNum(r.F) > 0 || parsePmoNum(r.G) > 0 || /%/.test(String(r.D || "")))) {
+                        let subIdx = 1;
+                        let candidate = `${currentD2Sid}.${subIdx}`;
+                        while (projectsMap.has(candidate)) { subIdx++; candidate = `${currentD2Sid}.${subIdx}`; }
+                        rawSid = candidate;
+                    }
+                }
+            }
             if (rawSid) currentD2Sid = rawSid;
             const sid = rawSid || currentD2Sid;
             if (!sid) continue;
-            const projTitle = cleanProjectName(String(r.B ?? "").trim(), sid);
-            const rayonName = String(r.C ?? "").trim();
+            const projTitle = cleanProjectName(rawB, sid);
             if (projTitle && !rayonName) {
                 if (!projectsMap.has(sid)) {
                     // D2-də olub D1-də olmayan nömrələnmiş layihə (məs: 15.1)
