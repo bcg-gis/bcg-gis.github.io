@@ -669,8 +669,6 @@ async function ensureJSZip() {
     });
     return jszipLoadingPromise;
 }
-window.__pmoEnsureJSZip = ensureJSZip;
-window.__triggerPmoQuickSync = () => $("pmoQuickSyncBtn")?.click();
 
 async function exportActiveToKmz() {
     await ensureJSZip().catch(() => null);
@@ -3922,8 +3920,6 @@ function switchBaseLayer(name) {
     applyNames();
     renderLayerOptions();
     drawRoutes();
-    window.refreshFieldMapLayer?.();
-    window.refreshGeOfficeLayer?.();
 }
 
 function applyNames() {
@@ -5944,9 +5940,6 @@ function onMapDblClick(e) {
 
 function onMapClick(e) {
     $("coordClicked").value = `${e.lngLat.lat.toFixed(6)}, ${e.lngLat.lng.toFixed(6)}`;
-    if (window.handleGeOfficeMapClick?.(e)) return;
-    if (window.handleMapMarkerUiClick?.(e)) return;
-    if (window.handleFieldMapClick?.(e)) return;
     if (window.handleMapMarkerClick?.(e)) return;
     if (tools.handleClick(e)) return;
     if (isPhone()) {
@@ -12053,9 +12046,8 @@ document.addEventListener("DOMContentLoaded", init);
     }
 
     function parseCoordStr(raw) {
-        let s = String(raw ?? "").trim();
+        const s = String(raw ?? "").trim();
         if (!s) return null;
-        s = s.replace(/(\d{2})\s+(\d{4,7})/g, "$1.$2");
         const m = s.match(/(-?\d{1,2}[.,]\d+)\s*[,;\s/]+\s*(-?\d{1,3}[.,]\d+)/);
         if (!m) return null;
         const lat = Number(m[1].replace(",", "."));
