@@ -631,30 +631,104 @@ body[data-workspace-mode="home"] #legend {
     display: none !important;
 }
 
-/* HOME rejiminin öz şərti işarələr paneli (yalnız HOME-da görünür) */
+/* HOME rejiminin şərti işarələr paneli — Status-dakı .legend ilə 100% eyni sol-aşağı künc! */
 .home-legend {
-    position: fixed;
-    right: 12px;
-    bottom: 42px;
-    z-index: 610;
-    display: none;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px 12px;
-    max-width: min(560px, calc(100vw - 480px));
-    padding: 7px 11px;
-    border-radius: 10px;
-    background: color-mix(in srgb, var(--panel) 94%, transparent);
-    border: 1px solid rgba(56, 189, 248, 0.35);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.38);
-    backdrop-filter: blur(8px);
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--ink);
+    display: none !important;
+    left: 12px !important;
+    bottom: 12px !important;
+    right: auto !important;
+    z-index: 610 !important;
+    transition: left 0.18s ease;
 }
 body[data-workspace-mode="home"] .home-legend {
+    display: flex !important;
+}
+body[data-workspace-mode="home"].saha-sheet-open .home-legend {
+    left: 412px !important;
+}
+
+/* SAHƏ — Map Marker tərzi yuxarı-sol kompakt alət çubuğu (xəritə 100% geniş!) */
+.saha-map-bar {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    z-index: 615;
+    display: none;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+    max-width: calc(100% - 70px);
+}
+body[data-workspace-mode="field"] .saha-map-bar {
     display: flex;
 }
+.saha-map-bar-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+.saha-mm-btn {
+    height: 40px;
+    padding: 0 13px;
+    border-radius: 11px;
+    border: 1px solid color-mix(in srgb, var(--line-strong) 80%, transparent);
+    background: color-mix(in srgb, var(--panel) 94%, transparent);
+    color: var(--ink);
+    font-size: 13.5px;
+    font-weight: 700;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.42);
+    backdrop-filter: blur(8px);
+}
+.saha-mm-btn.icon {
+    width: 40px;
+    padding: 0;
+    justify-content: center;
+    color: #38bdf8;
+}
+.saha-mm-btn.primary {
+    background: linear-gradient(135deg, #f59e0b, #ea580c);
+    border-color: #fbbf24;
+    color: #ffffff;
+}
+.saha-mm-btn.active {
+    outline: 2px solid #fbbf24;
+    outline-offset: 1px;
+}
+.saha-active-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    border-radius: 10px;
+    background: rgba(15, 23, 42, 0.94);
+    border: 1.5px solid #fbbf24;
+    color: #ffffff;
+    font-size: 13px;
+    font-weight: 700;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+}
+.saha-active-pill[hidden] { display: none !important; }
+.saha-active-pill button {
+    height: 28px;
+    padding: 0 9px;
+    border-radius: 7px;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    background: rgba(255, 255, 255, 0.12);
+    color: #fff;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+}
+.saha-active-pill button.ok {
+    background: #16a34a;
+    border-color: #22c55e;
+}
+.saha-active-pill button:disabled { opacity: 0.4; }
 
 /* Rejimə görə tab görünürlüyü */
 body[data-workspace-mode="field"] .saha-tabs {
@@ -959,19 +1033,31 @@ body[data-workspace-mode="home"] .saha-tab.active {
         max-width: 120px;
         font-size: 11px;
     }
-    /* Telefonda Sahə paneli altdan rahat bottom-sheet kimi açılır ki xəritə yuxarıda görünə bilsin */
+    /* Telefonda xəritə 100% geniş qalır; ➕/📋 kliklənəndə iri, rahat oxunan menyu açılır */
+    .mode-rail { height: 50px; padding: 3px 8px; }
+    .mode-rail-btn { min-height: 42px; font-size: 11px; }
+    .workspace,
+    .workspace.sidebar-closed,
+    body[data-workspace-mode="field"] .workspace,
+    body[data-workspace-mode="home"] .workspace {
+        padding-bottom: 50px;
+    }
+    .saha-mm-btn { height: 44px; font-size: 14.5px; padding: 0 14px; }
+    .saha-mm-btn.icon { width: 44px; }
+    .saha-active-pill { font-size: 13.5px; padding: 7px 10px; }
     .saha-drawer {
-        top: auto;
+        top: 56px;
         left: 6px;
         right: 6px;
-        bottom: 64px;
+        bottom: 56px;
         width: auto;
-        max-height: 58vh;
-    }
-    .saha-drawer.collapsed {
         max-height: none;
-        width: auto;
     }
-    .saha-tool-btn { min-height: 48px; font-size: 13px; }
-    .saha-stage-btn { height: 42px; font-size: 13px; }
+    .saha-drawer .input, .saha-drawer select { font-size: 15px !important; height: 42px !important; }
+    .saha-head-title strong { font-size: 15px; }
+    .saha-tab { height: 40px; font-size: 14px; }
+    .saha-tool-btn { min-height: 52px; font-size: 14.5px; }
+    .saha-stage-btn { height: 46px; font-size: 14px; }
+    .saha-submit-btn { height: 48px; font-size: 15px; }
+    body[data-workspace-mode="home"].saha-sheet-open .home-legend { left: 12px !important; }
 }

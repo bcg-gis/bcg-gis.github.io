@@ -763,6 +763,7 @@
                         } else {
                             saha.fieldEditId = fid;
                             switchTab("map");
+                            setFieldDrawerVisible(true);
                             renderFieldQuickEdit();
                         }
                         return true;
@@ -830,6 +831,7 @@
             saha.draftLine.push([lat, lng]);
             renderSahaMapLayer();
             renderDraftBar();
+            updateSahaMapBar();
             return true;
         }
         return false;
@@ -1845,27 +1847,143 @@
             </div>
         `;
         document.body.appendChild(el);
+        const mapStage = document.querySelector(".map-stage") || document.body;
+        // HOME Şərti işarələr — Status-dakı #legend ilə 100% eyni tərtibat, eyni sol-aşağı künc!
         if (!byId("homeLegend")) {
-            const leg = document.createElement("div");
+            const leg = document.createElement("section");
             leg.id = "homeLegend";
-            leg.className = "home-legend";
+            leg.className = "legend home-legend";
             leg.innerHTML = `
-                <span style="color:#38bdf8;font-weight:800">HOME Şərti işarələr:</span>
-                <span><b style="color:#38bdf8">□</b> BCG (boş) · <b style="color:#38bdf8">■</b> Başqa (dolu)</span>
-                <span>△/▲ Mufta</span>
-                <span>○/● Quyu</span>
-                <span>◇/◆ Trans.</span>
-                <span>☆/★ Antena</span>
-                <span>◎/◉ Mövcud</span>
-                <span style="color:#22c55e">━ FO 12</span>
-                <span style="color:#3b82f6">━ FO 24</span>
-                <span style="color:#ef4444">━ FO 48</span>
-                <span style="color:#dc2626">━ Elektrik</span>
-                <span style="color:#92400e">┅ Qazıntı</span>
+                <div class="legend-sec-title">Şərti işarələr (HOME)</div>
+                <div class="legend-row"><span class="legend-shape-badge" style="color:#38bdf8;font-size:13px">□</span><span>BCG (içi boş)</span></div>
+                <div class="legend-row"><span class="legend-shape-badge" style="color:#38bdf8;font-size:13px">■</span><span>Başqa qurum (dolu)</span></div>
+                <div class="legend-divider"></div>
+                <div class="legend-row"><span class="legend-shape-badge" style="color:#38bdf8">□</span><span>Dirək (6m / 8m)</span></div>
+                <div class="legend-row"><span class="legend-shape-badge" style="color:#22c55e">△</span><span>Mufta (FO 12/24/48)</span></div>
+                <div class="legend-row"><span class="legend-shape-badge" style="color:#a855f7">○</span><span>Quyu</span></div>
+                <div class="legend-row"><span class="legend-shape-badge" style="color:#f59e0b">◇</span><span>Transformator</span></div>
+                <div class="legend-row"><span class="legend-shape-badge" style="color:#ef4444">☆</span><span>Antena</span></div>
+                <div class="legend-row"><span class="legend-shape-badge" style="color:#06b6d4">◎</span><span>Mövcud nöqtə</span></div>
+                <div class="legend-divider"></div>
+                <div class="legend-row"><span class="legend-line" style="background:#22c55e"></span><span>FO 12</span></div>
+                <div class="legend-row"><span class="legend-line" style="background:#3b82f6"></span><span>FO 24</span></div>
+                <div class="legend-row"><span class="legend-line" style="background:#ef4444"></span><span>FO 48</span></div>
+                <div class="legend-row"><span class="legend-line" style="background:#dc2626"></span><span>Elektrik kabeli</span></div>
+                <div class="legend-row"><span class="legend-line" style="background:repeating-linear-gradient(90deg,#92400e 0 5px,transparent 5px 8px)"></span><span>Qazıntı</span></div>
             `;
-            document.body.appendChild(leg);
+            mapStage.appendChild(leg);
+        }
+        // Sahə — Map Marker tərzi yuxarı-sol kompakt alət çubuğu (xəritəyə 100% geniş yer qalır!)
+        if (!byId("sahaMapBar")) {
+            const bar = document.createElement("div");
+            bar.id = "sahaMapBar";
+            bar.className = "saha-map-bar";
+            bar.innerHTML = `
+                <div class="saha-map-bar-row">
+                    <button type="button" class="saha-mm-btn primary" id="sahaBarDrawBtn" title="Dirək, quyu, mufta, kabel əlavə et">
+                        <i class="fa-solid fa-plus"></i><span>Çək</span>
+                    </button>
+                    <button type="button" class="saha-mm-btn" id="sahaBarWorkBtn" title="Nöqtə seç, material yaz, foto çək, bazaya göndər">
+                        <i class="fa-solid fa-clipboard-list"></i><span id="sahaBarPointLbl">İş / Nöqtə</span>
+                    </button>
+                    <button type="button" class="saha-mm-btn icon" id="sahaBarGpsBtn" title="Ən yaxın nöqtə (GPS)">
+                        <i class="fa-solid fa-location-crosshairs"></i>
+                    </button>
+                </div>
+                <div class="saha-active-pill" id="sahaActivePill" hidden></div>
+            `;
+            mapStage.appendChild(bar);
+            bar.querySelector("#sahaBarDrawBtn")?.addEventListener("click", () => {
+                toggleFieldDrawerSheet("map");
+            });
+            bar.querySelector("#sahaBarWorkBtn")?.addEventListener("click", () => {
+                toggleFieldDrawerSheet("work");
+            });
+            bar.querySelector("#sahaBarGpsBtn")?.addEventListener("click", findNearestPointByGps);
+            bar.querySelector("#sahaActivePill")?.addEventListener("click", e => {
+                const act = e.target.closest("[data-pill-act]")?.dataset.pillAct;
+                if (!act) return;
+                if (act === "undo") { saha.draftLine.pop(); renderDraftBar(); renderSahaMapLayer(); updateSahaMapBar(); }
+                else if (act === "finish") { finishDraftLine(); updateSahaMapBar(); }
+                else if (act === "stop") {
+                    saha.drawTool = null;
+                    saha.draftLine = [];
+                    saha.fieldMovingId = "";
+                    renderMapTools();
+                    renderDraftBar();
+                    renderSahaMapLayer();
+                    updateSahaMapBar();
+                }
+            });
         }
         bindDrawerEvents();
+    }
+
+    function setFieldDrawerVisible(show) {
+        const drawer = byId("sahaDrawer");
+        if (!drawer) return;
+        saha.collapsed = !show;
+        drawer.hidden = !show;
+        drawer.classList.remove("collapsed");
+        document.body.classList.toggle("saha-sheet-open", Boolean(show));
+        byId("sahaBarDrawBtn")?.classList.toggle("active", Boolean(show && saha.activeTab === "map"));
+        byId("sahaBarWorkBtn")?.classList.toggle("active", Boolean(show && saha.activeTab === "work"));
+    }
+
+    function toggleFieldDrawerSheet(tab) {
+        const drawer = byId("sahaDrawer");
+        if (!drawer) return;
+        const isSameOpen = !drawer.hidden && saha.activeTab === tab;
+        if (isSameOpen) {
+            setFieldDrawerVisible(false);
+        } else {
+            switchTab(tab);
+            setFieldDrawerVisible(true);
+        }
+    }
+
+    function updateSahaMapBar() {
+        const lblEl = byId("sahaBarPointLbl");
+        if (lblEl) {
+            if (saha.selectedProjId === "__CARI__") {
+                lblEl.textContent = (saha.cariName || "Cari İş").slice(0, 14);
+            } else {
+                const pt = getSelectedPoint();
+                lblEl.textContent = pt ? String(pt.tsNo || pt.name || "İş").slice(0, 14) : "İş / Nöqtə";
+            }
+        }
+        const pill = byId("sahaActivePill");
+        if (!pill) return;
+        if (saha.workspaceMode !== "field") {
+            pill.hidden = true;
+            return;
+        }
+        if (saha.fieldMovingId) {
+            pill.hidden = false;
+            pill.innerHTML = `<span>📍 Yeni yerə toxunun</span><button type="button" data-pill-act="stop">×</button>`;
+            return;
+        }
+        if (!saha.drawTool) {
+            pill.hidden = true;
+            return;
+        }
+        pill.hidden = false;
+        if (saha.drawTool.startsWith("pt:")) {
+            const tk = saha.drawTool.slice(3);
+            const meta = POINT_TYPES[tk] || POINT_TYPES.pole;
+            const sym = saha.owner === "bcg" ? meta.hollow : meta.filled;
+            const shortTxt = formatShortPointLabel(tk, saha.subChoice[tk] || meta.defaultSub);
+            pill.innerHTML = `<span><b style="color:${meta.color}">${sym}</b> ${safeEsc(shortTxt)} · Xəritəyə toxun</span><button type="button" data-pill-act="stop" title="Bitir">Bitir</button>`;
+        } else if (saha.drawTool.startsWith("ln:")) {
+            const lk = saha.drawTool.slice(3);
+            const lt = LINE_TYPES[lk] || LINE_TYPES.fo24;
+            const m = lineMeters(saha.draftLine);
+            pill.innerHTML = `
+                <span><b style="color:${lt.color}">━</b> ${safeEsc(lt.label)}: <b>${m}m</b> (${saha.draftLine.length})</span>
+                <button type="button" data-pill-act="undo" ${saha.draftLine.length < 1 ? "disabled" : ""}>Geri</button>
+                <button type="button" class="ok" data-pill-act="finish" ${saha.draftLine.length < 2 ? "disabled" : ""}>Bitir</button>
+                <button type="button" data-pill-act="stop">×</button>`;
+        }
     }
 
     function updateConnBadge() {
@@ -2732,6 +2850,7 @@
 
         if (mode === "status") {
             setSahaOpen(false);
+            document.body.classList.remove("saha-sheet-open");
         } else if (mode === "field") {
             setSahaOpen(true);
             const drawer = byId("sahaDrawer");
@@ -2739,13 +2858,22 @@
             if (byId("sahaHeadIcon")) { byId("sahaHeadIcon").className = "fa-solid fa-helmet-safety"; byId("sahaHeadIcon").style.color = "#fbbf24"; }
             if (byId("sahaHeadTitle")) byId("sahaHeadTitle").textContent = "Sahə · Map Marker";
             switchTab(saha.activeTab === "work" ? "work" : "map");
+            // Map Marker prinsipi: açılışda xəritə 100% tam geniş qalsın, sol-yuxarıdakı ➕/📋 ilə açılsın!
+            setFieldDrawerVisible(false);
+            updateSahaMapBar();
         } else if (mode === "home") {
             setSahaOpen(true);
             const drawer = byId("sahaDrawer");
-            if (drawer) drawer.classList.add("mode-home");
+            if (drawer) {
+                drawer.classList.add("mode-home");
+                drawer.hidden = false;
+                drawer.classList.remove("collapsed");
+            }
+            document.body.classList.add("saha-sheet-open");
             if (byId("sahaHeadIcon")) { byId("sahaHeadIcon").className = "fa-solid fa-house"; byId("sahaHeadIcon").style.color = "#38bdf8"; }
             if (byId("sahaHeadTitle")) byId("sahaHeadTitle").textContent = "HOME · Ofis GIS & PDF";
             switchTab(["home-edit", "home-pdf", "office"].includes(saha.activeTab) ? saha.activeTab : "home-edit");
+            updateSahaMapBar();
         }
 
         setTimeout(() => { try { window.map?.resize(); } catch {} }, 65);
@@ -2805,10 +2933,21 @@
         const drawer = byId("sahaDrawer");
         if (!drawer) return;
 
-        byId("sahaCloseBtn")?.addEventListener("click", () => setWorkspaceMode("status"));
+        byId("sahaCloseBtn")?.addEventListener("click", () => {
+            if (saha.workspaceMode === "field") {
+                setFieldDrawerVisible(false);
+            } else {
+                setWorkspaceMode("status");
+            }
+        });
         byId("sahaCollapseBtn")?.addEventListener("click", () => {
+            if (saha.workspaceMode === "field") {
+                setFieldDrawerVisible(false);
+                return;
+            }
             saha.collapsed = !saha.collapsed;
             byId("sahaDrawer")?.classList.toggle("collapsed", saha.collapsed);
+            document.body.classList.toggle("saha-sheet-open", !saha.collapsed);
             const ic = byId("sahaCollapseBtn")?.querySelector("i");
             if (ic) ic.className = saha.collapsed ? "fa-solid fa-chevron-right" : "fa-solid fa-chevron-left";
         });
@@ -2828,6 +2967,8 @@
                 renderMapTools();
                 if (window.map) map.getCanvas().style.cursor = "crosshair";
                 renderFieldQuickEdit();
+                if (saha.workspaceMode === "field") setFieldDrawerVisible(false);
+                updateSahaMapBar();
                 showToast("📍 Xəritədə yeni yerə toxunun!");
                 return;
             }
@@ -3069,6 +3210,7 @@
             const pt = getSelectedPoint();
             const c = pt && (Array.isArray(pt.coords) && pt.coords.length === 2 ? pt.coords : parseSpaceSafeCoord(pt.coords));
             renderSahaMapLayer();
+            updateSahaMapBar();
             if (c && typeof flyToCoords === "function") flyToCoords([c]);
             loadMaterialsForCurrentSelection();
         });
@@ -3132,10 +3274,16 @@
             renderMapTools();
             renderDraftBar();
             renderSahaMapLayer();
+            updateSahaMapBar();
             if (saha.drawTool) {
+                const hasSubs = saha.drawTool.startsWith("pt:") && (POINT_TYPES[saha.drawTool.slice(3)]?.subs?.length > 1);
+                // Alt seçimi olmayan alətlərdə və bütün xətlərdə menyu avtomatik yığılır → 100% tam ekran xəritə!
+                if (!hasSubs && saha.workspaceMode === "field") {
+                    setFieldDrawerVisible(false);
+                }
                 showToast(saha.drawTool.startsWith("pt:")
-                    ? "📍 Xəritədə işarə qoymaq üçün nöqtəyə toxunun"
-                    : "〰️ Xəritədə ardıcıl nöqtələrə toxunun, bitəndə 'Bitir' basın");
+                    ? "📍 Xəritədə işarə qoymaq üçün toxunun"
+                    : "〰️ Ardıcıl nöqtələrə toxunun, bitəndə 'Bitir' basın");
             }
         };
         byId("sahaPointTools")?.addEventListener("click", onDrawToolClick);
@@ -3147,6 +3295,8 @@
             const tk = saha.drawTool.slice(3);
             saha.subChoice[tk] = b.dataset.subVal;
             renderMapTools();
+            updateSahaMapBar();
+            if (saha.workspaceMode === "field") setFieldDrawerVisible(false);
         });
 
         byId("sahaDraftBar")?.addEventListener("click", e => {
