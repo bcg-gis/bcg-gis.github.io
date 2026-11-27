@@ -700,6 +700,94 @@ body[data-workspace-mode="field"] .saha-map-bar {
 .saha-mm-btn.icon.share {
     color: #4ade80;
 }
+.saha-quick-search {
+    height: 40px;
+    width: min(210px, 36vw);
+    padding: 0 11px;
+    border-radius: 11px;
+    border: 1px solid color-mix(in srgb, var(--line-strong) 80%, transparent);
+    background: color-mix(in srgb, var(--panel) 94%, transparent);
+    color: var(--ink);
+    font-size: 13.5px;
+    font-weight: 600;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.36);
+    backdrop-filter: blur(8px);
+    outline: none;
+}
+.saha-quick-search:focus { border-color: #fbbf24; }
+
+/* Sağ-aşağı üzən FAB düymələri (Tək əllə çatan zona) */
+.saha-fab-cluster {
+    position: absolute;
+    right: 12px;
+    bottom: 16px;
+    z-index: 620;
+    display: none;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 10px;
+}
+body[data-workspace-mode="field"] .saha-fab-cluster {
+    display: flex;
+}
+.saha-fab-btn {
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    border: 0;
+    font-size: 20px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 8px 22px rgba(0, 0, 0, 0.45);
+}
+.saha-fab-btn.gps {
+    width: 46px;
+    height: 46px;
+    background: color-mix(in srgb, var(--panel) 96%, transparent);
+    border: 1.5px solid rgba(59, 130, 246, 0.65);
+    color: #3b82f6;
+    font-size: 18px;
+}
+.saha-fab-btn.main {
+    background: linear-gradient(135deg, #f59e0b, #ea580c);
+    color: #ffffff;
+    font-size: 22px;
+}
+.saha-fab-menu {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px;
+    border-radius: 14px;
+    background: color-mix(in srgb, var(--panel) 97%, transparent);
+    border: 1px solid rgba(251, 191, 36, 0.45);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.52);
+    backdrop-filter: blur(10px);
+}
+.saha-fab-menu[hidden] { display: none !important; }
+.saha-fab-menu button {
+    height: 42px;
+    padding: 0 14px;
+    border-radius: 10px;
+    border: 1px solid var(--line);
+    background: var(--surface-2);
+    color: var(--ink);
+    font-size: 13.5px;
+    font-weight: 700;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    white-space: nowrap;
+}
+.saha-fab-menu button:hover { background: var(--hover); border-color: #fbbf24; }
+.saha-share-app.daily {
+    background: rgba(34, 197, 94, 0.14);
+    border-color: rgba(34, 197, 94, 0.5);
+    color: #4ade80;
+}
 
 /* Mərkəzi Nişangah (+) — xəritəni sürüşdürüb dəqiq nöqtə/xətt qoymaq üçün */
 .saha-crosshair {

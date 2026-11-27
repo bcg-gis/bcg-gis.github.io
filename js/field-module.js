@@ -72,6 +72,8 @@
         drawTool: null,       // null | "pt:pole" | "pt:mufta" | ... | "ln:fo12" | ...
         fieldEditId: "",      // Sahə xəritəsində redaktə üçün seçilmiş obyekt
         fieldMovingId: "",    // Sahə xəritəsində yeri dəyişdirilən nöqtə
+        labelsVisible: true,  // Xəritə adlarını göstər/gizlət
+        myLocation: null,     // { lat, lng, acc } — canlı mavi GPS nöqtəsi
         subChoice: { pole: "6 m", mufta: "FO-24", quyu: "KRQ-1", trans: "", ant: "PTZ", exist: "Qoşulma" },
         draftLine: [],        // [[lat, lng], ...]
         features: [],         // { id, kind:"point"|"line", type, sub, owner, coords, meters, projId, projectName, rayonName, tsNo, engineer, workDate, label, note, photos, createdAt }
@@ -541,6 +543,39 @@
                 }
             });
         }
+        // Canlı GPS Mənim Konumum (mavi nöqtə + dəqiqlik halqası)
+        if (!map.getSource("saha-my-loc")) {
+            map.addSource("saha-my-loc", {
+                type: "geojson",
+                data: { type: "FeatureCollection", features: [] }
+            });
+        }
+        if (!map.getLayer("saha-my-loc-halo")) {
+            map.addLayer({
+                id: "saha-my-loc-halo",
+                type: "circle",
+                source: "saha-my-loc",
+                paint: {
+                    "circle-radius": 22,
+                    "circle-color": "rgba(59, 130, 246, 0.22)",
+                    "circle-stroke-width": 1.5,
+                    "circle-stroke-color": "rgba(59, 130, 246, 0.6)"
+                }
+            });
+        }
+        if (!map.getLayer("saha-my-loc-dot")) {
+            map.addLayer({
+                id: "saha-my-loc-dot",
+                type: "circle",
+                source: "saha-my-loc",
+                paint: {
+                    "circle-radius": 7.5,
+                    "circle-color": "#2563eb",
+                    "circle-stroke-width": 2.5,
+                    "circle-stroke-color": "#ffffff"
+                }
+            });
+        }
         return true;
     }
 
@@ -722,6 +757,23 @@
         }
 
         src.setData({ type: "FeatureCollection", features: geo });
+        // Label toggle (adları göstər/gizlət)
+        const lblVis = saha.labelsVisible ? "visible" : "none";
+        ["saha-point-labels", "saha-line-labels", "saha-target-label"].forEach(id => {
+            if (map.getLayer(id)) { try { map.setLayoutProperty(id, "visibility", lblVis); } catch {} }
+        });
+        // Canlı GPS mavi nöqtə
+        const locSrc = map.getSource("saha-my-loc");
+        if (locSrc) {
+            if (saha.myLocation && !isStatus) {
+                locSrc.setData({
+                    type: "FeatureCollection",
+                    features: [{ type: "Feature", geometry: { type: "Point", coordinates: [saha.myLocation.lng, saha.myLocation.lat] }, properties: {} }]
+                });
+            } else {
+                locSrc.setData({ type: "FeatureCollection", features: [] });
+            }
+        }
     }
     window.refreshFieldMapLayer = renderSahaMapLayer;
 
@@ -857,11 +909,122 @@
         }
 
         if (saha.drawTool.startsWith("ln:")) {
-            saha.draftLine.push([lat, lng]);
+            // Avtomatik Snap to Marker (18 m radiusda mövcud dirək/quyu/muftaya yapışır!)
+            let snapPt = [lat, lng];
+            let snappedLbl = "";
+            let bestDist = 18;
+            saha.features.forEach(f => {
+                if (f.kind === "point" && Array.isArray(f.coords) && f.coords.length === 2) {
+                    const d = haversineMeters([lat, lng], f.coords);
+                    if (d < bestDist) {
+                        bestDist = d;
+                        snapPt = [f.coords[0], f.coords[1]];
+                        snappedLbl = f.label || f.type;
+                    }
+                }
+            });
+            saha.draftLine.push(snapPt);
             renderSahaMapLayer();
             renderDraftBar();
             updateSahaMapBar();
+            if (snappedLbl) showToast(`🧲 Yapışdı: ${snappedLbl}`);
         }
+    }
+
+    /** Canlı GPS konumunu göstər (mavi nöqtə) və opsional olaraq ora nöqtə qoy */
+    function locateMyGps(dropMarkerHere = false) {
+        if (!navigator.geolocation) {
+            showToast("Bu cihazda GPS dəstəklənmir", true);
+            return;
+        }
+        showToast("📍 GPS konumu tapılır...");
+        navigator.geolocation.getCurrentPosition(pos => {
+            const lat = Number(pos.coords.latitude.toFixed(6));
+            const lng = Number(pos.coords.longitude.toFixed(6));
+            saha.myLocation = { lat, lng, acc: Math.round(pos.coords.accuracy || 0) };
+            saha.lastGps = `${lat}, ${lng}`;
+            renderSahaMapLayer();
+            if (window.map) map.flyTo({ center: [lng, lat], zoom: Math.max(map.getZoom(), 17), duration: 700 });
+            if (dropMarkerHere) {
+                if (!saha.drawTool || !saha.drawTool.startsWith("pt:")) saha.drawTool = "pt:pole";
+                setTimeout(() => { addAtMapCenter(); }, 760);
+            } else {
+                showToast(`🔵 Konum tapıldı (±${saha.myLocation.acc} m)`);
+            }
+        }, err => {
+            showToast(`GPS xətası: ${err.message}`, true);
+        }, { enableHighAccuracy: true, timeout: 12000 });
+    }
+
+    /** Sahə sürətli axtarış: koordinat, TŞ nömrəsi, nöqtə adı və ya sahə obyekti */
+    function runSahaQuickSearch(raw) {
+        const q = String(raw || "").trim();
+        if (!q) return;
+        const coord = parseSpaceSafeCoord(q);
+        if (coord && typeof flyToCoords === "function") {
+            flyToCoords([coord]);
+            showToast(`📍 Koordinata keçildi: ${coord[0]}, ${coord[1]}`);
+            return;
+        }
+        const ql = q.toLowerCase();
+        // 1) Sahə obyektlərində axtar
+        const hitFeat = saha.features.find(f =>
+            `${f.label || ""} ${f.tsNo || ""} ${f.projectName || ""} ${f.note || ""}`.toLowerCase().includes(ql)
+        );
+        if (hitFeat) {
+            flyToSahaFeature(hitFeat);
+            showToast(`📍 Tapıldı: ${hitFeat.label || hitFeat.tsNo}`);
+            return;
+        }
+        // 2) PMO layihə nöqtələrində axtar
+        for (const proj of getPmoProjectsList()) {
+            for (const ry of getRayonsForProject(proj)) {
+                for (const pt of getPointsForRayon(ry)) {
+                    const hay = `${pt.tsNo || ""} ${pt.name || ""} ${pt.address || ""} ${ry.name || ""}`.toLowerCase();
+                    if (hay.includes(ql)) {
+                        saha.selectedProjId = proj.id;
+                        saha.selectedRayonId = ry.id;
+                        saha.selectedPointId = pt.id;
+                        populateCascadingSelects();
+                        updateSahaMapBar();
+                        const c = Array.isArray(pt.coords) && pt.coords.length === 2 ? pt.coords : parseSpaceSafeCoord(pt.coords);
+                        if (c && typeof flyToCoords === "function") flyToCoords([c]);
+                        showToast(`📍 Tapıldı: ${pt.tsNo || pt.name}`);
+                        return;
+                    }
+                }
+            }
+        }
+        showToast("Uyğun nöqtə və ya koordinat tapılmadı", true);
+    }
+
+    /** Gündəlik WhatsApp xülasəsi mətni */
+    function buildDailyWhatsAppSummary() {
+        const tIso = todayIso();
+        const todayFeats = saha.features.filter(f => (f.workDate || "").startsWith(tIso) || !f.workDate);
+        const poles = todayFeats.filter(f => f.kind === "point" && f.type === "pole" && f.owner === "bcg").length;
+        const muftas = todayFeats.filter(f => f.kind === "point" && f.type === "mufta" && f.owner === "bcg").length;
+        const quyus = todayFeats.filter(f => f.kind === "point" && f.type === "quyu" && f.owner === "bcg").length;
+        const cableM = Math.round(todayFeats.filter(f => f.kind === "line" && f.type !== "qazinti").reduce((s, f) => s + (f.meters || lineMeters(f.coords)), 0));
+        const qazM = Math.round(todayFeats.filter(f => f.kind === "line" && f.type === "qazinti").reduce((s, f) => s + (f.meters || lineMeters(f.coords)), 0));
+        const tsSet = Array.from(new Set(todayFeats.map(f => f.tsNo).filter(Boolean)));
+        const eng = byId("sahaEngineerInput")?.value || state?.user?.name || state?.user?.email?.split("@")[0] || "Mühəndis";
+        return `📋 BCG Sahə — Gündəlik Hesabat (${tIso})\n👷 Mühəndis: ${eng}\n📍 Nöqtələr: ${tsSet.length ? tsSet.join(", ") : "—"}\n□ Dirək (BCG): ${poles} əd · △ Mufta: ${muftas} əd · ○ Quyu: ${quyus} əd\n〰️ Çəkilən kabel: ${cableM} m · Qazıntı: ${qazM} m`;
+    }
+
+    /** Tək nöqtə / xətt paylaşımı (Google Maps linki + məlumat) */
+    async function shareSingleFeature(feat) {
+        if (!feat) return;
+        const c = feat.kind === "point" ? feat.coords : feat.coords?.[0];
+        const gmapUrl = Array.isArray(c) && c.length === 2 ? `https://maps.google.com/?q=${c[0]},${c[1]}` : "";
+        const text = `📍 ${feat.label || feat.type}${feat.tsNo ? ` (${feat.tsNo})` : ""}\n📁 ${feat.projectName || "BCG Sahə"}${feat.note ? `\n💬 ${feat.note}` : ""}${gmapUrl ? `\n🗺️ ${gmapUrl}` : ""}`;
+        try {
+            if (navigator.share) {
+                await navigator.share({ title: feat.label || "BCG Nöqtə", text, url: gmapUrl || undefined });
+                return;
+            }
+        } catch (err) { if (err?.name === "AbortError") return; }
+        window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank");
     }
 
     function undoLastDrawAction() {
@@ -1256,6 +1419,9 @@
                         <button type="button" class="saha-share-app dl" id="sahaShareDlBtn">
                             <i class="fa-solid fa-download"></i><span>KMZ Yüklə</span>
                         </button>
+                        <button type="button" class="saha-share-app daily" id="sahaShareDailyBtn" style="grid-column:1 / -1">
+                            <i class="fa-solid fa-clipboard-check"></i><span>Bu günün xülasəsini WhatsApp-a göndər / Kopyala</span>
+                        </button>
                     </div>
                 </div>`;
             document.body.appendChild(modal);
@@ -1307,6 +1473,16 @@
                 if (!_preparedShare.blob) { showToast("Seçilmiş layihədə obyekt yoxdur", true); return; }
                 downloadBlob(_preparedShare.blob, _preparedShare.filename);
                 showToast(`✅ ${_preparedShare.filename} yükləndi`);
+                modal.hidden = true;
+            });
+            modal.querySelector("#sahaShareDailyBtn")?.addEventListener("click", async () => {
+                const txt = buildDailyWhatsAppSummary();
+                try { await navigator.clipboard.writeText(txt); } catch {}
+                if (navigator.share) {
+                    try { await navigator.share({ title: "BCG Gündəlik Hesabat", text: txt }); modal.hidden = true; return; } catch (err) { if (err?.name === "AbortError") return; }
+                }
+                window.open(`https://wa.me/?text=${encodeURIComponent(txt)}`, "_blank");
+                showToast("📋 Gündəlik hesabat kopyalandı və WhatsApp açıldı");
                 modal.hidden = true;
             });
         }
@@ -2156,21 +2332,25 @@
             `;
             mapStage.appendChild(leg);
         }
-        // Sahə — Map Marker tərzi yuxarı-sol kompakt alət çubuğu (xəritəyə 100% geniş yer qalır!)
+        // Sahə — Map Marker tərzi yuxarı üzən panel (Sol: ☰/Çək · Orta: Sürətli axtarış · Sağ: Xəritə tipi / Adlar / Paylaş)
         if (!byId("sahaMapBar")) {
             const bar = document.createElement("div");
             bar.id = "sahaMapBar";
             bar.className = "saha-map-bar";
             bar.innerHTML = `
                 <div class="saha-map-bar-row">
+                    <button type="button" class="saha-mm-btn icon" id="sahaBarWorkBtn" title="Menyu: Layihə, Nöqtə, Materiallar, Foto, Bazaya Göndər">
+                        <i class="fa-solid fa-bars"></i>
+                    </button>
                     <button type="button" class="saha-mm-btn primary" id="sahaBarDrawBtn" title="Dirək, quyu, mufta, kabel əlavə et">
                         <i class="fa-solid fa-plus"></i><span>Çək</span>
                     </button>
-                    <button type="button" class="saha-mm-btn" id="sahaBarWorkBtn" title="Nöqtə seç, material yaz, foto çək, bazaya göndər">
-                        <i class="fa-solid fa-clipboard-list"></i><span id="sahaBarPointLbl">İş / Nöqtə</span>
+                    <input type="search" class="saha-quick-search" id="sahaQuickSearch" placeholder="🔍 TŞ, nöqtə, koordinat...">
+                    <button type="button" class="saha-mm-btn icon" id="sahaBarBaseBtn" title="Xəritə tipi: Peyk / Küçə / Hibrid">
+                        <i class="fa-solid fa-layer-group"></i>
                     </button>
-                    <button type="button" class="saha-mm-btn icon" id="sahaBarGpsBtn" title="Ən yaxın nöqtə (GPS)">
-                        <i class="fa-solid fa-location-crosshairs"></i>
+                    <button type="button" class="saha-mm-btn icon active" id="sahaBarLabelBtn" title="Adları göstər / gizlət">
+                        <i class="fa-solid fa-tag"></i>
                     </button>
                     <button type="button" class="saha-mm-btn icon share" id="sahaBarShareBtn" title="Göndər / Paylaş (WhatsApp, Bluetooth, Telegram...)">
                         <i class="fa-solid fa-share-nodes"></i>
@@ -2178,14 +2358,67 @@
                 </div>
             `;
             mapStage.appendChild(bar);
-            bar.querySelector("#sahaBarDrawBtn")?.addEventListener("click", () => {
-                toggleFieldDrawerSheet("map");
+            bar.querySelector("#sahaBarDrawBtn")?.addEventListener("click", () => toggleFieldDrawerSheet("map"));
+            bar.querySelector("#sahaBarWorkBtn")?.addEventListener("click", () => toggleFieldDrawerSheet("work"));
+            bar.querySelector("#sahaQuickSearch")?.addEventListener("keydown", e => {
+                if (e.key === "Enter") { e.preventDefault(); runSahaQuickSearch(e.target.value); e.target.blur(); }
             });
-            bar.querySelector("#sahaBarWorkBtn")?.addEventListener("click", () => {
-                toggleFieldDrawerSheet("work");
+            bar.querySelector("#sahaBarBaseBtn")?.addEventListener("click", () => {
+                const order = ["satellite", "osm", "esri"];
+                const cur = typeof currentBase !== "undefined" ? currentBase : "satellite";
+                const next = order[(order.indexOf(cur) + 1) % order.length];
+                if (typeof switchBaseLayer === "function") switchBaseLayer(next);
+                showToast(next === "satellite" ? "🛰️ Peyk xəritəsi" : (next === "osm" ? "🗺️ Küçə xəritəsi (OSM)" : "🌍 Esri Peyk"));
             });
-            bar.querySelector("#sahaBarGpsBtn")?.addEventListener("click", findNearestPointByGps);
+            bar.querySelector("#sahaBarLabelBtn")?.addEventListener("click", e => {
+                saha.labelsVisible = !saha.labelsVisible;
+                e.currentTarget.classList.toggle("active", saha.labelsVisible);
+                renderSahaMapLayer();
+                showToast(saha.labelsVisible ? "🏷️ Adlar açıldı" : "🏷️ Adlar gizlədildi");
+            });
             bar.querySelector("#sahaBarShareBtn")?.addEventListener("click", shareSahaWork);
+        }
+        // Sağ-aşağı üzən FAB düymələri (Tək əllə çatan zona: Mənim Konumum + İri "+" menyusu)
+        if (!byId("sahaFabCluster")) {
+            const fc = document.createElement("div");
+            fc.id = "sahaFabCluster";
+            fc.className = "saha-fab-cluster";
+            fc.innerHTML = `
+                <div class="saha-fab-menu" id="sahaFabMenu" hidden>
+                    <button type="button" data-fab-act="point"><i class="fa-solid fa-location-dot" style="color:#38bdf8"></i> Nöqtə qoy (Marker)</button>
+                    <button type="button" data-fab-act="gps-point"><i class="fa-solid fa-crosshairs" style="color:#4ade80"></i> GPS yerimə qoy</button>
+                    <button type="button" data-fab-act="line"><i class="fa-solid fa-route" style="color:#fbbf24"></i> Xətt çək (Kabel / Qazıntı)</button>
+                    <button type="button" data-fab-act="measure"><i class="fa-solid fa-ruler" style="color:#a855f7"></i> Məsafə ölç (Xətkeş)</button>
+                </div>
+                <button type="button" class="saha-fab-btn gps" id="sahaMyLocBtn" title="Mənim konumum (Canlı GPS)"><i class="fa-solid fa-location-crosshairs"></i></button>
+                <button type="button" class="saha-fab-btn main" id="sahaMainFab" title="Əlavə et (+)"><i class="fa-solid fa-plus"></i></button>
+            `;
+            mapStage.appendChild(fc);
+            fc.querySelector("#sahaMyLocBtn")?.addEventListener("click", () => locateMyGps(false));
+            fc.querySelector("#sahaMainFab")?.addEventListener("click", () => {
+                const m = fc.querySelector("#sahaFabMenu");
+                if (m) m.hidden = !m.hidden;
+            });
+            fc.querySelector("#sahaFabMenu")?.addEventListener("click", e => {
+                const act = e.target.closest("[data-fab-act]")?.dataset.fabAct;
+                if (!act) return;
+                fc.querySelector("#sahaFabMenu").hidden = true;
+                if (act === "point") {
+                    toggleFieldDrawerSheet("map");
+                } else if (act === "gps-point") {
+                    locateMyGps(true);
+                } else if (act === "line") {
+                    saha.drawTool = "ln:fo24";
+                    saha.draftLine = [];
+                    setFieldDrawerVisible(false);
+                    renderMapTools();
+                    renderSahaMapLayer();
+                    updateSahaMapBar();
+                } else if (act === "measure") {
+                    if (typeof tools !== "undefined" && typeof tools.start === "function") tools.start("measure");
+                    else byId("measureBtn")?.click();
+                }
+            });
         }
         // Mərkəzi Nişangah (+) və Aşağıda [ - ] [ + ] [ ✓ Yadda saxla ] [ × ] çubuğu
         if (!byId("sahaCrosshair")) {
@@ -2282,7 +2515,11 @@
             const lk = saha.drawTool.slice(3);
             const lt = LINE_TYPES[lk] || LINE_TYPES.fo24;
             const m = lineMeters(saha.draftLine);
-            info.innerHTML = `<b style="color:${lt.color}">━</b> <b>${safeEsc(lt.label)}</b> · <b>${m} m</b> (${saha.draftLine.length} nöqtə)`;
+            const lastSeg = saha.draftLine.length >= 2
+                ? Math.round(haversineMeters(saha.draftLine[saha.draftLine.length - 2], saha.draftLine[saha.draftLine.length - 1]))
+                : 0;
+            const segTxt = lastSeg > 0 ? ` · +${lastSeg}m` : "";
+            info.innerHTML = `<b style="color:${lt.color}">━</b> <b>${safeEsc(lt.label)}</b>${segTxt} · Cəmi <b>${m} m</b> (${saha.draftLine.length})`;
         }
     }
 
@@ -2841,6 +3078,8 @@
             ? Object.entries(POINT_TYPES).map(([k, m]) => `<option value="${k}" ${feat.type === k ? "selected" : ""}>${safeEsc(m.label)}</option>`).join("")
             : Object.entries(LINE_TYPES).map(([k, m]) => `<option value="${k}" ${feat.type === k ? "selected" : ""}>${safeEsc(m.label)}</option>`).join("");
         const isMoving = saha.fieldMovingId === feat.id;
+        const coordStr = isPt && Array.isArray(feat.coords) ? `${feat.coords[0]}, ${feat.coords[1]}` : "";
+        const stVal = feat.status || "goruldu";
 
         form.innerHTML = `
             <label class="saha-field">
@@ -2865,17 +3104,33 @@
                     <input type="number" step="0.1" class="input" id="feMeters" value="${feat.meters || lineMeters(feat.coords)}">
                 </label>`}
             </div>
-            <label class="saha-field">
-                <span>Alt-növ (6 m, 8 m, FO-24...)</span>
-                <input type="text" class="input" id="feSub" value="${safeEsc(feat.sub || "")}">
-            </label>
-            ${isPt ? `
-            <button type="button" class="btn btn-outline" id="feMoveBtn" style="height:34px;font-size:12px;width:100%;border-color:#fbbf24;color:#fbbf24">
-                <i class="fa-solid fa-arrows-up-down-left-right"></i> ${isMoving ? "📍 İndi xəritədə yeni yerə toxunun..." : "Yerini dəyiş (Xəritədə toxun)"}
-            </button>` : ""}
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+                <label class="saha-field">
+                    <span>Alt-növ (6 m, 8 m...)</span>
+                    <input type="text" class="input" id="feSub" value="${safeEsc(feat.sub || "")}">
+                </label>
+                <label class="saha-field">
+                    <span>Status</span>
+                    <select class="input" id="feStatus">
+                        <option value="planli" ${stVal === "planli" ? "selected" : ""}>Planlı</option>
+                        <option value="goruldu" ${stVal === "goruldu" ? "selected" : ""}>Görüldü</option>
+                        <option value="problem" ${stVal === "problem" ? "selected" : ""}>Problem</option>
+                    </select>
+                </label>
+            </div>
+            ${coordStr ? `
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;font-size:12px;color:var(--ink-2);padding:5px 8px;background:var(--surface-2);border-radius:8px">
+                <span class="mono">${safeEsc(coordStr)}</span>
+                <button type="button" class="link" id="feCopyCoord" style="font-size:11.5px;color:#38bdf8"><i class="fa-regular fa-copy"></i> Kopyala</button>
+            </div>` : ""}
             <div class="saha-btn-row">
-                <button type="button" class="btn btn-primary" id="feSaveBtn" style="height:34px;font-size:12px"><i class="fa-solid fa-check"></i> Yadda saxla</button>
-                <button type="button" class="btn btn-outline" id="feDeleteBtn" style="height:34px;font-size:12px;color:#ef4444;border-color:rgba(239,68,68,0.4)"><i class="fa-solid fa-trash"></i> Sil</button>
+                ${isPt ? `<button type="button" class="btn btn-outline" id="feMoveBtn" style="height:36px;font-size:12px;border-color:#fbbf24;color:#fbbf24"><i class="fa-solid fa-arrows-up-down-left-right"></i> ${isMoving ? "Sürüşdür +" : "Yeri dəyiş"}</button>` : ""}
+                ${coordStr ? `<a class="btn btn-outline" href="https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(coordStr)}" target="_blank" rel="noopener" style="height:36px;font-size:12px;color:#4ade80;border-color:rgba(34,197,94,0.45);text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:5px"><i class="fa-solid fa-diamond-turn-right"></i> Yol göstər</a>` : ""}
+                <button type="button" class="btn btn-outline" id="feShareOneBtn" style="height:36px;font-size:12px;color:#38bdf8;border-color:rgba(56,189,248,0.45)"><i class="fa-solid fa-share-nodes"></i> Paylaş</button>
+            </div>
+            <div class="saha-btn-row">
+                <button type="button" class="btn btn-primary" id="feSaveBtn" style="height:36px;font-size:13px"><i class="fa-solid fa-check"></i> Yadda saxla</button>
+                <button type="button" class="btn btn-outline" id="feDeleteBtn" style="height:36px;font-size:13px;color:#ef4444;border-color:rgba(239,68,68,0.4)"><i class="fa-solid fa-trash"></i> Sil</button>
             </div>`;
     }
 
@@ -3261,6 +3516,16 @@
         byId("sahaQuickEditForm")?.addEventListener("click", e => {
             const feat = saha.features.find(x => x.id === saha.fieldEditId);
             if (!feat) return;
+            if (e.target.closest("#feCopyCoord") && Array.isArray(feat.coords)) {
+                const txt = `${feat.coords[0]}, ${feat.coords[1]}`;
+                try { navigator.clipboard.writeText(txt); } catch {}
+                showToast(`📋 Kopyalandı: ${txt}`);
+                return;
+            }
+            if (e.target.closest("#feShareOneBtn")) {
+                shareSingleFeature(feat);
+                return;
+            }
             if (e.target.closest("#feMoveBtn")) {
                 saha.fieldMovingId = feat.id;
                 saha.drawTool = null;
@@ -3269,13 +3534,14 @@
                 renderFieldQuickEdit();
                 if (saha.workspaceMode === "field") setFieldDrawerVisible(false);
                 updateSahaMapBar();
-                showToast("📍 Xəritədə yeni yerə toxunun!");
+                showToast("📍 Nişangahı yeni yerə sürüşdürüb '+' basın!");
                 return;
             }
             if (e.target.closest("#feSaveBtn")) {
                 feat.label = (byId("feLabel")?.value || "").trim() || feat.label;
                 feat.type = byId("feType")?.value || feat.type;
                 feat.sub = (byId("feSub")?.value || "").trim();
+                feat.status = byId("feStatus")?.value || feat.status || "goruldu";
                 if (feat.kind === "point") {
                     feat.owner = byId("feOwner")?.value || feat.owner;
                 } else {
@@ -3697,11 +3963,38 @@
         // Sahə rejimində sol pəncərə açıq olanda kənara (xəritəyə) toxunanda avtomatik bağlansın!
         document.addEventListener("pointerdown", e => {
             if (saha.workspaceMode !== "field") return;
+            const fabMenu = byId("sahaFabMenu");
+            if (fabMenu && !fabMenu.hidden && !e.target.closest("#sahaFabCluster")) fabMenu.hidden = true;
             const drawer = byId("sahaDrawer");
             if (!drawer || drawer.hidden) return;
-            if (e.target.closest("#sahaDrawer, #sahaMapBar, #sahaCrosshairBar, #modeRail, #sahaShareModal")) return;
+            if (e.target.closest("#sahaDrawer, #sahaMapBar, #sahaCrosshairBar, #sahaFabCluster, #modeRail, #sahaShareModal")) return;
             setFieldDrawerVisible(false);
         });
+
+        // Xəritədə uzun basmaq (Long press 600ms) → həmin yerə sürətli nöqtə qoy!
+        let lpTimer = null, lpStart = null;
+        document.addEventListener("pointerdown", e => {
+            if (saha.workspaceMode !== "field" || saha.drawTool || saha.fieldMovingId) return;
+            if (!e.target.closest("#map")) return;
+            lpStart = { x: e.clientX, y: e.clientY };
+            lpTimer = setTimeout(() => {
+                if (!window.map || !lpStart) return;
+                const rect = map.getCanvas().getBoundingClientRect();
+                const lngLat = map.unproject([lpStart.x - rect.left, lpStart.y - rect.top]);
+                map.easeTo({ center: [lngLat.lng, lngLat.lat], duration: 250 });
+                saha.drawTool = "pt:pole";
+                setFieldDrawerVisible(false);
+                renderMapTools();
+                updateSahaMapBar();
+                showToast("📍 Nişangah qoyuldu — '+' basıb əlavə edin");
+            }, 620);
+        });
+        document.addEventListener("pointermove", e => {
+            if (!lpTimer || !lpStart) return;
+            if (Math.hypot(e.clientX - lpStart.x, e.clientY - lpStart.y) > 10) { clearTimeout(lpTimer); lpTimer = null; }
+        });
+        document.addEventListener("pointerup", () => { if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; } });
+        document.addEventListener("pointercancel", () => { if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; } });
 
         const toggleBtn = byId("fieldModeBtn");
         toggleBtn?.addEventListener("click", () => {

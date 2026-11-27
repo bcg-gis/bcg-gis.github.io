@@ -1,5 +1,5 @@
-/* BCG GIS — PWA Service Worker (v34) */
-const CACHE_NAME = "bcg-gis-pwa-v34";
+/* BCG GIS — PWA Service Worker (v35) */
+const CACHE_NAME = "bcg-gis-pwa-v35";
 
 self.addEventListener("install", event => {
     self.skipWaiting();
