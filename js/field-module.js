@@ -776,6 +776,14 @@
         }
     }
     window.refreshFieldMapLayer = renderSahaMapLayer;
+    window.reloadSahaDrawingsFromStorage = () => {
+        try {
+            const d = JSON.parse(localStorage.getItem(SAHA_DRAW_KEY) || "[]");
+            if (Array.isArray(d)) saha.features = d;
+        } catch {}
+        renderSahaMapLayer();
+        renderDrawingsSummary();
+    };
 
     /* =========================================================================
        3) XƏRİTƏ KLİKİ (SAHƏ: MAP MARKER ÇƏKMƏ · HOME: OBYEKT SEÇ VƏ REDAKTƏ ET)

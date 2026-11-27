@@ -1,0 +1,427 @@
+/* ============================================================================
+   BCG GIS — GOOGLE EARTH PRO OFİS REJİMİ (css/ge-office.css)
+   Yalnız body[data-workspace-mode="home"] rejimində aktiv olur
+   ============================================================================ */
+
+/* HOME rejimində köhnə sahaDrawer gizlənir, tam Google Earth Pro Ofis açılır */
+body[data-workspace-mode="home"] #sahaDrawer,
+body[data-workspace-mode="home"] #sahaMapBar,
+body[data-workspace-mode="home"] #sahaFabCluster {
+    display: none !important;
+}
+
+.ge-toolbar,
+.ge-sidebar,
+.ge-nav-ctrl,
+.ge-status-bar {
+    display: none;
+}
+body[data-workspace-mode="home"] .ge-toolbar { display: flex; }
+body[data-workspace-mode="home"] .ge-sidebar { display: flex; }
+body[data-workspace-mode="home"] .ge-nav-ctrl { display: flex; }
+body[data-workspace-mode="home"] .ge-status-bar { display: flex; }
+
+/* 1) ÜST ALƏTLƏR PANELİ (Google Earth Pro Desktop Toolbar) */
+.ge-toolbar {
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 640;
+    align-items: center;
+    gap: 3px;
+    padding: 4px 7px;
+    border-radius: 11px;
+    background: color-mix(in srgb, var(--panel) 96%, #020617);
+    border: 1px solid color-mix(in srgb, #38bdf8 34%, var(--line-strong));
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.48);
+    backdrop-filter: blur(10px);
+    max-width: calc(100% - 24px);
+    overflow-x: auto;
+}
+.ge-tb-btn {
+    height: 32px;
+    min-width: 32px;
+    padding: 0 8px;
+    border-radius: 7px;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--ink-2);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    white-space: nowrap;
+    transition: all 0.12s ease;
+}
+.ge-tb-btn:hover { background: var(--hover); color: var(--ink); }
+.ge-tb-btn.active {
+    background: rgba(56, 189, 248, 0.2);
+    border-color: rgba(56, 189, 248, 0.65);
+    color: #38bdf8;
+}
+.ge-tb-sep {
+    width: 1px;
+    height: 20px;
+    background: var(--line-strong);
+    margin: 0 3px;
+    flex: none;
+}
+
+/* 2) SOL PANEL (3 Bölməli, Eni Sürüşdürülüb Dəyişdirilə Bilən Sidebar) */
+.ge-sidebar {
+    position: fixed;
+    top: 48px;
+    left: 58px;
+    bottom: 26px;
+    width: var(--ge-side-w, 320px);
+    min-width: 240px;
+    max-width: 560px;
+    z-index: 635;
+    flex-direction: column;
+    background: color-mix(in srgb, var(--panel) 97%, #020617);
+    border-right: 1px solid var(--line-strong);
+    box-shadow: 6px 0 24px rgba(0, 0, 0, 0.36);
+    user-select: none;
+}
+.ge-sidebar.collapsed {
+    display: none !important;
+}
+.ge-resizer {
+    position: absolute;
+    top: 0;
+    right: -4px;
+    bottom: 0;
+    width: 8px;
+    cursor: col-resize;
+    z-index: 640;
+}
+.ge-resizer:hover { background: rgba(56, 189, 248, 0.35); }
+
+.ge-sec {
+    display: flex;
+    flex-direction: column;
+    border-bottom: 1px solid var(--line);
+    min-height: 0;
+}
+.ge-sec.places {
+    flex: 1 1 auto;
+    min-height: 140px;
+}
+.ge-sec-head {
+    flex: none;
+    height: 30px;
+    padding: 0 10px;
+    background: var(--surface-2);
+    color: var(--ink);
+    font-size: 11.5px;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    cursor: pointer;
+}
+.ge-sec-body {
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    overflow-y: auto;
+    min-height: 0;
+}
+.ge-sec.places .ge-sec-body {
+    flex: 1;
+    padding: 6px;
+}
+.ge-sec.collapsed .ge-sec-body { display: none; }
+
+/* Axtarış qutusu */
+.ge-search-row {
+    display: flex;
+    gap: 5px;
+}
+.ge-search-row input {
+    flex: 1;
+    height: 32px;
+    font-size: 12px;
+}
+
+/* Yerlər / Qovluq Ağacı (Places Tree View) */
+.ge-places-bar {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-wrap: wrap;
+}
+.ge-mini-btn {
+    height: 24px;
+    padding: 0 7px;
+    border-radius: 6px;
+    border: 1px solid var(--line);
+    background: var(--surface-2);
+    color: var(--ink-2);
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+.ge-mini-btn:hover { background: var(--hover); color: var(--ink); border-color: #38bdf8; }
+.ge-mini-btn.active { background: rgba(56, 189, 248, 0.2); border-color: #38bdf8; color: #38bdf8; }
+
+.ge-tree {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding-right: 2px;
+}
+.ge-node {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 6px;
+    border-radius: 6px;
+    font-size: 12px;
+    color: var(--ink);
+    cursor: pointer;
+    border: 1px solid transparent;
+}
+.ge-node:hover { background: var(--hover); }
+.ge-node.selected {
+    background: rgba(56, 189, 248, 0.16);
+    border-color: rgba(56, 189, 248, 0.55);
+}
+.ge-node.drag-over {
+    border: 1.5px dashed #fbbf24;
+    background: rgba(245, 158, 11, 0.12);
+}
+.ge-node input[type="checkbox"] {
+    width: 14px;
+    height: 14px;
+    accent-color: #38bdf8;
+    flex: none;
+    cursor: pointer;
+}
+.ge-node-label {
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.ge-node-meta {
+    font-size: 10px;
+    color: var(--ink-3);
+    flex: none;
+}
+.ge-tree-children {
+    padding-left: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+/* Qatlar (Layers) */
+.ge-layer-row {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 12px;
+    color: var(--ink-2);
+    padding: 3px 4px;
+    border-radius: 6px;
+    cursor: pointer;
+}
+.ge-layer-row:hover { background: var(--hover); color: var(--ink); }
+.ge-layer-row input { width: 14px; height: 14px; accent-color: #38bdf8; }
+
+/* 3) SAĞ NAVİQASİYA İDARƏSİ (Kompas N, Tilt 2D/3D, Zoom +/-) */
+.ge-nav-ctrl {
+    position: absolute;
+    top: 56px;
+    right: 12px;
+    z-index: 630;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    padding: 6px;
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--panel) 94%, #020617);
+    border: 1px solid var(--line-strong);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.42);
+}
+.ge-nav-btn {
+    width: 34px;
+    height: 34px;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    background: var(--surface-2);
+    color: var(--ink);
+    font-size: 13px;
+    font-weight: 800;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+.ge-nav-btn:hover { background: var(--hover); border-color: #38bdf8; color: #38bdf8; }
+.ge-nav-btn.compass { color: #ef4444; font-size: 14px; }
+
+/* 4) AŞAĞI STATUS ZOLAĞI (Lat/Lng, Elevation, Eye Alt, Scale, Imagery Date) */
+.ge-status-bar {
+    position: fixed;
+    left: 58px;
+    right: 0;
+    bottom: 0;
+    height: 26px;
+    z-index: 645;
+    padding: 0 12px;
+    background: color-mix(in srgb, var(--panel) 98%, #020617);
+    border-top: 1px solid var(--line-strong);
+    color: var(--ink-2);
+    font-size: 11px;
+    font-family: "JetBrains Mono", monospace;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    overflow: hidden;
+    white-space: nowrap;
+}
+.ge-status-group {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+
+/* 5) SAĞ KLİK KONTEKST MENYUSU */
+.ge-ctx-menu {
+    position: fixed;
+    z-index: 1500;
+    min-width: 220px;
+    padding: 5px;
+    border-radius: 10px;
+    background: var(--panel);
+    border: 1px solid var(--line-strong);
+    box-shadow: 0 14px 36px rgba(0, 0, 0, 0.55);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.ge-ctx-menu[hidden] { display: none !important; }
+.ge-ctx-item {
+    width: 100%;
+    padding: 7px 10px;
+    border-radius: 7px;
+    border: 0;
+    background: transparent;
+    color: var(--ink);
+    font-size: 12px;
+    font-weight: 600;
+    text-align: left;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.ge-ctx-item:hover { background: var(--hover); color: #38bdf8; }
+.ge-ctx-item.danger { color: #f87171; }
+.ge-ctx-sep { height: 1px; background: var(--line); margin: 3px 6px; }
+
+/* 6) ÜZƏN (NON-BLOCKING) PROPERTIES, RULER, ELEVATION & EXPORT PƏNCƏRƏLƏRİ */
+.ge-float-win {
+    position: fixed;
+    top: 62px;
+    right: 64px;
+    width: min(370px, calc(100vw - 90px));
+    max-height: calc(100vh - 110px);
+    z-index: 700;
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--panel) 98%, #020617);
+    border: 1px solid color-mix(in srgb, #38bdf8 45%, var(--line-strong));
+    box-shadow: 0 18px 46px rgba(0, 0, 0, 0.55);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+.ge-float-win[hidden] { display: none !important; }
+.ge-win-head {
+    flex: none;
+    padding: 9px 12px;
+    background: linear-gradient(135deg, rgba(56, 189, 248, 0.16), rgba(14, 165, 233, 0.05));
+    border-bottom: 1px solid var(--line);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 13px;
+    font-weight: 800;
+    color: var(--ink);
+}
+.ge-win-body {
+    padding: 10px 12px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    font-size: 12px;
+}
+.ge-win-tabs {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 4px;
+}
+.ge-win-tab {
+    height: 28px;
+    border-radius: 7px;
+    border: 1px solid var(--line);
+    background: var(--surface-2);
+    color: var(--ink-2);
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+}
+.ge-win-tab.active {
+    background: rgba(56, 189, 248, 0.2);
+    border-color: #38bdf8;
+    color: #38bdf8;
+}
+
+/* Elevation Profile alt paneli */
+.ge-elev-bar {
+    position: fixed;
+    left: calc(58px + var(--ge-side-w, 320px) + 12px);
+    right: 64px;
+    bottom: 36px;
+    height: 175px;
+    z-index: 660;
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--panel) 97%, #020617);
+    border: 1px solid rgba(56, 189, 248, 0.45);
+    box-shadow: 0 12px 34px rgba(0, 0, 0, 0.5);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+.ge-elev-bar[hidden] { display: none !important; }
+
+/* HOME legend Google Earth sidebar açıq olanda sağa sürüşsün */
+body[data-workspace-mode="home"] .home-legend {
+    left: calc(var(--ge-side-w, 320px) + 14px) !important;
+    bottom: 36px !important;
+}
+body[data-workspace-mode="home"].ge-side-hidden .home-legend {
+    left: 12px !important;
+}
+
+@media (max-width: 860px) {
+    .ge-sidebar { left: 0; width: 86vw; bottom: 50px; }
+    .ge-status-bar { display: none !important; }
+    .ge-elev-bar { left: 8px; right: 8px; bottom: 58px; }
+}

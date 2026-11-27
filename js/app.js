@@ -3923,6 +3923,7 @@ function switchBaseLayer(name) {
     renderLayerOptions();
     drawRoutes();
     window.refreshFieldMapLayer?.();
+    window.refreshGeOfficeLayer?.();
 }
 
 function applyNames() {
@@ -5943,6 +5944,8 @@ function onMapDblClick(e) {
 
 function onMapClick(e) {
     $("coordClicked").value = `${e.lngLat.lat.toFixed(6)}, ${e.lngLat.lng.toFixed(6)}`;
+    if (window.handleGeOfficeMapClick?.(e)) return;
+    if (window.handleMapMarkerUiClick?.(e)) return;
     if (window.handleFieldMapClick?.(e)) return;
     if (window.handleMapMarkerClick?.(e)) return;
     if (tools.handleClick(e)) return;
