@@ -1120,45 +1120,210 @@
         }
     }
 
-    /** WhatsApp, Bluetooth, Telegram, Mail və s. ilə birbaşa paylaşım (Web Share API) */
-    async function shareSahaWork() {
-        const ptCnt = saha.features.filter(f => f.kind === "point").length;
-        const lnM = Math.round(saha.features.filter(f => f.kind === "line").reduce((s, f) => s + (f.meters || lineMeters(f.coords)), 0));
-        const proj = saha.selectedProjId === "__CARI__" ? (saha.cariName || "Cari Tapşırıq") : (getSelectedProject()?.name || "BCG Sahə");
-        const pt = saha.selectedProjId === "__CARI__" ? (saha.cariPoint || "") : (getSelectedPoint()?.tsNo || getSelectedPoint()?.name || "");
-        const summary = `BCG Sahə — ${proj}${pt ? ` (${pt})` : ""}\n📍 Nöqtə: ${ptCnt} əd · 〰️ Xətt: ${lnM} m\n📅 Tarix: ${todayIso()}`;
+    async function buildSahaKmzForFeatures(featureList, tagName = "Umumi") {
+        if (!Array.isArray(featureList) || featureList.length === 0) return null;
+        const ensureZip = window.__pmoEnsureJSZip || (typeof ensureJSZip === "function" ? ensureJSZip : null);
+        const JSZipLib = ensureZip ? await ensureZip().catch(() => null) : window.JSZip;
+        const xmlEsc = s => String(s ?? "").replace(/[<>&'"]/g, c => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", "'": "&apos;", '"': "&quot;" }[c]));
 
-        let fileObj = null;
-        if (saha.features.length > 0) {
-            try {
-                exportSahaKmz._returnOnly = true;
-                const built = await exportSahaKmz();
-                exportSahaKmz._returnOnly = false;
-                if (built?.blob) {
-                    fileObj = new File([built.blob], built.filename, { type: built.mime });
-                }
-            } catch {
-                exportSahaKmz._returnOnly = false;
+        const stylesXml = [];
+        Object.keys(POINT_TYPES).forEach(tk => {
+            ["bcg", "other"].forEach(ow => {
+                stylesXml.push(`
+    <Style id="saha_${tk}_${ow}">
+      <IconStyle><scale>1.1</scale><Icon><href>icons/saha-${tk}-${ow}.png</href></Icon></IconStyle>
+      <LabelStyle><scale>0.85</scale></LabelStyle>
+    </Style>`);
+            });
+        });
+        Object.entries(LINE_TYPES).forEach(([lk, lt]) => {
+            stylesXml.push(`
+    <Style id="saha_ln_${lk}">
+      <LineStyle><color>${lt.kmlColor}</color><width>4</width></LineStyle>
+    </Style>`);
+        });
+
+        const placemarks = featureList.map(f => {
+            if (f.kind === "point" && Array.isArray(f.coords)) {
+                return `
+    <Placemark>
+      <name>${xmlEsc(f.label)}</name>
+      <description>${xmlEsc(`Layihə: ${f.projectName || "-"} | Sahib: ${f.owner === "bcg" ? "BCG" : "Başqa qurum"} | TŞ: ${f.tsNo || "-"} | ${f.createdAt || ""}`)}</description>
+      <styleUrl>#saha_${POINT_TYPES[f.type] ? f.type : "pole"}_${f.owner === "other" ? "other" : "bcg"}</styleUrl>
+      <Point><coordinates>${f.coords[1]},${f.coords[0]},0</coordinates></Point>
+    </Placemark>`;
             }
-        }
+            if (f.kind === "line" && Array.isArray(f.coords) && f.coords.length >= 2) {
+                const coordStr = f.coords.map(([la, ln]) => `${ln},${la},0`).join(" ");
+                return `
+    <Placemark>
+      <name>${xmlEsc(f.label)}</name>
+      <description>${xmlEsc(`Layihə: ${f.projectName || "-"} | Uzunluq: ${f.meters || lineMeters(f.coords)} m | TŞ: ${f.tsNo || "-"}`)}</description>
+      <styleUrl>#saha_ln_${LINE_TYPES[f.type] ? f.type : "fo24"}</styleUrl>
+      <LineString><tessellate>1</tessellate><coordinates>${coordStr}</coordinates></LineString>
+    </Placemark>`;
+            }
+            return "";
+        }).join("");
 
-        try {
-            if (navigator.share) {
-                if (fileObj && navigator.canShare && navigator.canShare({ files: [fileObj] })) {
-                    await navigator.share({ title: `BCG Sahə — ${proj}`, text: summary, files: [fileObj] });
+        const kml = `<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <name>BCG Sahə — ${xmlEsc(tagName)} (${todayIso()})</name>
+    ${stylesXml.join("")}
+    ${placemarks}
+  </Document>
+</kml>`;
+
+        const safeTag = String(tagName || "Umumi").replace(/[^\w\u00C0-\u024F\u0400-\u04FF-]+/g, "_").slice(0, 28) || "Umumi";
+        const dateTag = todayIso();
+        if (JSZipLib) {
+            const zip = new JSZipLib();
+            zip.file("doc.kml", kml);
+            const iconsFolder = zip.folder("icons");
+            for (const tk of Object.keys(POINT_TYPES)) {
+                for (const ow of ["bcg", "other"]) {
+                    const canvas = drawSahaIconCanvas(tk, ow);
+                    const b64 = canvas.toDataURL("image/png").split(",")[1];
+                    iconsFolder.file(`saha-${tk}-${ow}.png`, b64, { base64: true });
+                }
+            }
+            const blob = await zip.generateAsync({ type: "blob" });
+            return { blob, filename: `BCG_${safeTag}_${dateTag}.kmz`, mime: "application/vnd.google-earth.kmz" };
+        }
+        const blob = new Blob([kml], { type: "application/vnd.google-earth.kml+xml" });
+        return { blob, filename: `BCG_${safeTag}_${dateTag}.kml`, mime: "application/vnd.google-earth.kml+xml" };
+    }
+
+    let _preparedShare = { scope: "__ALL__", file: null, blob: null, filename: "", summary: "", title: "" };
+
+    async function prepareShareSelection(scope) {
+        const list = scope === "__ALL__"
+            ? saha.features
+            : saha.features.filter(f => (f.projectName || "Ümumi Sahə") === scope);
+        const label = scope === "__ALL__" ? "Ümumi (Hamısı)" : scope;
+        const ptCnt = list.filter(f => f.kind === "point").length;
+        const lnM = Math.round(list.filter(f => f.kind === "line").reduce((s, f) => s + (f.meters || lineMeters(f.coords)), 0));
+        const summary = `BCG Sahə — ${label}\n📍 Nöqtə: ${ptCnt} əd · 〰️ Xətt: ${lnM} m\n📅 Tarix: ${todayIso()}`;
+        const infoEl = byId("sahaShareSummary");
+        if (infoEl) infoEl.textContent = `${label}: ${ptCnt} nöqtə · ${lnM} m xətt`;
+
+        _preparedShare = { scope, file: null, blob: null, filename: "", summary, title: `BCG Sahə — ${label}` };
+        if (list.length > 0) {
+            try {
+                const built = await buildSahaKmzForFeatures(list, scope === "__ALL__" ? "Umumi" : scope);
+                if (built?.blob) {
+                    _preparedShare.blob = built.blob;
+                    _preparedShare.filename = built.filename;
+                    _preparedShare.file = new File([built.blob], built.filename, { type: built.mime });
+                }
+            } catch {}
+        }
+    }
+
+    /** Paylaşım pəncərəsini açır: Ümumi yoxsa konkret layihə seçimi + telefon proqramları (WhatsApp, Bluetooth, Telegram, Mail) */
+    function shareSahaWork() {
+        let modal = byId("sahaShareModal");
+        if (!modal) {
+            modal = document.createElement("div");
+            modal.id = "sahaShareModal";
+            modal.className = "saha-share-backdrop";
+            modal.innerHTML = `
+                <div class="saha-share-card" role="dialog" aria-label="Göndər və Paylaş">
+                    <div class="saha-share-head">
+                        <strong><i class="fa-solid fa-share-nodes" style="color:#4ade80"></i> Göndər / Paylaş</strong>
+                        <button type="button" class="icon-btn small" id="sahaShareClose"><i class="fa-solid fa-xmark"></i></button>
+                    </div>
+                    <label class="saha-field">
+                        <span>Hansı layihə göndərilsin?</span>
+                        <select class="input" id="sahaShareScopeSel" style="font-size:14.5px;height:42px"></select>
+                    </label>
+                    <div class="saha-share-info" id="sahaShareSummary"></div>
+                    <div class="saha-share-grid">
+                        <button type="button" class="saha-share-app native" id="sahaShareNativeBtn">
+                            <i class="fa-solid fa-mobile-screen-button"></i>
+                            <div><b>Telefondan Paylaş</b><small>WhatsApp · Bluetooth · Telegram · Quick Share</small></div>
+                        </button>
+                        <button type="button" class="saha-share-app wa" id="sahaShareWaBtn">
+                            <i class="fa-brands fa-whatsapp"></i><span>WhatsApp</span>
+                        </button>
+                        <button type="button" class="saha-share-app tg" id="sahaShareTgBtn">
+                            <i class="fa-brands fa-telegram"></i><span>Telegram</span>
+                        </button>
+                        <button type="button" class="saha-share-app mail" id="sahaShareMailBtn">
+                            <i class="fa-solid fa-envelope"></i><span>E-poçt</span>
+                        </button>
+                        <button type="button" class="saha-share-app dl" id="sahaShareDlBtn">
+                            <i class="fa-solid fa-download"></i><span>KMZ Yüklə</span>
+                        </button>
+                    </div>
+                </div>`;
+            document.body.appendChild(modal);
+
+            modal.addEventListener("click", e => {
+                if (e.target === modal || e.target.closest("#sahaShareClose")) modal.hidden = true;
+            });
+            modal.querySelector("#sahaShareScopeSel")?.addEventListener("change", e => {
+                prepareShareSelection(e.target.value);
+            });
+            // Doğma telefon paylaşım menyusu (0ms — fayl əvvəlcədən hazırdır, Bluetooth/WhatsApp/Telegram açılır!)
+            modal.querySelector("#sahaShareNativeBtn")?.addEventListener("click", async () => {
+                if (!navigator.share) {
+                    showToast("Bu brauzer sistem paylaşımını dəstəkləmir — aşağıdakı WhatsApp/Telegram və ya KMZ Yüklə seçin", true);
                     return;
                 }
-                await navigator.share({ title: `BCG Sahə — ${proj}`, text: summary });
-                return;
-            }
-        } catch (err) {
-            if (err && err.name === "AbortError") return;
+                try {
+                    if (_preparedShare.file && navigator.canShare && navigator.canShare({ files: [_preparedShare.file] })) {
+                        await navigator.share({ title: _preparedShare.title, text: _preparedShare.summary, files: [_preparedShare.file] });
+                        modal.hidden = true;
+                        return;
+                    }
+                    await navigator.share({ title: _preparedShare.title, text: _preparedShare.summary });
+                    modal.hidden = true;
+                } catch (err) {
+                    if (err && err.name !== "AbortError") showToast("Paylaşım açıla bilmədi", true);
+                }
+            });
+            modal.querySelector("#sahaShareWaBtn")?.addEventListener("click", async () => {
+                if (_preparedShare.file && navigator.share && navigator.canShare && navigator.canShare({ files: [_preparedShare.file] })) {
+                    try {
+                        await navigator.share({ title: _preparedShare.title, text: _preparedShare.summary, files: [_preparedShare.file] });
+                        modal.hidden = true;
+                        return;
+                    } catch (err) { if (err?.name === "AbortError") return; }
+                }
+                window.open(`https://wa.me/?text=${encodeURIComponent(_preparedShare.summary)}`, "_blank");
+                modal.hidden = true;
+            });
+            modal.querySelector("#sahaShareTgBtn")?.addEventListener("click", () => {
+                window.open(`https://t.me/share/url?url=${encodeURIComponent(location.href)}&text=${encodeURIComponent(_preparedShare.summary)}`, "_blank");
+                modal.hidden = true;
+            });
+            modal.querySelector("#sahaShareMailBtn")?.addEventListener("click", () => {
+                window.location.href = `mailto:?subject=${encodeURIComponent(_preparedShare.title)}&body=${encodeURIComponent(_preparedShare.summary)}`;
+                modal.hidden = true;
+            });
+            modal.querySelector("#sahaShareDlBtn")?.addEventListener("click", () => {
+                if (!_preparedShare.blob) { showToast("Seçilmiş layihədə obyekt yoxdur", true); return; }
+                downloadBlob(_preparedShare.blob, _preparedShare.filename);
+                showToast(`✅ ${_preparedShare.filename} yükləndi`);
+                modal.hidden = true;
+            });
         }
 
-        // Fallback (kompüter brauzerlərində): KMZ yüklə + WhatsApp aç
-        if (fileObj) downloadBlob(fileObj, fileObj.name);
-        window.open(`https://wa.me/?text=${encodeURIComponent(summary)}`, "_blank");
-        showToast("📤 Paylaşım hazırlandı (WhatsApp + KMZ)");
+        // Layihə siyahısını doldur: Ümumi + hər bir layihə ayrı-ayrı
+        const sel = modal.querySelector("#sahaShareScopeSel");
+        if (sel) {
+            const projNames = Array.from(new Set(saha.features.map(f => f.projectName || "Ümumi Sahə")));
+            sel.innerHTML = `<option value="__ALL__">🌐 Ümumi (Hamısı · ${saha.features.length} obyekt)</option>` +
+                projNames.map(pn => {
+                    const c = saha.features.filter(f => (f.projectName || "Ümumi Sahə") === pn).length;
+                    return `<option value="${safeEsc(pn)}">📁 ${safeEsc(pn)} (${c} obyekt)</option>`;
+                }).join("");
+            sel.value = "__ALL__";
+        }
+        modal.hidden = false;
+        prepareShareSelection("__ALL__");
     }
 
     async function importSahaKmzFile(file) {
@@ -3527,6 +3692,15 @@
             const btn = e.target.closest("[data-workspace-mode]");
             if (!btn) return;
             setWorkspaceMode(btn.dataset.workspaceMode);
+        });
+
+        // Sahə rejimində sol pəncərə açıq olanda kənara (xəritəyə) toxunanda avtomatik bağlansın!
+        document.addEventListener("pointerdown", e => {
+            if (saha.workspaceMode !== "field") return;
+            const drawer = byId("sahaDrawer");
+            if (!drawer || drawer.hidden) return;
+            if (e.target.closest("#sahaDrawer, #sahaMapBar, #sahaCrosshairBar, #modeRail, #sahaShareModal")) return;
+            setFieldDrawerVisible(false);
         });
 
         const toggleBtn = byId("fieldModeBtn");
