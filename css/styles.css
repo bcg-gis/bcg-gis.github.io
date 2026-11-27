@@ -208,7 +208,14 @@ textarea.input { height: auto; padding: 8px 10px; resize: vertical; }
 .chips { display: flex; flex-wrap: wrap; gap: 4px; }
 .chip { display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 8px; border-radius: var(--radius); border: 1px solid var(--line); color: var(--ink-2); font-size: 12px; }
 .chip:hover { background: var(--hover); }
-.chip.active { background: var(--brand-soft); border-color: var(--brand); color: var(--brand); font-weight: 500; }
+.chip.active {
+    background: color-mix(in srgb, var(--chip-tone, var(--brand)) 18%, transparent);
+    border-color: var(--chip-tone, var(--brand));
+    color: var(--ink);
+    font-weight: 600;
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--chip-tone, var(--brand)) 35%, transparent);
+}
+.chip.active b { color: var(--ink); font-weight: 700; }
 .chip b { font-weight: 400; color: var(--ink-3); }
 .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; display: inline-block; }
 

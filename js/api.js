@@ -153,6 +153,7 @@ const api = (() => {
     const DELETED_PROJECTS_KEY = "bcg.deleted.projects.v1";
     const DELETED_SEGMENTS_KEY = "bcg.deleted.segments.v1";
     const CLOUD_SYNC_TOKEN = "00000000-0000-4000-8000-00000000bc60";
+    const SAHA_CLOUD_TOKEN = "00000000-0000-4000-8000-00000000bc61";
 
     const LEGACY_TEMPLATE_EMAILS = new Set([
         "admin@bcg.az",
@@ -1111,7 +1112,74 @@ const api = (() => {
         },
 
         async listShares() {
-            return unwrap(await client.from("share_links").select("*").neq("token", CLOUD_SYNC_TOKEN).order("created_at", { ascending: false }));
+            return unwrap(await client.from("share_links").select("*").neq("token", CLOUD_SYNC_TOKEN).neq("token", SAHA_CLOUD_TOKEN).order("created_at", { ascending: false }));
+        },
+
+        async loadSahaCloudState() {
+            if (!client) return null;
+            try {
+                let row = null;
+                try {
+                    const { data } = await client.from("share_links").select("view").eq("token", SAHA_CLOUD_TOKEN).maybeSingle();
+                    row = data?.view || null;
+                } catch {}
+                if (!row) {
+                    try {
+                        const res = await client.rpc("get_shared_extras", { link: SAHA_CLOUD_TOKEN });
+                        row = res?.data?.view || null;
+                    } catch {}
+                }
+                return row && typeof row === "object" ? row : { packets: [], approvedFeatures: [], updatedAt: "" };
+            } catch {
+                return null;
+            }
+        },
+
+        async saveSahaCloudState(payload) {
+            if (!client) return false;
+            try {
+                const remote = (await this.loadSahaCloudState()) || { packets: [], approvedFeatures: [] };
+                const mergeById = (remArr, locArr) => {
+                    const map = new Map();
+                    (Array.isArray(remArr) ? remArr : []).forEach(it => { if (it?.id) map.set(it.id, it); });
+                    (Array.isArray(locArr) ? locArr : []).forEach(it => {
+                        if (!it?.id) return;
+                        const prev = map.get(it.id);
+                        if (!prev || (it.updatedAt || "") >= (prev.updatedAt || "")) map.set(it.id, it);
+                    });
+                    return Array.from(map.values()).slice(-250);
+                };
+                const mergedView = {
+                    packets: mergeById(remote.packets, payload?.packets),
+                    approvedFeatures: mergeById(remote.approvedFeatures, payload?.approvedFeatures),
+                    updatedAt: new Date().toISOString()
+                };
+                await client.from("share_links").upsert({
+                    token: SAHA_CLOUD_TOKEN,
+                    project_ids: [],
+                    expires_at: null,
+                    drawings: [],
+                    view: mergedView
+                }, { onConflict: "token" });
+                return mergedView;
+            } catch (e) {
+                console.warn("saveSahaCloudState xətası:", e);
+                return false;
+            }
+        },
+
+        subscribeSahaCloud(onRemote) {
+            if (!client || typeof onRemote !== "function") return null;
+            try {
+                const ch = client.channel("bcg-saha-cloud")
+                    .on("postgres_changes", { event: "*", schema: "public", table: "share_links" }, () => {
+                        onRemote();
+                    })
+                    .subscribe();
+                return () => { try { client.removeChannel(ch); } catch {} };
+            } catch {
+                return null;
+            }
         },
 
         syncCloudRegistry,

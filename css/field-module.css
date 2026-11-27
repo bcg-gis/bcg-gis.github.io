@@ -1,0 +1,977 @@
+/* ============================================================================
+   BCG GIS — SAHƏ MODULU (Field Operations + Map Marker + Office Journal)
+   Mövcud sistemdən tam təcrid olunmuş, yandırıb-söndürülə bilən modul qatı
+   ============================================================================ */
+
+.saha-toggle-btn {
+    border-color: rgba(245, 158, 11, 0.5) !important;
+    color: #fbbf24 !important;
+    background: rgba(245, 158, 11, 0.08);
+}
+.saha-toggle-btn:hover {
+    background: rgba(245, 158, 11, 0.18);
+    border-color: #f59e0b !important;
+}
+.saha-toggle-btn.active {
+    background: linear-gradient(135deg, #f59e0b, #ea580c) !important;
+    color: #ffffff !important;
+    border-color: #fbbf24 !important;
+    box-shadow: 0 0 14px rgba(245, 158, 11, 0.45);
+}
+
+/* Əsas Sol Panel — Sahə (Map Marker) və HOME (Google Earth / AutoCAD Ofis) */
+.saha-drawer {
+    position: fixed;
+    top: 52px;
+    left: 64px;
+    right: auto;
+    bottom: 10px;
+    width: min(392px, calc(100vw - 74px));
+    z-index: 620;
+    display: flex;
+    flex-direction: column;
+    border-radius: 14px;
+    background: color-mix(in srgb, var(--panel) 97%, transparent);
+    border: 1px solid color-mix(in srgb, #f59e0b 36%, var(--line-strong));
+    box-shadow: 0 18px 46px rgba(0, 0, 0, 0.52);
+    backdrop-filter: blur(12px);
+    overflow: hidden;
+    animation: sahaSlideInLeft 0.18s ease-out;
+}
+.saha-drawer[hidden] { display: none !important; }
+.saha-drawer.mode-home {
+    border-color: color-mix(in srgb, #38bdf8 42%, var(--line-strong));
+}
+.saha-drawer.collapsed {
+    width: auto;
+    bottom: auto;
+    height: auto;
+}
+.saha-drawer.collapsed .saha-tabs,
+.saha-drawer.collapsed .saha-body {
+    display: none !important;
+}
+@keyframes sahaSlideInLeft {
+    from { opacity: 0; transform: translateX(-16px); }
+    to   { opacity: 1; transform: translateX(0); }
+}
+
+.saha-head {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 10px 12px;
+    background: linear-gradient(135deg, rgba(245, 158, 11, 0.16), rgba(56, 189, 248, 0.08));
+    border-bottom: 1px solid var(--line);
+}
+.saha-head-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+.saha-head-title strong {
+    font-size: 13.5px;
+    font-weight: 800;
+    color: var(--ink);
+}
+.saha-conn-pill {
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: rgba(148, 163, 184, 0.16);
+    color: var(--ink-2);
+    border: 1px solid var(--line);
+    white-space: nowrap;
+}
+.saha-conn-pill.live {
+    background: rgba(34, 197, 94, 0.16);
+    color: #4ade80;
+    border-color: rgba(34, 197, 94, 0.42);
+}
+
+.saha-tabs {
+    flex: none;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 4px;
+    padding: 6px 8px;
+    background: var(--surface-2);
+    border-bottom: 1px solid var(--line);
+}
+.saha-tab {
+    height: 34px;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--ink-2);
+    font-size: 11.5px;
+    font-weight: 700;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    transition: all 0.15s ease;
+}
+.saha-tab:hover { color: var(--ink); background: var(--hover); }
+.saha-tab.active {
+    background: color-mix(in srgb, #f59e0b 18%, var(--panel));
+    border-color: rgba(245, 158, 11, 0.55);
+    color: #fbbf24;
+}
+
+.saha-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 10px 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+.saha-pane[hidden] { display: none !important; }
+
+.saha-card {
+    padding: 10px 11px;
+    border-radius: 10px;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.saha-card-title {
+    font-size: 11px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--ink-3);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+}
+
+.saha-field {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+.saha-field span {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--ink-2);
+}
+.saha-field .input,
+.saha-field select,
+.saha-field textarea {
+    width: 100%;
+    font-size: 12.5px;
+    min-height: 36px;
+}
+
+.saha-gps-btn {
+    width: 100%;
+    height: 38px;
+    border-radius: 9px;
+    border: 1px solid rgba(56, 189, 248, 0.5);
+    background: rgba(56, 189, 248, 0.14);
+    color: #38bdf8;
+    font-weight: 700;
+    font-size: 12.5px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    transition: all 0.15s ease;
+}
+.saha-gps-btn:hover {
+    background: rgba(56, 189, 248, 0.24);
+    border-color: #38bdf8;
+}
+
+/* Mərhələ iri düymələri */
+.saha-stages {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 6px;
+}
+.saha-stage-btn {
+    height: 38px;
+    border-radius: 9px;
+    border: 1px solid var(--line-strong);
+    background: var(--panel);
+    color: var(--ink-2);
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    transition: all 0.15s ease;
+}
+.saha-stage-btn.on {
+    background: rgba(34, 197, 94, 0.18);
+    border-color: #22c55e;
+    color: #4ade80;
+    box-shadow: 0 0 0 1px rgba(34, 197, 94, 0.28);
+}
+
+/* Material siyahısı */
+.saha-mat-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 230px;
+    overflow-y: auto;
+    padding-right: 2px;
+}
+.saha-mat-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: 8px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+}
+.saha-mat-row.has-qty {
+    border-color: rgba(245, 158, 11, 0.65);
+    background: rgba(245, 158, 11, 0.08);
+}
+.saha-mat-name {
+    flex: 1;
+    min-width: 0;
+    font-size: 11.8px;
+    font-weight: 600;
+    color: var(--ink);
+    line-height: 1.25;
+    word-break: break-word;
+}
+.saha-mat-sub {
+    display: block;
+    font-size: 10px;
+    color: var(--ink-3);
+    font-weight: 500;
+}
+.saha-stepper {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    flex-shrink: 0;
+}
+.saha-stepper button {
+    width: 26px;
+    height: 28px;
+    border-radius: 6px;
+    border: 1px solid var(--line-strong);
+    background: var(--surface-2);
+    color: var(--ink);
+    font-weight: 800;
+    font-size: 13px;
+    cursor: pointer;
+}
+.saha-stepper button:hover { border-color: #f59e0b; color: #fbbf24; }
+.saha-stepper input {
+    width: 54px;
+    height: 28px;
+    text-align: center;
+    border-radius: 6px;
+    border: 1px solid var(--line-strong);
+    background: var(--canvas);
+    color: var(--ink);
+    font-weight: 700;
+    font-size: 12px;
+    padding: 0 4px;
+}
+
+/* Map Marker bölməsi: iri toxunuş düymələri */
+.saha-owner-toggle {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+}
+.saha-owner-btn {
+    height: 40px;
+    border-radius: 10px;
+    border: 1.5px solid var(--line-strong);
+    background: var(--panel);
+    color: var(--ink-2);
+    font-weight: 700;
+    font-size: 12px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+}
+.saha-owner-btn.active[data-owner="bcg"] {
+    border-color: #38bdf8;
+    background: rgba(56, 189, 248, 0.16);
+    color: #7dd3fc;
+}
+.saha-owner-btn.active[data-owner="other"] {
+    border-color: #f59e0b;
+    background: rgba(245, 158, 11, 0.16);
+    color: #fbbf24;
+}
+
+.saha-tool-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 6px;
+}
+.saha-tool-btn {
+    min-height: 44px;
+    padding: 6px 8px;
+    border-radius: 10px;
+    border: 1.5px solid var(--line);
+    background: var(--panel);
+    color: var(--ink);
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    text-align: left;
+    transition: all 0.15s ease;
+}
+.saha-tool-btn:hover {
+    border-color: #38bdf8;
+    background: var(--hover);
+}
+.saha-tool-btn.active {
+    border-color: #f59e0b;
+    background: rgba(245, 158, 11, 0.18);
+    color: #fbbf24;
+    box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.35);
+}
+.saha-sym {
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 15px;
+    flex-shrink: 0;
+    background: rgba(255, 255, 255, 0.06);
+}
+.saha-line-swatch {
+    width: 22px;
+    height: 4px;
+    border-radius: 2px;
+    flex-shrink: 0;
+}
+.saha-line-swatch.dashed {
+    height: 0;
+    border-top: 3px dashed #b45309;
+    background: transparent !important;
+}
+
+.saha-sub-opts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+}
+.saha-pill-opt {
+    height: 28px;
+    padding: 0 10px;
+    border-radius: 999px;
+    border: 1px solid var(--line-strong);
+    background: var(--panel);
+    color: var(--ink-2);
+    font-size: 11.5px;
+    font-weight: 700;
+    cursor: pointer;
+}
+.saha-pill-opt.active {
+    border-color: #38bdf8;
+    background: rgba(56, 189, 248, 0.18);
+    color: #7dd3fc;
+}
+
+.saha-draft-bar {
+    padding: 8px 10px;
+    border-radius: 9px;
+    background: rgba(245, 158, 11, 0.14);
+    border: 1px solid rgba(245, 158, 11, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    flex-wrap: wrap;
+    font-size: 11.5px;
+    color: var(--ink);
+}
+
+/* Ofis xülasə KPI kartları */
+.saha-kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 6px;
+}
+.saha-kpi {
+    padding: 8px 10px;
+    border-radius: 9px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+}
+.saha-kpi small {
+    display: block;
+    font-size: 10.5px;
+    color: var(--ink-3);
+}
+.saha-kpi b {
+    font-size: 16px;
+    font-weight: 800;
+    color: var(--ink);
+}
+
+/* Jurnal siyahısı */
+.saha-journal-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 270px;
+    overflow-y: auto;
+}
+.saha-j-item {
+    padding: 8px 10px;
+    border-radius: 9px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-left: 3px solid #22c55e;
+    font-size: 11.5px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+.saha-j-item.undone {
+    opacity: 0.56;
+    border-left-color: #94a3b8;
+    text-decoration: line-through;
+}
+.saha-j-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+}
+.saha-j-meta {
+    font-size: 10.5px;
+    color: var(--ink-3);
+}
+
+.saha-btn-row {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+.saha-btn-row > button { flex: 1; min-width: 110px; }
+
+.saha-submit-btn {
+    width: 100%;
+    height: 42px;
+    border-radius: 10px;
+    border: 0;
+    background: linear-gradient(135deg, #22c55e, #16a34a);
+    color: #ffffff;
+    font-weight: 800;
+    font-size: 13px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    box-shadow: 0 6px 18px rgba(34, 197, 94, 0.32);
+}
+.saha-submit-btn:hover { filter: brightness(1.06); }
+.saha-submit-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.saha-transfer-btn {
+    width: 100%;
+    height: 36px;
+    border-radius: 9px;
+    border: 1px solid rgba(168, 85, 247, 0.55);
+    background: rgba(168, 85, 247, 0.14);
+    color: #d8b4fe;
+    font-weight: 700;
+    font-size: 12px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+}
+.saha-transfer-btn:hover {
+    background: rgba(168, 85, 247, 0.24);
+}
+
+/* ============================================================================
+   3-REJİMLİ SOL RAILS: HOME / Status / Sahə + ROL TƏCRİDİ
+   ============================================================================ */
+.workspace {
+    grid-template-columns: 58px var(--sidebar-w) minmax(0, 1fr) !important;
+}
+.workspace.sidebar-closed {
+    grid-template-columns: 58px 0 minmax(0, 1fr) !important;
+}
+
+.mode-rail {
+    position: relative;
+    z-index: 650;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 5px;
+    background: color-mix(in srgb, var(--panel) 98%, #020617);
+    border-right: 1px solid var(--line);
+    box-shadow: 2px 0 14px rgba(0, 0, 0, 0.28);
+}
+
+.mode-rail-btn {
+    width: 48px;
+    min-height: 54px;
+    padding: 6px 2px;
+    border-radius: 11px;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--ink-2);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    cursor: pointer;
+    transition: all 0.16s ease;
+    position: relative;
+}
+.mode-rail-btn i {
+    font-size: 17px;
+}
+.mode-rail-btn:hover {
+    background: var(--hover);
+    color: var(--ink);
+}
+.mode-rail-btn[hidden] { display: none !important; }
+.mode-rail-badge {
+    position: absolute;
+    top: 3px;
+    right: 3px;
+    min-width: 17px;
+    height: 17px;
+    padding: 0 4px;
+    border-radius: 999px;
+    background: #ef4444;
+    color: #fff;
+    font-size: 10px;
+    font-weight: 800;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 0 8px rgba(239, 68, 68, 0.75);
+}
+
+/* Aktiv rejim rəngləri */
+.mode-rail-btn[data-workspace-mode="home"].active {
+    background: linear-gradient(145deg, rgba(56, 189, 248, 0.24), rgba(14, 165, 233, 0.12));
+    border-color: rgba(56, 189, 248, 0.72);
+    color: #38bdf8;
+    box-shadow: 0 0 14px rgba(56, 189, 248, 0.25);
+}
+.mode-rail-btn[data-workspace-mode="status"].active {
+    background: linear-gradient(145deg, rgba(34, 197, 94, 0.22), rgba(16, 185, 129, 0.1));
+    border-color: rgba(34, 197, 94, 0.68);
+    color: #4ade80;
+    box-shadow: 0 0 14px rgba(34, 197, 94, 0.22);
+}
+.mode-rail-btn[data-workspace-mode="field"].active {
+    background: linear-gradient(145deg, rgba(245, 158, 11, 0.26), rgba(234, 88, 12, 0.14));
+    border-color: rgba(245, 158, 11, 0.8);
+    color: #fbbf24;
+    box-shadow: 0 0 16px rgba(245, 158, 11, 0.3);
+}
+
+/* SAHƏ REJİMİ: Status paneli və ofis elementləri tam gizlənir — təmiz Map Marker! */
+body[data-workspace-mode="field"] .workspace,
+body[data-workspace-mode="home"] .workspace {
+    grid-template-columns: 58px minmax(0, 1fr) !important;
+}
+body[data-workspace-mode="field"] #sidebar,
+body[data-workspace-mode="home"] #sidebar,
+body[data-workspace-mode="field"] #toggleSide,
+body[data-workspace-mode="home"] #toggleSide {
+    display: none !important;
+}
+body[data-workspace-mode="field"] #pmoNotifBtn,
+body[data-workspace-mode="field"] #pmoExcelBtn,
+body[data-workspace-mode="field"] #pmoQuickSyncBtn,
+body[data-workspace-mode="field"] #usersBtn,
+body[data-workspace-mode="field"] #importBtn,
+body[data-workspace-mode="field"] #printBtn,
+body[data-workspace-mode="field"] #mmFabDock,
+body[data-workspace-mode="field"] .mm-fab-dock,
+body[data-workspace-mode="field"] .legend,
+body[data-workspace-mode="field"] #legend,
+body[data-workspace-mode="home"] .legend,
+body[data-workspace-mode="home"] #legend {
+    display: none !important;
+}
+
+/* HOME rejiminin öz şərti işarələr paneli (yalnız HOME-da görünür) */
+.home-legend {
+    position: fixed;
+    right: 12px;
+    bottom: 42px;
+    z-index: 610;
+    display: none;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+    max-width: min(560px, calc(100vw - 480px));
+    padding: 7px 11px;
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--panel) 94%, transparent);
+    border: 1px solid rgba(56, 189, 248, 0.35);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.38);
+    backdrop-filter: blur(8px);
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--ink);
+}
+body[data-workspace-mode="home"] .home-legend {
+    display: flex;
+}
+
+/* Rejimə görə tab görünürlüyü */
+body[data-workspace-mode="field"] .saha-tabs {
+    grid-template-columns: repeat(2, 1fr);
+}
+body[data-workspace-mode="field"] .saha-tab[data-mode-only="home"] {
+    display: none !important;
+}
+body[data-workspace-mode="home"] .saha-tabs {
+    grid-template-columns: repeat(3, 1fr);
+}
+body[data-workspace-mode="home"] .saha-tab[data-mode-only="field"] {
+    display: none !important;
+}
+body[data-workspace-mode="home"] .saha-tab.active {
+    background: color-mix(in srgb, #38bdf8 18%, var(--panel));
+    border-color: rgba(56, 189, 248, 0.58);
+    color: #38bdf8;
+}
+
+/* HOME REJİMİ: Obyekt Siyahısı, Redaktə İnspektoru və PDF Eskiz */
+.home-obj-list {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    max-height: 46vh;
+    min-height: 150px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    padding-right: 4px;
+}
+.home-folder, .home-subfolder, .home-mat-group {
+    flex: none;
+}
+.home-obj-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 7px 9px;
+    border-radius: 9px;
+    border: 1px solid var(--line);
+    background: var(--surface-2);
+    cursor: pointer;
+    transition: all 0.12s ease;
+}
+.home-obj-item:hover {
+    border-color: rgba(56, 189, 248, 0.45);
+    background: var(--hover);
+}
+.home-obj-item.selected {
+    border-color: #38bdf8;
+    background: rgba(56, 189, 248, 0.14);
+}
+.home-obj-main {
+    min-width: 0;
+    flex: 1;
+}
+.home-obj-main strong {
+    display: block;
+    font-size: 12px;
+    color: var(--ink);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.home-obj-main small {
+    display: block;
+    font-size: 10.5px;
+    color: var(--ink-3);
+}
+.home-edit-box {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px;
+    border-radius: 10px;
+    border: 1px solid rgba(56, 189, 248, 0.48);
+    background: color-mix(in srgb, #38bdf8 6%, var(--panel));
+}
+.home-pdf-checklist {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    max-height: 240px;
+    overflow-y: auto;
+}
+.home-pdf-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    background: var(--surface-2);
+    font-size: 11.5px;
+}
+.home-pdf-row label {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    flex: 1;
+    min-width: 0;
+    cursor: pointer;
+    color: var(--ink);
+}
+.home-pdf-row input[type="checkbox"] {
+    width: 15px;
+    height: 15px;
+    accent-color: #38bdf8;
+    flex: none;
+}
+.home-pdf-btn-primary {
+    width: 100%;
+    height: 40px;
+    border-radius: 10px;
+    border: 0;
+    background: linear-gradient(135deg, #0284c7, #2563eb);
+    color: #ffffff;
+    font-weight: 800;
+    font-size: 12.5px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    box-shadow: 0 6px 16px rgba(37, 99, 235, 0.34);
+}
+.home-pdf-btn-primary:hover { filter: brightness(1.08); }
+
+/* HOME Sub-tabs, Folder Ağacı, Material Kataloqu, Təsdiq & Foto */
+.home-sub-tabs {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 4px;
+}
+.home-sub-btn {
+    height: 30px;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    background: var(--surface-2);
+    color: var(--ink-2);
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+}
+.home-sub-btn.active {
+    background: rgba(56, 189, 248, 0.18);
+    border-color: #38bdf8;
+    color: #38bdf8;
+}
+.home-folder, .home-mat-group {
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    background: var(--surface-2);
+    overflow: hidden;
+}
+.home-folder-btn, .home-mat-head {
+    width: 100%;
+    padding: 7px 9px;
+    background: transparent;
+    border: 0;
+    color: var(--ink);
+    font-size: 12px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    cursor: pointer;
+    text-align: left;
+}
+.home-folder-btn:hover, .home-mat-head:hover { background: var(--hover); }
+.home-folder-btn.sub {
+    padding: 5px 8px 5px 16px;
+    font-size: 11.5px;
+    font-weight: 600;
+    border-top: 1px solid var(--line);
+}
+.home-folder-body, .home-mat-body {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 4px 6px 6px;
+    border-top: 1px solid var(--line);
+}
+.home-folder-items {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 4px 4px 4px 14px;
+}
+.home-mat-badge {
+    font-size: 10.5px;
+    font-weight: 700;
+    color: var(--ink-2);
+    background: rgba(148, 163, 184, 0.14);
+    padding: 2px 6px;
+    border-radius: 999px;
+    white-space: nowrap;
+}
+.home-pending-card {
+    padding: 9px 10px;
+    border-radius: 10px;
+    border: 1px solid rgba(245, 158, 11, 0.45);
+    background: rgba(245, 158, 11, 0.08);
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+.home-pending-card.approved {
+    border-color: rgba(34, 197, 94, 0.4);
+    background: rgba(34, 197, 94, 0.06);
+}
+.home-pending-card.rejected {
+    border-color: rgba(239, 68, 68, 0.35);
+    background: rgba(239, 68, 68, 0.06);
+    opacity: 0.72;
+}
+.home-attr-meta {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px 8px;
+    padding: 7px 8px;
+    border-radius: 8px;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    font-size: 11px;
+    color: var(--ink-2);
+}
+.saha-photo-bar {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.saha-photo-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+}
+.saha-photo-thumb {
+    position: relative;
+    width: 58px;
+    height: 58px;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid var(--line-strong);
+}
+.saha-photo-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    cursor: pointer;
+}
+.saha-photo-thumb button {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: 0;
+    background: rgba(0, 0, 0, 0.72);
+    color: #fff;
+    font-size: 12px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+@media (max-width: 860px) {
+    .workspace,
+    .workspace.sidebar-closed,
+    body[data-workspace-mode="field"] .workspace,
+    body[data-workspace-mode="home"] .workspace {
+        grid-template-columns: minmax(0, 1fr) !important;
+        padding-bottom: 58px;
+    }
+    .mode-rail {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        top: auto;
+        height: 58px;
+        flex-direction: row;
+        justify-content: space-around;
+        padding: 4px 10px;
+        border-right: 0;
+        border-top: 1px solid var(--line);
+        z-index: 950;
+    }
+    .mode-rail-btn {
+        flex: 1;
+        min-height: 46px;
+        max-width: 120px;
+        font-size: 11px;
+    }
+    /* Telefonda Sahə paneli altdan rahat bottom-sheet kimi açılır ki xəritə yuxarıda görünə bilsin */
+    .saha-drawer {
+        top: auto;
+        left: 6px;
+        right: 6px;
+        bottom: 64px;
+        width: auto;
+        max-height: 58vh;
+    }
+    .saha-drawer.collapsed {
+        max-height: none;
+        width: auto;
+    }
+    .saha-tool-btn { min-height: 48px; font-size: 13px; }
+    .saha-stage-btn { height: 42px; font-size: 13px; }
+}

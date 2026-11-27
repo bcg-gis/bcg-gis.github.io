@@ -27,6 +27,7 @@ const state = {
     materials: [],
     visibleIds: new Set(),
     statusFilter: "all",
+    statusFilters: new Set(),
     query: "",
     expandedIds: new Set(),
     selected: null,
@@ -328,9 +329,31 @@ function toast(message, isError = false) {
     }, 3200);
 }
 
-/* Seçilmiş status filtrinə və axtarışa uyğun seqmentlər (Digər qovluğu status filtrindən təsirlənmir, açıq qalır) */
+function hasActiveStatusFilter() {
+    return Boolean(state.statusFilters && state.statusFilters.size > 0);
+}
+
+function statusMatchesFilter(status) {
+    return !hasActiveStatusFilter() || state.statusFilters.has(status);
+}
+
+function statusFilterSignature() {
+    return hasActiveStatusFilter() ? [...state.statusFilters].sort().join(",") : "all";
+}
+
+/* Seçilmiş status filtrinə (1 və ya bir neçə status) və axtarışa uyğun seqmentlər (Digər qovluğu status filtrindən təsirlənmir, açıq qalır) */
 function matchesFilters(project, item) {
-    if (project.category !== "other" && state.statusFilter !== "all" && item.status !== state.statusFilter) return false;
+    if (project.category !== "other" && hasActiveStatusFilter()) {
+        const ownMatch = statusMatchesFilter(item.status);
+        if (!ownMatch) {
+            const pmoKey = (item?.isPmoRayon && typeof getPmoRayonClusterKey === "function")
+                ? getPmoRayonClusterKey(project, item)
+                : "";
+            const isExp = Boolean(pmoKey && state.expandedRayons && (state.expandedRayons.has(pmoKey) || state.expandedRayons.has(`${project.id}::pmo::${item.id}`)));
+            const hasMatchingSub = isExp && Array.isArray(item.pmoRayon?.subPoints) && item.pmoRayon.subPoints.some(sp => statusMatchesFilter(sp.status));
+            if (!hasMatchingSub) return false;
+        }
+    }
     if (!state.query) return true;
     const haystack = [project.name, item.id, item.name, item.pointA, item.pointB, item.contractor].join(" ");
     return haystack.toLocaleLowerCase("az").includes(state.query);
@@ -454,6 +477,7 @@ async function handleLogin(event) {
 
 function resetState() {
     Object.assign(state, { user: null, role: "manager", projects: [], contractors: {}, materials: [], notes: [], selected: null, statusFilter: "all", query: "" });
+    state.statusFilters.clear();
     state.visibleIds.clear();
     state.expandedIds.clear();
     state.activeFolders.clear();
@@ -645,6 +669,8 @@ async function ensureJSZip() {
     });
     return jszipLoadingPromise;
 }
+window.__pmoEnsureJSZip = ensureJSZip;
+window.__triggerPmoQuickSync = () => $("pmoQuickSyncBtn")?.click();
 
 async function exportActiveToKmz() {
     await ensureJSZip().catch(() => null);
@@ -2149,6 +2175,7 @@ function editProject(project) {
                 state.activeFolders.add(chosenCat);
                 state.expandedIds.add(newId);
                 state.statusFilter = "all";
+                state.statusFilters.clear();
                 project = newProj;
             }
             saveProjectOverride(project);
@@ -3895,6 +3922,7 @@ function switchBaseLayer(name) {
     applyNames();
     renderLayerOptions();
     drawRoutes();
+    window.refreshFieldMapLayer?.();
 }
 
 function applyNames() {
@@ -5048,8 +5076,11 @@ function drawRoutes() {
                     }
                 }
                 const pmoClusterKey = getPmoRayonClusterKey(project, r);
-                const subPtsWithCoords = (r.pmoRayon.subPoints || []).filter(sp => Array.isArray(sp.coords) && sp.coords.length === 2);
-                const isExpandedPmo = (state.expandedRayons.has(pmoClusterKey) || state.expandedRayons.has(`${project.id}::pmo::${r.id}`)) && subPtsWithCoords.length > 0;
+                const allSubPtsWithCoords = (r.pmoRayon.subPoints || []).filter(sp => Array.isArray(sp.coords) && sp.coords.length === 2);
+                const subPtsWithCoords = hasActiveStatusFilter()
+                    ? allSubPtsWithCoords.filter(sp => statusMatchesFilter(sp.status))
+                    : allSubPtsWithCoords;
+                const isExpandedPmo = (state.expandedRayons.has(pmoClusterKey) || state.expandedRayons.has(`${project.id}::pmo::${r.id}`)) && allSubPtsWithCoords.length > 0;
                 const rawProjBase = cleanProjectName(project.name, project.sheetId || project.pmoMeta?.sheetId);
                 const compactProjName = rawProjBase.length > 32 ? `${rawProjBase.slice(0, 31).trim()}…` : rawProjBase;
 
@@ -5912,6 +5943,7 @@ function onMapDblClick(e) {
 
 function onMapClick(e) {
     $("coordClicked").value = `${e.lngLat.lat.toFixed(6)}, ${e.lngLat.lng.toFixed(6)}`;
+    if (window.handleFieldMapClick?.(e)) return;
     if (window.handleMapMarkerClick?.(e)) return;
     if (tools.handleClick(e)) return;
     if (isPhone()) {
@@ -6207,11 +6239,16 @@ function renderChips() {
     const items = poolProjects.flatMap(p => p.items);
     const count = key => showDashes ? "-" : (key === "all" ? items.length : items.filter(r => r.status === key).length);
     const chips = [{ key: "all", label: t("filterAll") }, ...STATUSES.map(s => ({ key: s, label: t(`status${s}`), color: STATUS_COLORS[s] }))];
-    $("statusChips").innerHTML = chips.map(c => `
-        <button class="chip ${state.statusFilter === c.key ? "active" : ""}" data-status="${c.key}" title="${esc(c.label)}">
+    const hasFilter = hasActiveStatusFilter();
+    $("statusChips").innerHTML = chips.map(c => {
+        const isActive = c.key === "all" ? !hasFilter : state.statusFilters.has(c.key);
+        const toneStyle = c.color ? `style="--chip-tone:${c.color}"` : "";
+        const tipText = c.key === "all" ? c.label : `${c.label} (bir neçə statusu eyni anda seçmək olar)`;
+        return `
+        <button class="chip ${isActive ? "active" : ""}" data-status="${c.key}" ${toneStyle} title="${esc(tipText)}" aria-pressed="${isActive}">
             ${c.color ? `<span class="dot" style="background:${c.color}"></span>` : `${esc(c.label)} `}<b>${count(c.key)}</b>
-        </button>
-    `).join("");
+        </button>`;
+    }).join("");
 }
 
 function renderKpis() {
@@ -6286,7 +6323,7 @@ function renderProjects() {
     if ($("hideAllBtn")) { $("hideAllBtn").textContent = "Gizlət"; $("hideAllBtn").title = t("hideAll"); }
 
     const showGroupHead = activeOrder.length > 1;
-    const filtering = state.statusFilter !== "all" || state.query;
+    const filtering = hasActiveStatusFilter() || Boolean(state.query);
     let totalShownCount = 0;
     const sectionsHtml = [];
 
@@ -6562,7 +6599,7 @@ function renderProjects() {
     $("projectCount").textContent = totalShownCount;
     const listEl = $("projectList");
     const prevScrollTop = listEl ? listEl.scrollTop : 0;
-    const rollerSig = `${activeOrder.join(",")}|${state.statusFilter || "all"}|${state.query || ""}`;
+    const rollerSig = `${activeOrder.join(",")}|${statusFilterSignature()}|${state.query || ""}`;
     if (listEl) {
         listEl.innerHTML = `<div class="fiber-bus-wrap">${sectionsHtml.join("")}</div>`;
     }
@@ -7833,7 +7870,20 @@ function bindEvents() {
     $("statusChips").addEventListener("click", e => {
         const chip = e.target.closest("[data-status]");
         if (!chip) return;
-        state.statusFilter = chip.dataset.status;
+        const key = chip.dataset.status;
+        if (key === "all") {
+            state.statusFilters.clear();
+        } else {
+            if (state.statusFilters.has(key)) {
+                state.statusFilters.delete(key);
+            } else {
+                state.statusFilters.add(key);
+                if (state.statusFilters.size >= STATUSES.length) {
+                    state.statusFilters.clear();
+                }
+            }
+        }
+        state.statusFilter = statusFilterSignature();
         renderAll();
     });
     $("showAllBtn").addEventListener("click", () => {
@@ -12000,8 +12050,9 @@ document.addEventListener("DOMContentLoaded", init);
     }
 
     function parseCoordStr(raw) {
-        const s = String(raw ?? "").trim();
+        let s = String(raw ?? "").trim();
         if (!s) return null;
+        s = s.replace(/(\d{2})\s+(\d{4,7})/g, "$1.$2");
         const m = s.match(/(-?\d{1,2}[.,]\d+)\s*[,;\s/]+\s*(-?\d{1,3}[.,]\d+)/);
         if (!m) return null;
         const lat = Number(m[1].replace(",", "."));
