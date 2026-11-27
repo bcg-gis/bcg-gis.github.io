@@ -773,17 +773,13 @@
             return false;
         }
 
-        if (!saha.open || !saha.drawTool) return false;
-        const lat = Number(e.lngLat.lat.toFixed(6));
-        const lng = Number(e.lngLat.lng.toFixed(6));
-        const isCari = saha.selectedProjId === "__CARI__";
-        const proj = isCari ? null : getSelectedProject();
-        const ry = isCari ? null : getSelectedRayon();
-        const pt = isCari ? null : getSelectedPoint();
-        const projLabel = isCari ? (`⚡ ${saha.cariName.trim() || "Cari Tapşırıq"}`) : (proj?.name || "Ümumi Sahə");
-        const tsLabel = isCari ? (saha.cariPoint.trim() || "Cari nöqtə") : (pt?.tsNo || pt?.name || "");
-        const engName = (byId("sahaEngineerInput")?.value || state?.user?.name || state?.user?.email?.split("@")[0] || "Mühəndis").trim();
-        const wDate = byId("sahaWorkDate")?.value || todayIso();
+        // Sahədə nişangah (+ / -) rejimi aktivdir → təsadüfi xəritə klikləri səhv nöqtə qoymasın!
+        if (saha.workspaceMode === "field" && (saha.drawTool || saha.fieldMovingId)) {
+            return true;
+        }
+        return false;
+    }
+    window.handleFieldMapClick = handleFieldMapClick;
 
     /** Qısa, təmiz nöqtə etiketi: 6m, 8m, Quyu, FO-24, Trans., Antena, Mövcud */
     function formatShortPointLabel(typeKey, sub) {
@@ -797,10 +793,42 @@
         return POINT_TYPES[typeKey]?.label || s || "Nöqtə";
     }
 
+    /** Xəritənin mərkəzindəki (nişangah) koordinata nöqtə və ya xətt bəndi əlavə et — təsadüfi toxunuşla səhv yerə düşmür! */
+    function addAtMapCenter() {
+        if (!window.map) return;
+        const c = map.getCenter();
+        const lat = Number(c.lat.toFixed(6));
+        const lng = Number(c.lng.toFixed(6));
+
+        // Yerini dəyişmə rejimi
+        if (saha.fieldMovingId) {
+            const mf = saha.features.find(f => f.id === saha.fieldMovingId);
+            saha.fieldMovingId = "";
+            if (mf && mf.kind === "point") {
+                mf.coords = [lat, lng];
+                saveDrawings();
+                renderSahaMapLayer();
+                renderFieldQuickEdit();
+                updateSahaMapBar();
+                showToast(`📍 "${mf.label}" yeni yerinə köçürüldü!`);
+            }
+            return;
+        }
+
+        if (!saha.drawTool) return;
+        const isCari = saha.selectedProjId === "__CARI__";
+        const proj = isCari ? null : getSelectedProject();
+        const ry = isCari ? null : getSelectedRayon();
+        const pt = isCari ? null : getSelectedPoint();
+        const projLabel = isCari ? (`⚡ ${saha.cariName.trim() || "Cari Tapşırıq"}`) : (proj?.name || "Ümumi Sahə");
+        const tsLabel = isCari ? (saha.cariPoint.trim() || "Cari nöqtə") : (pt?.tsNo || pt?.name || "");
+        const engName = (byId("sahaEngineerInput")?.value || state?.user?.name || state?.user?.email?.split("@")[0] || "Mühəndis").trim();
+        const wDate = byId("sahaWorkDate")?.value || todayIso();
+
         if (saha.drawTool.startsWith("pt:")) {
             const typeKey = saha.drawTool.slice(3);
             const meta = POINT_TYPES[typeKey];
-            if (!meta) return false;
+            if (!meta) return;
             const sub = saha.subChoice[typeKey] || meta.defaultSub || "";
             const shortLbl = formatShortPointLabel(typeKey, sub);
             const feat = {
@@ -823,8 +851,9 @@
             saveDrawings();
             renderSahaMapLayer();
             renderDrawingsSummary();
-            showToast(`📍 ${feat.label} əlavə olundu`);
-            return true;
+            updateSahaMapBar();
+            showToast(`✅ ${feat.label} əlavə olundu`);
+            return;
         }
 
         if (saha.drawTool.startsWith("ln:")) {
@@ -832,11 +861,56 @@
             renderSahaMapLayer();
             renderDraftBar();
             updateSahaMapBar();
-            return true;
         }
-        return false;
     }
-    window.handleFieldMapClick = handleFieldMapClick;
+
+    function undoLastDrawAction() {
+        if (saha.drawTool?.startsWith("ln:")) {
+            if (saha.draftLine.length === 0) return;
+            saha.draftLine.pop();
+            renderSahaMapLayer();
+            renderDraftBar();
+            updateSahaMapBar();
+            showToast("↩️ Son nöqtə geri alındı");
+        } else if (saha.drawTool?.startsWith("pt:")) {
+            const lastIdx = [...saha.features].reverse().findIndex(f => f.kind === "point");
+            if (lastIdx < 0) return;
+            const realIdx = saha.features.length - 1 - lastIdx;
+            const rem = saha.features.splice(realIdx, 1)[0];
+            saveDrawings();
+            renderSahaMapLayer();
+            renderDrawingsSummary();
+            updateSahaMapBar();
+            showToast(`↩️ "${rem.label}" silindi`);
+        }
+    }
+
+    function saveCurrentDrawAction() {
+        if (saha.drawTool?.startsWith("ln:")) {
+            if (saha.draftLine.length < 2) {
+                showToast("Xətt üçün ən azı 2 dəfə '+' basın", true);
+                return;
+            }
+            finishDraftLine();
+            saha.drawTool = null;
+            renderMapTools();
+            renderDraftBar();
+            renderSahaMapLayer();
+            updateSahaMapBar();
+            return;
+        }
+        if (saha.fieldMovingId) {
+            addAtMapCenter();
+            return;
+        }
+        saha.drawTool = null;
+        saha.draftLine = [];
+        renderMapTools();
+        renderDraftBar();
+        renderSahaMapLayer();
+        updateSahaMapBar();
+        showToast("✅ Yadda saxlanıldı");
+    }
 
     function finishDraftLine() {
         if (!saha.drawTool?.startsWith("ln:") || saha.draftLine.length < 2) {
@@ -1035,12 +1109,56 @@
                 }
             }
             const blob = await zip.generateAsync({ type: "blob" });
+            if (exportSahaKmz._returnOnly) return { blob, filename: `BCG_Saha_${dateTag}.kmz`, mime: "application/vnd.google-earth.kmz" };
             downloadBlob(blob, `BCG_Saha_${dateTag}.kmz`);
             showToast(`✅ Yekun KMZ yükləndi (${saha.features.length} obyekt — Google Earth Pro üçün hazır)`);
         } else {
-            downloadBlob(new Blob([kml], { type: "application/vnd.google-earth.kml+xml" }), `BCG_Saha_${dateTag}.kml`);
+            const blob = new Blob([kml], { type: "application/vnd.google-earth.kml+xml" });
+            if (exportSahaKmz._returnOnly) return { blob, filename: `BCG_Saha_${dateTag}.kml`, mime: "application/vnd.google-earth.kml+xml" };
+            downloadBlob(blob, `BCG_Saha_${dateTag}.kml`);
             showToast(`✅ KML yükləndi (${saha.features.length} obyekt)`);
         }
+    }
+
+    /** WhatsApp, Bluetooth, Telegram, Mail və s. ilə birbaşa paylaşım (Web Share API) */
+    async function shareSahaWork() {
+        const ptCnt = saha.features.filter(f => f.kind === "point").length;
+        const lnM = Math.round(saha.features.filter(f => f.kind === "line").reduce((s, f) => s + (f.meters || lineMeters(f.coords)), 0));
+        const proj = saha.selectedProjId === "__CARI__" ? (saha.cariName || "Cari Tapşırıq") : (getSelectedProject()?.name || "BCG Sahə");
+        const pt = saha.selectedProjId === "__CARI__" ? (saha.cariPoint || "") : (getSelectedPoint()?.tsNo || getSelectedPoint()?.name || "");
+        const summary = `BCG Sahə — ${proj}${pt ? ` (${pt})` : ""}\n📍 Nöqtə: ${ptCnt} əd · 〰️ Xətt: ${lnM} m\n📅 Tarix: ${todayIso()}`;
+
+        let fileObj = null;
+        if (saha.features.length > 0) {
+            try {
+                exportSahaKmz._returnOnly = true;
+                const built = await exportSahaKmz();
+                exportSahaKmz._returnOnly = false;
+                if (built?.blob) {
+                    fileObj = new File([built.blob], built.filename, { type: built.mime });
+                }
+            } catch {
+                exportSahaKmz._returnOnly = false;
+            }
+        }
+
+        try {
+            if (navigator.share) {
+                if (fileObj && navigator.canShare && navigator.canShare({ files: [fileObj] })) {
+                    await navigator.share({ title: `BCG Sahə — ${proj}`, text: summary, files: [fileObj] });
+                    return;
+                }
+                await navigator.share({ title: `BCG Sahə — ${proj}`, text: summary });
+                return;
+            }
+        } catch (err) {
+            if (err && err.name === "AbortError") return;
+        }
+
+        // Fallback (kompüter brauzerlərində): KMZ yüklə + WhatsApp aç
+        if (fileObj) downloadBlob(fileObj, fileObj.name);
+        window.open(`https://wa.me/?text=${encodeURIComponent(summary)}`, "_blank");
+        showToast("📤 Paylaşım hazırlandı (WhatsApp + KMZ)");
     }
 
     async function importSahaKmzFile(file) {
@@ -1889,8 +2007,10 @@
                     <button type="button" class="saha-mm-btn icon" id="sahaBarGpsBtn" title="Ən yaxın nöqtə (GPS)">
                         <i class="fa-solid fa-location-crosshairs"></i>
                     </button>
+                    <button type="button" class="saha-mm-btn icon share" id="sahaBarShareBtn" title="Göndər / Paylaş (WhatsApp, Bluetooth, Telegram...)">
+                        <i class="fa-solid fa-share-nodes"></i>
+                    </button>
                 </div>
-                <div class="saha-active-pill" id="sahaActivePill" hidden></div>
             `;
             mapStage.appendChild(bar);
             bar.querySelector("#sahaBarDrawBtn")?.addEventListener("click", () => {
@@ -1900,20 +2020,43 @@
                 toggleFieldDrawerSheet("work");
             });
             bar.querySelector("#sahaBarGpsBtn")?.addEventListener("click", findNearestPointByGps);
-            bar.querySelector("#sahaActivePill")?.addEventListener("click", e => {
-                const act = e.target.closest("[data-pill-act]")?.dataset.pillAct;
-                if (!act) return;
-                if (act === "undo") { saha.draftLine.pop(); renderDraftBar(); renderSahaMapLayer(); updateSahaMapBar(); }
-                else if (act === "finish") { finishDraftLine(); updateSahaMapBar(); }
-                else if (act === "stop") {
-                    saha.drawTool = null;
-                    saha.draftLine = [];
-                    saha.fieldMovingId = "";
-                    renderMapTools();
-                    renderDraftBar();
-                    renderSahaMapLayer();
-                    updateSahaMapBar();
-                }
+            bar.querySelector("#sahaBarShareBtn")?.addEventListener("click", shareSahaWork);
+        }
+        // Mərkəzi Nişangah (+) və Aşağıda [ - ] [ + ] [ ✓ Yadda saxla ] [ × ] çubuğu
+        if (!byId("sahaCrosshair")) {
+            const ch = document.createElement("div");
+            ch.id = "sahaCrosshair";
+            ch.className = "saha-crosshair";
+            ch.hidden = true;
+            ch.innerHTML = `<span class="ch-ring"></span><span class="ch-h"></span><span class="ch-v"></span><span class="ch-dot"></span>`;
+            mapStage.appendChild(ch);
+        }
+        if (!byId("sahaCrosshairBar")) {
+            const cb = document.createElement("div");
+            cb.id = "sahaCrosshairBar";
+            cb.className = "saha-crosshair-bar";
+            cb.hidden = true;
+            cb.innerHTML = `
+                <div class="saha-ch-info" id="sahaChInfo">Xəritəni sürüşdürüb "+" basın</div>
+                <div class="saha-ch-actions">
+                    <button type="button" class="saha-ch-btn minus" id="sahaChMinus" title="Geri al (−)"><i class="fa-solid fa-minus"></i></button>
+                    <button type="button" class="saha-ch-btn plus" id="sahaChPlus" title="Mərkəzə əlavə et (+)"><i class="fa-solid fa-plus"></i></button>
+                    <button type="button" class="saha-ch-btn save" id="sahaChSave" title="Yadda saxla"><i class="fa-solid fa-check"></i> <span>Yadda saxla</span></button>
+                    <button type="button" class="saha-ch-btn close" id="sahaChClose" title="Bağla"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+            `;
+            mapStage.appendChild(cb);
+            cb.querySelector("#sahaChPlus")?.addEventListener("click", addAtMapCenter);
+            cb.querySelector("#sahaChMinus")?.addEventListener("click", undoLastDrawAction);
+            cb.querySelector("#sahaChSave")?.addEventListener("click", saveCurrentDrawAction);
+            cb.querySelector("#sahaChClose")?.addEventListener("click", () => {
+                saha.drawTool = null;
+                saha.draftLine = [];
+                saha.fieldMovingId = "";
+                renderMapTools();
+                renderDraftBar();
+                renderSahaMapLayer();
+                updateSahaMapBar();
             });
         }
         bindDrawerEvents();
@@ -1952,37 +2095,29 @@
                 lblEl.textContent = pt ? String(pt.tsNo || pt.name || "İş").slice(0, 14) : "İş / Nöqtə";
             }
         }
-        const pill = byId("sahaActivePill");
-        if (!pill) return;
-        if (saha.workspaceMode !== "field") {
-            pill.hidden = true;
-            return;
-        }
+        const ch = byId("sahaCrosshair");
+        const cb = byId("sahaCrosshairBar");
+        const info = byId("sahaChInfo");
+        const activeDraw = saha.workspaceMode === "field" && Boolean(saha.drawTool || saha.fieldMovingId);
+        if (ch) ch.hidden = !activeDraw;
+        if (cb) cb.hidden = !activeDraw;
+        if (!activeDraw || !info) return;
+
         if (saha.fieldMovingId) {
-            pill.hidden = false;
-            pill.innerHTML = `<span>📍 Yeni yerə toxunun</span><button type="button" data-pill-act="stop">×</button>`;
+            info.innerHTML = `📍 Nişangahı yeni yerə sürüşdürüb <b>"+"</b> basın`;
             return;
         }
-        if (!saha.drawTool) {
-            pill.hidden = true;
-            return;
-        }
-        pill.hidden = false;
         if (saha.drawTool.startsWith("pt:")) {
             const tk = saha.drawTool.slice(3);
             const meta = POINT_TYPES[tk] || POINT_TYPES.pole;
             const sym = saha.owner === "bcg" ? meta.hollow : meta.filled;
             const shortTxt = formatShortPointLabel(tk, saha.subChoice[tk] || meta.defaultSub);
-            pill.innerHTML = `<span><b style="color:${meta.color}">${sym}</b> ${safeEsc(shortTxt)} · Xəritəyə toxun</span><button type="button" data-pill-act="stop" title="Bitir">Bitir</button>`;
+            info.innerHTML = `<b style="color:${meta.color}">${sym}</b> <b>${safeEsc(shortTxt)}</b> · Sürüşdürüb <b>"+"</b> basın`;
         } else if (saha.drawTool.startsWith("ln:")) {
             const lk = saha.drawTool.slice(3);
             const lt = LINE_TYPES[lk] || LINE_TYPES.fo24;
             const m = lineMeters(saha.draftLine);
-            pill.innerHTML = `
-                <span><b style="color:${lt.color}">━</b> ${safeEsc(lt.label)}: <b>${m}m</b> (${saha.draftLine.length})</span>
-                <button type="button" data-pill-act="undo" ${saha.draftLine.length < 1 ? "disabled" : ""}>Geri</button>
-                <button type="button" class="ok" data-pill-act="finish" ${saha.draftLine.length < 2 ? "disabled" : ""}>Bitir</button>
-                <button type="button" data-pill-act="stop">×</button>`;
+            info.innerHTML = `<b style="color:${lt.color}">━</b> <b>${safeEsc(lt.label)}</b> · <b>${m} m</b> (${saha.draftLine.length} nöqtə)`;
         }
     }
 
